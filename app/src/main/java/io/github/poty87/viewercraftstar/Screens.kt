@@ -142,7 +142,8 @@ private fun FlagBadge(flag: Flag, size: Dp) {
 // ---------------------------------------------------------------- griglia
 
 @Composable
-fun GridScreen(vm: AppViewModel, onOpen: (Int) -> Unit, onSettings: () -> Unit) {
+fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit,
+               onSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -174,6 +175,10 @@ fun GridScreen(vm: AppViewModel, onOpen: (Int) -> Unit, onSettings: () -> Unit) 
             )
         }
         SectionTabs(vm)
+        if (vm.inLibrary) {
+            LibraryContent(lib, onOpenLib)
+            return@Column
+        }
         if (vm.section == Section.REVIEW) ReviewHeader(vm) else SentHeader(vm)
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,12 +228,18 @@ fun GridScreen(vm: AppViewModel, onOpen: (Int) -> Unit, onSettings: () -> Unit) 
 private fun SectionTabs(vm: AppViewModel) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for ((s, label) in listOf(Section.REVIEW to L.t("Da rivedere", "To review"), Section.SENT to L.t("Spedite", "Sent"))) {
-            val on = vm.section == s
+            val on = vm.section == s && !vm.inLibrary
             Box(Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (on) Color(0xFF253650) else C.card)
-                .clickable { vm.section = s }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                .clickable { vm.section = s; vm.inLibrary = false }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                 Text("$label  ${vm.countIn(s)}", color = if (on) Color(0xFFDCE8FB) else C.text, fontSize = 14.sp,
                     fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
             }
+        }
+        // la libreria LightCraft di casa
+        Box(Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (vm.inLibrary) Color(0xFF253650) else C.card)
+            .clickable { vm.inLibrary = true }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(L.t("Libreria", "Library"), color = if (vm.inLibrary) Color(0xFFDCE8FB) else C.text, fontSize = 14.sp,
+                fontWeight = if (vm.inLibrary) FontWeight.Bold else FontWeight.Normal)
         }
     }
 }
@@ -636,6 +647,8 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     var copyright by remember { mutableStateOf(s.defaultCopyright) }
     var advance by remember { mutableStateOf(s.advance) }
     var notifyLc by remember { mutableStateOf(s.notifyLightCraft) }
+    var libShare by remember { mutableStateOf(s.libShare) }
+    var libFolder by remember { mutableStateOf(s.libFolder) }
     var notifyEnd by remember { mutableStateOf(s.notifyEnd) }
     var test by remember { mutableStateOf("" to "info") }
 
@@ -643,6 +656,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     fun save() {
         s.nas = config(); s.phoneFolder = phone; s.workFolder = work; s.defaultCreator = creator; s.defaultCopyright = copyright; s.advance = advance
         s.notifyLightCraft = notifyLc; s.notifyEnd = notifyEnd
+        s.libShare = libShare; s.libFolder = libFolder
     }
 
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()
@@ -679,6 +693,13 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             }) { Text(L.t("Prova connessione", "Test connection")) }
         }
         Banner(test.second, test.first)
+
+        SectionLabel(L.t("Libreria di casa", "Home library"), Modifier.padding(top = 12.dp))
+        Text(L.t("La cartella del NAS in cui PresetCraftAppLicator scrive le librerie da consultare sul telefono (Importazione automatica › Librerie da consultare sul telefono). Usa lo stesso NAS, utente e password di sopra.",
+            "The NAS folder where PresetCraftAppLicator writes the libraries to browse on the phone (Automatic import › Libraries to browse on the phone). Same NAS, user and password as above."),
+            color = C.muted, fontSize = 12.sp)
+        Field(L.t("Cartella condivisa (vuota = la stessa di sopra)", "Shared folder (empty = the same as above)"), libShare) { libShare = it }
+        Field(L.t("Cartella delle librerie dentro la condivisione (es. ViewerCraftStar)", "Libraries folder inside the share (e.g. ViewerCraftStar)"), libFolder) { libFolder = it }
 
         SectionLabel(L.t("Notifiche della spedizione", "Sending notifications"), Modifier.padding(top = 12.dp))
         Text(L.t("Dopo «Spedisci al NAS» una notifica mostra quante foto, con i loro metadati, sono già al sicuro sul NAS.",

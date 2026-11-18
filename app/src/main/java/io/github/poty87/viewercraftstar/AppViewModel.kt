@@ -37,6 +37,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var home by mutableStateOf(HomeStatus.load(app)); private set
     var nas by mutableStateOf(NasState.load(app)); private set
     var section by mutableStateOf(Section.REVIEW)
+    /** È aperta la scheda Libreria (la libreria LightCraft di casa). */
+    var inLibrary by mutableStateOf(false)
     /** Problema con la cartella di lavoro (null se tutto a posto). */
     var workProblem by mutableStateOf<String?>(null); private set
     var moving by mutableStateOf(false); private set

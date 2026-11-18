@@ -47,6 +47,20 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("advance", false)
         set(v) = prefs.edit().putBoolean("advance", v).apply()
 
+    /** Libreria di casa: cartella condivisa (vuota = quella del NAS) e cartella con gli indici di PresetCraftAppLicator. */
+    var libShare: String
+        get() = prefs.getString("lib_share", "")!!
+        set(v) = prefs.edit().putString("lib_share", v.trim().trim('/', '\\')).apply()
+
+    var libFolder: String
+        get() = prefs.getString("lib_folder", "")!!
+        set(v) = prefs.edit().putString("lib_folder", v.trim().replace('/', '\\').trim('\\')).apply()
+
+    /** La libreria scelta l'ultima volta. */
+    var library: String
+        get() = prefs.getString("library", "")!!
+        set(v) = prefs.edit().putString("library", v).apply()
+
     /** Notifica di spedizione: seguire anche l'ingresso in LightCraft (serve il PC di casa acceso). */
     var notifyLightCraft: Boolean
         get() = prefs.getBoolean("notify_lightcraft", false)

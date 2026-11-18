@@ -32,6 +32,7 @@ object BuildConfigInfo {
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
+    private val lib: LibraryViewModel by viewModels()
     private var granted by mutableStateOf(false)
 
     private val ask = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -50,7 +51,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppTheme {
                 if (!granted) PermissionScreen { ask.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES)) }
-                else App(vm)
+                else App(vm, lib)
             }
         }
     }
@@ -67,15 +68,18 @@ class MainActivity : ComponentActivity() {
 }
 
 @androidx.compose.runtime.Composable
-private fun App(vm: AppViewModel) {
+private fun App(vm: AppViewModel, lib: LibraryViewModel) {
     var screen by remember { mutableStateOf("grid") }
     var start by remember { mutableIntStateOf(0) }
     var list by remember { mutableStateOf<List<PhotoItem>>(emptyList()) }
+    var libList by remember { mutableStateOf<List<LibPhoto>>(emptyList()) }
     BackHandler(enabled = screen != "grid") { screen = "grid" }
     when (screen) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
-        "settings" -> SettingsScreen(vm) { screen = "grid"; vm.reload() }
-        else -> GridScreen(vm, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
+        "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
+        "settings" -> SettingsScreen(vm) { screen = "grid"; vm.reload(); lib.refresh() }
+        else -> GridScreen(vm, lib, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
+            onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" },
             onSettings = { screen = "settings" })
     }
 }
