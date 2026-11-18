@@ -39,6 +39,31 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     var dateFrom by mutableStateOf<LocalDate?>(null)
     var dateTo by mutableStateOf<LocalDate?>(null)
 
+    /** Selezione multipla (id delle foto): si entra con la pressione lunga. */
+    var selected by mutableStateOf(setOf<Int>())
+    val selecting: Boolean get() = selected.isNotEmpty()
+
+    fun toggleSelect(id: Int) {
+        selected = if (id in selected) selected - id else selected + id
+    }
+
+    fun selectAll() {
+        selected = cells().map { it.photo.id }.toSet()
+    }
+
+    fun clearSelection() {
+        selected = emptySet()
+    }
+
+    /** Scarica sul telefono le foto indicate (originale o JPEG), in background. */
+    fun download(ids: Collection<Int>, jpeg: Boolean) {
+        val lib = index?.library ?: return
+        DownloadService.start(getApplication(), lib, ids, jpeg)
+        say("info", L.t("Download di ${ids.size} foto avviato: segui la notifica. Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
+            "Downloading ${ids.size} photos: see the notification. They go to ${DownloadService.FOLDER.trimEnd('/')}."))
+        clearSelection()
+    }
+
     /** Pile aperte (id). All'apertura di una libreria: quelle aperte anche in LightCraft. */
     var expanded by mutableStateOf(setOf<Int>())
 
@@ -111,6 +136,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         settings.library = name
         index = null
         clearFilters()
+        clearSelection()
         openCached(name)
         refresh()
     }

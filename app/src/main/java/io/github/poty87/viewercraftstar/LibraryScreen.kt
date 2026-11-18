@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,8 +35,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -101,8 +104,19 @@ private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, mo
     }
 }
 
+/** Scelta di cosa scaricare: l'originale o il JPEG della fotocamera. */
+@Composable
+fun DownloadDialog(count: Int, onDismiss: () -> Unit, onPick: (Boolean) -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(L.t("Scarica $count foto sul telefono", "Download $count photos to the phone")) },
+        text = { Text(L.t("Originale: il file così com'è sul NAS (DNG, CR2, JPG…). JPEG: l'anteprima della fotocamera, leggera e pronta da condividere (per i TIF è solo una miniatura). Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
+            "Original: the file as it is on the NAS (DNG, CR2, JPG…). JPEG: the camera's preview, light and ready to share (for TIFFs only a thumbnail). They go to ${DownloadService.FOLDER.trimEnd('/')}.")) },
+        confirmButton = { TextButton(onClick = { onPick(false) }) { Text(L.t("Originale", "Original")) } },
+        dismissButton = { TextButton(onClick = { onPick(true) }) { Text("JPEG") } })
+}
+
 /** Contenuto della scheda Libreria (sotto le schede in alto). */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit) {
     LaunchedEffect(Unit) { lib.refresh() }
@@ -112,9 +126,23 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
             color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         return
     }
+    var asking by remember { mutableStateOf(false) }
+    if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg ->
+        asking = false
+        lib.download(lib.selected, jpeg)
+    }
     Column(Modifier.fillMaxSize()) {
+        // selezione multipla: al posto della riga della libreria
+        if (lib.selecting) Row(Modifier.fillMaxWidth().background(Color(0xFF253650)).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { lib.clearSelection() }) { Icon(Icons.Filled.Close, L.t("Annulla", "Cancel"), tint = C.text) }
+            Text(L.t("${lib.selected.size} selezionate", "${lib.selected.size} selected"), color = C.text, fontSize = 15.sp,
+                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { lib.selectAll() }) { Text(L.t("Tutte", "All")) }
+            TextButton(onClick = { asking = true }) { Text(L.t("Scarica", "Download")) }
+        }
         // libreria scelta e aggiornamento
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!lib.selecting) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             var open by remember { mutableStateOf(false) }
             Box(Modifier.weight(1f)) {
                 Column(Modifier.clickable { open = true }.padding(vertical = 6.dp)) {
@@ -151,9 +179,13 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
             itemsIndexed(cells, key = { _, c -> c.photo.id }) { i, c ->
                 val p = c.photo
                 val inOpenStack = c.open
+                val chosen = p.id in lib.selected
                 Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp))
-                    .then(if (inOpenStack) Modifier.border(2.dp, C.accent.copy(alpha = 0.7f), RoundedCornerShape(5.dp)) else Modifier)
-                    .clickable { onOpen(cells.map { it.photo }, i) }) {
+                    .then(if (chosen) Modifier.border(3.dp, Color.White, RoundedCornerShape(5.dp))
+                    else if (inOpenStack) Modifier.border(2.dp, C.accent.copy(alpha = 0.7f), RoundedCornerShape(5.dp)) else Modifier)
+                    .combinedClickable(
+                        onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells.map { it.photo }, i) },
+                        onLongClick = { lib.toggleSelect(p.id) })) {
                     RemoteImage(lib, p, RemotePreview.THUMB, Modifier.fillMaxSize(), crop = true)
                     if (p.flag == "reject") Box(Modifier.fillMaxSize().background(Color(0x99000000)))
                     if (p.flag != "none") Box(Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp).clip(CircleShape)
@@ -170,6 +202,11 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
                         .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
                         Text((if (c.open) "▾ " else "▣ ") + c.stack.photos.size, color = if (c.open) Color.Black else Color.White,
                             fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (chosen) Box(Modifier.fillMaxSize().background(Color(0x553B82F6)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(26.dp).clip(CircleShape).background(C.accent), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        }
                     }
                     if (p.rating > 0) Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
                         .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
@@ -275,7 +312,9 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     val pager = rememberPagerState(initialPage = start.coerceIn(0, list.size - 1)) { list.size }
     var controls by remember { mutableStateOf(true) }
     var info by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
     val p = list[pager.currentPage.coerceIn(0, list.size - 1)]
+    if (asking) DownloadDialog(1, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(listOf(p.id), jpeg) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
             RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black)
@@ -289,6 +328,9 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     Text(p.name + (if (p.copyName.isNotEmpty()) " · ${p.copyName}" else ""), color = C.text, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${pager.currentPage + 1} / ${list.size} · ${dateText(p.captured)}", color = C.muted, fontSize = 12.sp)
+                }
+                IconButton(onClick = { asking = true }) {
+                    Icon(Icons.Filled.KeyboardArrowDown, L.t("Scarica sul telefono", "Download to the phone"), tint = C.text)
                 }
                 IconButton(onClick = { info = !info }) { Icon(Icons.Filled.Info, L.t("Informazioni", "Info"), tint = C.text) }
             }
