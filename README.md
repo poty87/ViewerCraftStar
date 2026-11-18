@@ -61,6 +61,28 @@ After *Send to the NAS* the work goes on in the background, with a notification 
 closed. It stops by itself when every photo is safe on the NAS (or, if you choose so in the settings, when they are all in
 LightCraft).
 
+## Library: your home LightCraft library on the phone
+
+The **Library** tab shows your LightCraft libraries — all of them, not only the photos sent from the phone — from the
+index that [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) (1.14.0 or later) writes in a service
+folder on the NAS (*Automatic import › Libraries to browse on the phone*; set the same folder in the app under
+*Settings › Home library*). Photos and catalogs stay where they are.
+
+- **Browse** by capture date, with LightCraft's **stacks** (cover and number of photos; tap the number to open or close).
+- **Filter** by stars (exactly 5, at least N, none), flag, colour labels, camera, capture dates and text (name, title,
+  keywords).
+- **View** full screen with swipe and photo details. Previews are the JPEGs the camera embedded in the files (DNG, CR2,
+  ORF, JPG; a small thumbnail for TIFFs saved by Photoshop), read from the NAS a piece at a time: they show the photo as
+  shot, not with LightCraft's edits. Thumbnails stay on the phone.
+- **Edit** stars, flags, colour labels, title, caption and keywords, one photo at a time or many at once (long press to
+  select). Changes show at once with an orange dot and are left on the NAS; PresetCraftAppLicator applies them to
+  LightCraft (with LightCraft closed, after a backup) and the dot disappears when the new index confirms them.
+- **Download** selected photos to `Pictures/ViewerCraftStar Download`: the original file or the camera's JPEG, in the
+  background with a notification.
+
+The index is kept on the phone, so the library can be browsed (and edited — changes wait) even when the NAS can't be
+reached.
+
 ## Away from home
 
 The app talks to the NAS over SMB on your home network. Away from home it needs a VPN to your home network — for example
@@ -177,6 +199,25 @@ telefono, inoltro della porta attraverso uno o due router).
 Dopo *Spedisci al NAS* il lavoro continua in background, con una notifica e una barra di avanzamento, anche con l'app
 chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS (o, se lo scegli nelle impostazioni, quando sono
 tutte in LightCraft).
+
+**Libreria: la libreria LightCraft di casa sul telefono.** La scheda **Libreria** mostra le tue librerie LightCraft — tutte,
+non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.14.0 o successivo) scrive in una cartella
+di servizio sul NAS (*Importazione automatica › Librerie da consultare sul telefono*; nell'app la stessa cartella in
+*Impostazioni › Libreria di casa*). Foto e cataloghi restano dove sono.
+- **Sfoglia** per data di scatto, con le **pile** di LightCraft (copertina e numero di foto; tocca il numero per aprirle o
+  chiuderle).
+- **Filtra** per stelle (esattamente 5, almeno N, nessuna), bandierina, etichette colore, fotocamera, date di scatto e testo.
+- **Guarda** a tutto schermo con lo scorrimento e i dettagli della foto. Le anteprime sono i JPEG che la fotocamera ha
+  messo nei file (DNG, CR2, ORF, JPG; per i TIF salvati da Photoshop una miniatura), letti dal NAS a pezzi: mostrano la foto
+  come scattata, non con le modifiche di LightCraft. Le miniature restano sul telefono.
+- **Modifica** stelle, bandierine, etichette, titolo, didascalia e parole chiave, di una foto o di molte insieme (pressione
+  lunga per selezionare). Le modifiche si vedono subito con un pallino arancione e vengono lasciate sul NAS;
+  PresetCraftAppLicator le applica a LightCraft (con LightCraft chiuso, dopo un backup) e il pallino sparisce quando il
+  nuovo indice le conferma.
+- **Scarica** le foto selezionate in `Pictures/ViewerCraftStar Download`: l'originale o il JPEG della fotocamera, in
+  background con una notifica.
+
+L'indice resta sul telefono: la libreria si sfoglia (e si modifica — le modifiche aspettano) anche senza NAS.
 
 **Fuori casa** serve una VPN verso la rete di casa, per esempio il pacchetto gratuito **VPN Server** di Synology con
 OpenVPN. In alto l'app mostra sempre se il NAS è raggiungibile (rete di casa, via VPN, non raggiungibile) con un bottone
