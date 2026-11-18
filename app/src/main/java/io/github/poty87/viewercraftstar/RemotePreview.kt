@@ -15,11 +15,17 @@ import java.nio.ByteOrder
  * miniatura EXIF per la griglia, se c'è, altrimenti il file. Mostrano la foto come l'ha scattata la fotocamera, non con
  * le modifiche fatte in LightCraft. Le miniature restano anche sul telefono.
  */
+/** Un file da leggere a pezzi: sul NAS (Remote.Reader) o, nei test, un file locale. */
+interface Source {
+    val size: Long
+    fun read(offset: Long, length: Int): ByteArray
+}
+
 object RemotePreview {
     const val THUMB = 400
     const val FULL = 2400
 
-    private class Jpeg(val offset: Long, val length: Int, val width: Int, val height: Int)
+    class Jpeg(val offset: Long, val length: Int, val width: Int, val height: Int)
 
     private val memory = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
@@ -53,7 +59,7 @@ object RemotePreview {
     }
 
     /** I byte del JPEG da mostrare e l'orientamento (1 = dritta). */
-    private fun pick(r: Remote.Reader, photo: LibPhoto, maxSide: Int): Pair<ByteArray, Int>? {
+    fun pick(r: Source, photo: LibPhoto, maxSide: Int): Pair<ByteArray, Int>? {
         val ext = photo.name.substringAfterLast('.', "").lowercase()
         if (ext == "jpg" || ext == "jpeg") {
             // la miniatura EXIF non ha un orientamento suo: vale quello della foto, letto dall'inizio del file
@@ -90,7 +96,7 @@ object RemotePreview {
     private class Ifd(val tags: Map<Int, LongArray>, val next: Long)
 
     /** I JPEG incorporati (IFD0, SubIFD, IFD successive) e l'orientamento. */
-    private fun tiffJpegs(r: Remote.Reader): Pair<List<Jpeg>, Int>? {
+    fun tiffJpegs(r: Source): Pair<List<Jpeg>, Int>? {
         val head = r.read(0, 8)
         if (head.size < 8) return null
         val order = when {
@@ -127,10 +133,61 @@ object RemotePreview {
             val h = t[0x101]?.firstOrNull()?.toInt() ?: 120
             out += Jpeg(offset, length.toInt(), w, h)
         }
+        // TIFF salvati da Photoshop: la miniatura JPEG nelle sue risorse (piccola, ma meglio di niente)
+        if (out.isEmpty()) ifd0.tags[0x8649]?.let { (at, n) -> photoshopThumb(r, at, n)?.let(out::add) }
+        // Olympus (ORF): l'anteprima sta nelle note del produttore, non nelle IFD normali
+        if (out.none { maxOf(it.width, it.height) >= THUMB }) ifd0.tags[0x8769]?.firstOrNull()?.let { exifAt ->
+            readIfd(r, exifAt, order)?.tags?.get(0x927C)?.let { (at, n) -> olympusPreview(r, at, n)?.let(out::add) }
+        }
         return out to orientation
     }
 
-    private fun readIfd(r: Remote.Reader, offset: Long, order: ByteOrder): Ifd? {
+    /** La miniatura JPEG (risorsa 0x040C) nelle risorse di Photoshop di un TIFF, o null. */
+    private fun photoshopThumb(r: Source, at: Long, n: Long): Jpeg? = runCatching {
+        if (n <= 0 || n > 4L * 1024 * 1024) return null
+        val irb = r.read(at, n.toInt())
+        val bb = ByteBuffer.wrap(irb).order(ByteOrder.BIG_ENDIAN)
+        var i = 0
+        while (i + 12 <= irb.size && String(irb, i, 4, Charsets.ISO_8859_1) == "8BIM") {
+            val id = bb.getShort(i + 4).toInt() and 0xFFFF
+            var j = i + 6 + 1 + (irb[i + 6].toInt() and 0xFF)
+            if (j % 2 == 1) j++
+            val size = bb.getInt(j)
+            val data = j + 4
+            if (id == 0x040C && size > 28) {
+                return Jpeg(at + data + 28, size - 28, bb.getInt(data + 4), bb.getInt(data + 8))
+            }
+            i = data + size + (size % 2)
+        }
+        null
+    }.getOrNull()
+
+    /**
+     * L'anteprima JPEG nelle note del produttore Olympus. Formato nuovo ("OLYMPUS\u0000" + ordine dei byte): IFD a +12,
+     * CameraSettings (0x2020) con PreviewImageStart (0x101) e PreviewImageLength (0x102), offset dall'inizio delle note.
+     * Formato vecchio ("OLYMP\u0000"): IFD a +8, PreviewImageStart (0x88) e Length (0x89) dall'inizio del file.
+     */
+    private fun olympusPreview(r: Source, at: Long, n: Long): Jpeg? = runCatching {
+        val head = r.read(at, 12)
+        val sig = String(head, Charsets.ISO_8859_1)
+        val newStyle = sig.startsWith("OLYMPUS\u0000")
+        if (!newStyle && !sig.startsWith("OLYMP\u0000")) return null
+        val order = if (newStyle) (if (head[8] == 'M'.code.toByte()) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN)
+        else ByteOrder.LITTLE_ENDIAN
+        val note = readIfd(r, at + if (newStyle) 12 else 8, order) ?: return null
+        val (start, length) = if (newStyle) {
+            val cs = note.tags[0x2020]?.firstOrNull() ?: return null
+            val sub = readIfd(r, at + cs, order) ?: return null
+            val s0 = sub.tags[0x101]?.firstOrNull() ?: return null
+            (at + s0) to (sub.tags[0x102]?.firstOrNull() ?: return null)
+        } else {
+            (note.tags[0x88]?.firstOrNull() ?: return null) to (note.tags[0x89]?.firstOrNull() ?: return null)
+        }
+        if (length <= 0 || start + length > r.size) return null
+        Jpeg(start, length.toInt(), 3200, 2400) // dimensioni vere non scritte: è comunque l'anteprima grande
+    }.getOrNull()
+
+    private fun readIfd(r: Source, offset: Long, order: ByteOrder): Ifd? {
         if (offset <= 0 || offset >= r.size) return null
         val countBytes = r.read(offset, 2)
         if (countBytes.size < 2) return null
@@ -145,6 +202,10 @@ object RemotePreview {
             val tag = buf.getShort(e).toInt() and 0xFFFF
             val type = buf.getShort(e + 2).toInt() and 0xFFFF
             val n = buf.getInt(e + 4).toLong() and 0xFFFFFFFFL
+            if (tag == 0x927C || tag == 0x8649) { // MakerNote e risorse di Photoshop: solo dove stanno
+                tags[tag] = longArrayOf(if (n <= 4) offset + 2 + e + 8 else buf.getInt(e + 8).toLong() and 0xFFFFFFFFL, n)
+                return@repeat
+            }
             val size = when (type) { 3 -> 2; 4, 13 -> 4; else -> 0 }
             if (size == 0 || n == 0L || n > 64) return@repeat
             val values = LongArray(n.toInt())
@@ -167,7 +228,7 @@ object RemotePreview {
     // ---------------------------------------------------------------- JPEG
 
     /** La miniatura nell'EXIF di un JPEG (di solito 160×120), letta dai primi 64 KB, oppure null. */
-    private fun exifThumb(r: Remote.Reader): ByteArray? {
+    private fun exifThumb(r: Source): ByteArray? {
         val head = r.read(0, 64 * 1024)
         if (head.size < 12 || head[0] != 0xFF.toByte() || head[1] != 0xD8.toByte()) return null
         var at = 2

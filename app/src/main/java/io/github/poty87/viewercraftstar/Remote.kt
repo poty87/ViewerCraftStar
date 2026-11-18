@@ -83,10 +83,10 @@ object Remote {
     }
 
     /** Un file del NAS aperto in sola lettura, letto a pezzi (offset, lunghezza). */
-    class Reader(private val file: com.hierynomus.smbj.share.File) : AutoCloseable {
-        val size: Long = file.fileInformation.standardInformation.endOfFile
+    class Reader(private val file: com.hierynomus.smbj.share.File) : AutoCloseable, Source {
+        override val size: Long = file.fileInformation.standardInformation.endOfFile
 
-        fun read(offset: Long, length: Int): ByteArray {
+        override fun read(offset: Long, length: Int): ByteArray {
             val n = minOf(length.toLong(), maxOf(0L, size - offset)).toInt()
             val out = ByteArray(n)
             var done = 0
