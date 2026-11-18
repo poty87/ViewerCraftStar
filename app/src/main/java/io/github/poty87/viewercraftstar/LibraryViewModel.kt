@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -38,6 +40,58 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     var camera by mutableStateOf("")
     var dateFrom by mutableStateOf<LocalDate?>(null)
     var dateTo by mutableStateOf<LocalDate?>(null)
+
+    /** Modifiche fatte sul telefono non ancora confermate dalla libreria di casa (id → modifica). */
+    var edits by mutableStateOf<Map<Int, LibEdit>>(emptyMap()); private set
+
+    /** La foto come la vede il telefono: con le modifiche in attesa sopra. */
+    fun effective(p: LibPhoto) = edits[p.id]?.applyTo(p) ?: p
+
+    private var sendJob: Job? = null
+
+    /** Applica una modifica alle foto indicate: subito sul telefono, poi (dopo qualche secondo) sul NAS. */
+    fun edit(ids: Collection<Int>, change: (LibEdit) -> LibEdit) {
+        val idx = index ?: return
+        val now = System.currentTimeMillis()
+        val next = edits.toMutableMap()
+        ids.forEach { id -> next[id] = change(next[id] ?: LibEdit()).copy(at = now, sent = 0) }
+        // una modifica che riporta la foto com'è a casa non serve più
+        ids.forEach { id -> val e = next[id]; val p = idx.byId[id]; if (e != null && p != null && isNoop(e, p)) next.remove(id) }
+        edits = next
+        memo = null
+        LibraryEdits.save(getApplication(), idx.library, next)
+        sendJob?.cancel()
+        sendJob = viewModelScope.launch { delay(3000); sendPending() }
+    }
+
+    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p)
+
+    fun setRating(ids: Collection<Int>, r: Int) = edit(ids) { it.copy(rating = r) }
+    fun setFlag(ids: Collection<Int>, f: String) = edit(ids) { it.copy(flag = f) }
+    fun setLabel(ids: Collection<Int>, l: String) = edit(ids) { it.copy(label = l) }
+    fun setTexts(id: Int, title: String, caption: String, keywords: List<String>) =
+        edit(listOf(id)) { it.copy(title = title, caption = caption, keywords = keywords) }
+
+    /** Lascia sul NAS le modifiche non ancora inviate. */
+    fun sendPending() {
+        val idx = index ?: return
+        val unsent = edits.filter { it.value.sent == 0L }
+        if (unsent.isEmpty() || !configured) return
+        val cfg = settings.nas
+        viewModelScope.launch {
+            val r = runCatching { LibraryEdits.send(cfg, share, settings.libFolder, idx.library, unsent) }
+            r.onSuccess {
+                val now = System.currentTimeMillis()
+                edits = edits.mapValues { (id, e) -> if (id in unsent && e.at == unsent.getValue(id).at) e.copy(sent = now) else e }
+                LibraryEdits.save(getApplication(), idx.library, edits)
+                say("ok", L.t("Modifiche inviate: entrano in LightCraft quando PresetCraftAppLicator le applica (PC acceso, LightCraft chiuso).",
+                    "Changes sent: they enter LightCraft when PresetCraftAppLicator applies them (PC on, LightCraft closed)."))
+            }.onFailure {
+                say("warn", L.t("Modifiche salvate sul telefono: partono appena il NAS è raggiungibile.",
+                    "Changes kept on the phone: they will be sent as soon as the NAS can be reached."))
+            }
+        }
+    }
 
     /** Selezione multipla (id delle foto): si entra con la pressione lunga. */
     var selected by mutableStateOf(setOf<Int>())
@@ -94,8 +148,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun show(idx: LibIndex) {
+        val sameLibrary = index?.library == idx.library
         index = idx
-        expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
+        if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
+        // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
+        val stored = LibraryEdits.load(getApplication(), idx.library)
+        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it) } ?: false }
+        if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
+        edits = kept
         memo = null
     }
 
@@ -122,6 +182,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 if (names.isEmpty()) say("warn", L.t("Nessuna libreria nella cartella del NAS: in PresetCraftAppLicator, Importazione automatica › Librerie da consultare sul telefono.",
                     "No library in the NAS folder: in PresetCraftAppLicator, Automatic import › Libraries to browse on the phone."))
                 else if (!quiet) say("ok", L.t("Libreria aggiornata.", "Library updated."))
+                sendPending()
             }.onFailure { e ->
                 if (index != null) say("warn", L.t("NAS non raggiungibile: mostro l'ultima copia della libreria sul telefono.",
                     "NAS not reachable: showing the last copy of the library on the phone."))
@@ -178,9 +239,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun cells(): List<Cell> {
         val idx = index ?: return emptyList()
-        val key = listOf(idx, stars, flag, labels, text, camera, dateFrom, dateTo, expanded)
+        val key = listOf(idx, stars, flag, labels, text, camera, dateFrom, dateTo, expanded, edits)
         memo?.let { (k, v) -> if (k == key) return v }
-        val ordered = idx.photos.sortedWith(compareByDescending<LibPhoto> { it.captured }.thenByDescending { it.id })
+        val ordered = idx.photos.map { effective(it) }
+            .sortedWith(compareByDescending<LibPhoto> { it.captured }.thenByDescending { it.id })
         val out = ArrayList<Cell>()
         if (filtering) {
             for (p in ordered) if (matches(p)) out += Cell(p, idx.stackOf[p.id], cover = false, open = false)
@@ -191,7 +253,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 if (s.photos.first() != p.id) continue // le altre foto della pila stanno dopo la copertina
                 val open = s.id in expanded
                 out += Cell(p, s, cover = true, open = open)
-                if (open) s.photos.drop(1).mapNotNull { idx.byId[it] }.forEach { out += Cell(it, s, cover = false, open = true) }
+                if (open) s.photos.drop(1).mapNotNull { idx.byId[it] }.forEach { out += Cell(effective(it), s, cover = false, open = true) }
             }
         }
         memo = key to out

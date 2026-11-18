@@ -104,6 +104,56 @@ private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, mo
     }
 }
 
+/** Stelle, bandierina ed etichetta per una o più foto: ogni tocco si applica subito. */
+@Composable
+fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            for ((f, label) in listOf("pick" to L.t("Scelta", "Pick"), "reject" to L.t("Scartata", "Reject"))) {
+                val on = current?.flag == f
+                val (fg, bg) = if (f == "pick") C.pick else C.reject
+                Box(Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) bg else C.card)
+                    .clickable { lib.setFlag(ids, if (on) "none" else f) }.padding(horizontal = 14.dp, vertical = 7.dp)) {
+                    Text((if (f == "pick") "✓ " else "✕ ") + label, color = if (on) fg else C.text, fontSize = 13.sp)
+                }
+            }
+            if (current == null) TextButton(onClick = { lib.setFlag(ids, "none") }) { Text(L.t("Nessuna", "None")) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StarsRow(current?.rating ?: 0, 28.dp) { s -> lib.setRating(ids, if (current?.rating == s) 0 else s) }
+            if (current == null) TextButton(onClick = { lib.setRating(ids, 0) }) { Text(L.t("Nessuna", "None")) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            labelColors.forEach { (key, color) ->
+                val on = current?.label.equals(key, ignoreCase = true)
+                Box(Modifier.size(28.dp).clip(CircleShape).background(color)
+                    .then(if (on) Modifier.border(3.dp, Color.White, CircleShape) else Modifier)
+                    .clickable { lib.setLabel(ids, if (on) "" else key) })
+            }
+            TextButton(onClick = { lib.setLabel(ids, "") }) { Text(L.t("Nessuna", "None")) }
+        }
+    }
+}
+
+/** Titolo, didascalia e parole chiave di una foto. */
+@Composable
+fun TextsDialog(p: LibPhoto, onDismiss: () -> Unit, onSave: (String, String, List<String>) -> Unit) {
+    var title by remember { mutableStateOf(p.title) }
+    var caption by remember { mutableStateOf(p.caption) }
+    var keywords by remember { mutableStateOf(p.keywords.joinToString(", ")) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(p.name) }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(title, { title = it }, label = { Text(L.t("Titolo", "Title")) }, singleLine = true)
+            OutlinedTextField(caption, { caption = it }, label = { Text(L.t("Didascalia", "Caption")) })
+            OutlinedTextField(keywords, { keywords = it }, label = { Text(L.t("Parole chiave (separate da virgole)", "Keywords (comma-separated)")) })
+        }
+    }, confirmButton = {
+        TextButton(onClick = { onSave(title.trim(), caption.trim(), keywords.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }) {
+            Text(L.t("Salva", "Save"))
+        }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) } })
+}
+
 /** Scelta di cosa scaricare: l'originale o il JPEG della fotocamera. */
 @Composable
 fun DownloadDialog(count: Int, onDismiss: () -> Unit, onPick: (Boolean) -> Unit) {
@@ -127,10 +177,15 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
         return
     }
     var asking by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg ->
         asking = false
         lib.download(lib.selected, jpeg)
     }
+    if (editing) AlertDialog(onDismissRequest = { editing = false },
+        title = { Text(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos")) },
+        text = { EditControls(lib, lib.selected, null) },
+        confirmButton = { TextButton(onClick = { editing = false }) { Text(L.t("Fine", "Done")) } })
     Column(Modifier.fillMaxSize()) {
         // selezione multipla: al posto della riga della libreria
         if (lib.selecting) Row(Modifier.fillMaxWidth().background(Color(0xFF253650)).padding(horizontal = 4.dp),
@@ -139,6 +194,7 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
             Text(L.t("${lib.selected.size} selezionate", "${lib.selected.size} selected"), color = C.text, fontSize = 15.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = { lib.selectAll() }) { Text(L.t("Tutte", "All")) }
+            TextButton(onClick = { editing = true }) { Text(L.t("Modifica", "Edit")) }
             TextButton(onClick = { asking = true }) { Text(L.t("Scarica", "Download")) }
         }
         // libreria scelta e aggiornamento
@@ -208,6 +264,9 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
                             Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
                         }
                     }
+                    // modifica fatta sul telefono, non ancora in LightCraft
+                    if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
+                        .background(Color(0xFFFB923C)))
                     if (p.rating > 0) Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
                         .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
                         repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
@@ -313,7 +372,9 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     var controls by remember { mutableStateOf(true) }
     var info by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
-    val p = list[pager.currentPage.coerceIn(0, list.size - 1)]
+    var texts by remember { mutableStateOf(false) }
+    val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
+    if (texts) TextsDialog(p, onDismiss = { texts = false }) { t, c, k -> texts = false; lib.setTexts(p.id, t, c, k) }
     if (asking) DownloadDialog(1, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(listOf(p.id), jpeg) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
@@ -334,8 +395,9 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 }
                 IconButton(onClick = { info = !info }) { Icon(Icons.Filled.Info, L.t("Informazioni", "Info"), tint = C.text) }
             }
-            if (info) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xE6141414))
-                .navigationBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            if (info) Column(Modifier.fillMaxWidth().background(Color(0xE6141414))
+                .verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StarsRow(p.rating, 18.dp, null)
@@ -364,6 +426,18 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 rows.forEach { (k, v) ->
                     Row { Text(k, color = C.muted, fontSize = 12.sp, modifier = Modifier.width(96.dp)); Text(v, color = C.text, fontSize = 13.sp) }
                 }
+            }
+            // modifica: stelle, bandierina, etichetta, testi
+            Column(Modifier.fillMaxWidth().background(Color(0xD9141414)).navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                EditControls(lib, listOf(p.id), p)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { texts = true }) { Text(L.t("Titolo e parole chiave…", "Title and keywords…")) }
+                    if (p.id in lib.edits) Text(if (lib.edits.getValue(p.id).sent > 0)
+                        L.t("Inviata: entra in LightCraft quando il PC di casa la applica.", "Sent: enters LightCraft when the home PC applies it.")
+                        else L.t("Da inviare al NAS.", "To be sent to the NAS."), color = Color(0xFFFB923C), fontSize = 12.sp)
+                }
+            }
             }
         }
     }
