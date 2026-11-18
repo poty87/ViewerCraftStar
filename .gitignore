@@ -6,6 +6,6 @@ local.properties
 .idea/
 captures/
 *.apk
-!dist/*.apk
+dist/
 *.keystore
 keystore.properties
