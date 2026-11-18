@@ -1,0 +1,71 @@
+{
+ "grid": 17,
+ "camera": "RICOH GR IV",
+ "styles": {
+  "256": {
+   "name": "Standard",
+   "slug": "standard",
+   "photos": 2
+  },
+  "257": {
+   "name": "Vivid",
+   "slug": "vivid",
+   "photos": 2
+  },
+  "258": {
+   "name": "Monotone",
+   "slug": "monotone",
+   "photos": 2
+  },
+  "259": {
+   "name": "Soft Monotone",
+   "slug": "soft-monotone",
+   "photos": 2
+  },
+  "260": {
+   "name": "Hard Monotone",
+   "slug": "hard-monotone",
+   "photos": 2
+  },
+  "261": {
+   "name": "Hi-Contrast B&W",
+   "slug": "hi-contrast-b-w",
+   "photos": 3
+  },
+  "262": {
+   "name": "Positive Film",
+   "slug": "positive-film",
+   "photos": 4
+  },
+  "263": {
+   "name": "Bleach Bypass",
+   "slug": "bleach-bypass",
+   "photos": 2
+  },
+  "264": {
+   "name": "Retro",
+   "slug": "retro",
+   "photos": 1
+  },
+  "266": {
+   "name": "Cross Processing",
+   "slug": "cross-processing",
+   "photos": 2
+  },
+  "267": {
+   "name": "Negative Film",
+   "slug": "negative-film",
+   "photos": 5
+  },
+  "268": {
+   "name": "Cinema (Yellow)",
+   "slug": "cinema-yellow",
+   "photos": 19
+  },
+  "269": {
+   "name": "Cinema (Green)",
+   "slug": "cinema-green",
+   "photos": 2
+  }
+ }
+}
