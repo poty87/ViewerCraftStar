@@ -64,11 +64,57 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         sendJob = viewModelScope.launch { delay(3000); sendPending() }
     }
 
-    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p)
+    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p, index?.stackOf?.get(p.id))
 
     fun setRating(ids: Collection<Int>, r: Int) = edit(ids) { it.copy(rating = r) }
     fun setFlag(ids: Collection<Int>, f: String) = edit(ids) { it.copy(flag = f) }
     fun setLabel(ids: Collection<Int>, l: String) = edit(ids) { it.copy(label = l) }
+    /** Nel cestino di LightCraft: la foto sparisce subito dal telefono, dalla libreria quando il PC la applica. */
+    fun trash(ids: Collection<Int>) {
+        edit(ids) { it.copy(trash = true) }
+        clearSelection()
+        say("info", L.t("${ids.size} foto nel cestino di LightCraft (Eliminate di recente) appena il PC di casa applica la richiesta. I file restano sul NAS: li cancelli con CleanCraftNas.",
+            "${ids.size} photos go to LightCraft's trash (Recently Deleted) once the home PC applies the request. The files stay on the NAS: delete them with CleanCraftNas."))
+    }
+
+    /** Ripensamento: se la richiesta non è ancora partita si toglie, altrimenti si chiede di ripristinare. */
+    fun untrash(id: Int) {
+        val e = edits[id] ?: return
+        if (e.sent == 0L) edit(listOf(id)) { it.copy(trash = null) } else edit(listOf(id)) { it.copy(trash = false) }
+    }
+
+    /** Una pila delle foto selezionate: copertina la prima selezionata; quelle già in una pila portano con sé la loro. */
+    fun stack(ids: Collection<Int>) {
+        if (ids.size < 2) return
+        val top = ids.first()
+        edit(ids) { it.copy(stack = top) }
+        clearSelection()
+        expanded = expanded + (-top)
+        say("info", L.t("Pila di ${ids.size} foto: entra in LightCraft quando il PC di casa applica la richiesta.",
+            "Stack of ${ids.size} photos: it enters LightCraft when the home PC applies the request."))
+    }
+
+    /** Le pile come le vede il telefono: quelle di casa più quelle create qui e non ancora in LightCraft. */
+    private fun stackMap(idx: LibIndex): Map<Int, LibStack> {
+        val groups = edits.entries.filter { it.value.stack != null && it.key in idx.byId }.groupBy({ it.value.stack!! }, { it.key })
+        if (groups.isEmpty()) return idx.stackOf
+        val out = idx.stackOf.toMutableMap()
+        for ((top, members) in groups) {
+            if (top !in idx.byId) continue
+            val photos = LinkedHashSet<Int>()
+            for (m in listOf(top) + members.filter { it != top }) { photos += m; out[m]?.photos?.let { photos += it } }
+            if (photos.size < 2) continue
+            val s = LibStack(-top, photos.toList(), collapsed = true)
+            photos.forEach { out[it] = s }
+        }
+        return out
+    }
+
+    private var stacksNow: Map<Int, LibStack> = emptyMap()
+
+    /** La pila della foto (comprese quelle create sul telefono). */
+    fun stackOf(id: Int): LibStack? { cells(); return stacksNow[id] }
+
     fun setTexts(id: Int, title: String, caption: String, keywords: List<String>) =
         edit(listOf(id)) { it.copy(title = title, caption = caption, keywords = keywords) }
 
@@ -153,7 +199,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
-        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it) } ?: false }
+        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id]) } ?: false }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
         edits = kept
         memo = null
@@ -241,19 +287,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         val idx = index ?: return emptyList()
         val key = listOf(idx, stars, flag, labels, text, camera, dateFrom, dateTo, expanded, edits)
         memo?.let { (k, v) -> if (k == key) return v }
+        val stackOf = stackMap(idx)
+        stacksNow = stackOf
         val ordered = idx.photos.map { effective(it) }
             .sortedWith(compareByDescending<LibPhoto> { it.captured }.thenByDescending { it.id })
         val out = ArrayList<Cell>()
         if (filtering) {
-            for (p in ordered) if (matches(p)) out += Cell(p, idx.stackOf[p.id], cover = false, open = false)
+            for (p in ordered) if (edits[p.id]?.trash != true && matches(p)) out += Cell(p, stackOf[p.id], cover = false, open = false)
         } else {
             for (p in ordered) {
-                val s = idx.stackOf[p.id]
+                if (edits[p.id]?.trash == true) continue // nel cestino (in attesa del PC)
+                val s = stackOf[p.id]
                 if (s == null) { out += Cell(p, null, cover = false, open = false); continue }
                 if (s.photos.first() != p.id) continue // le altre foto della pila stanno dopo la copertina
                 val open = s.id in expanded
                 out += Cell(p, s, cover = true, open = open)
-                if (open) s.photos.drop(1).mapNotNull { idx.byId[it] }.forEach { out += Cell(effective(it), s, cover = false, open = true) }
+                if (open) s.photos.drop(1).mapNotNull { idx.byId[it] }.filter { edits[it.id]?.trash != true }
+                    .forEach { out += Cell(effective(it), s, cover = false, open = true) }
             }
         }
         memo = key to out

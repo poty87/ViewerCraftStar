@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.poty87.viewercraftstar"
         minSdk = 33 // Android 13: permesso READ_MEDIA_IMAGES
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.9.0"
+        versionCode = 18
+        versionName = "0.10.0"
     }
 
     // firma delle release: chiave e password in keystore.properties (fuori dal repository, mai pubblicati)

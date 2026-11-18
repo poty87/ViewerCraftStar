@@ -64,7 +64,7 @@ LightCraft).
 ## Library: your home LightCraft library on the phone
 
 The **Library** tab shows your LightCraft libraries — all of them, not only the photos sent from the phone — from the
-index that [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) (1.14.0 or later) writes in a service
+index that [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) (1.15.0 or later) writes in a service
 folder on the NAS (*Automatic import › Libraries to browse on the phone*; set the same folder in the app under
 *Settings › Home library*). Photos and catalogs stay where they are.
 
@@ -77,6 +77,10 @@ folder on the NAS (*Automatic import › Libraries to browse on the phone*; set 
 - **Edit** stars, flags, colour labels, title, caption and keywords, one photo at a time or many at once (long press to
   select). Changes show at once with an orange dot and are left on the NAS; PresetCraftAppLicator applies them to
   LightCraft (with LightCraft closed, after a backup) and the dot disappears when the new index confirms them.
+- **Stack** selected photos (the first one selected is the cover; stacks they are already in are merged) or move them
+  to **LightCraft's trash** (*Recently Deleted*). The phone never deletes files: they stay on the NAS until you check
+  them in LightCraft or delete them with [CleanCraftNas](https://github.com/poty87/CleanCraftNas). Needs
+  PresetCraftAppLicator 1.15.0 or later.
 - **Download** selected photos to `Pictures/ViewerCraftStar Download`: the original file or the camera's JPEG, in the
   background with a notification.
 
@@ -201,7 +205,7 @@ chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS (o, se lo
 tutte in LightCraft).
 
 **Libreria: la libreria LightCraft di casa sul telefono.** La scheda **Libreria** mostra le tue librerie LightCraft — tutte,
-non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.14.0 o successivo) scrive in una cartella
+non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.15.0 o successivo) scrive in una cartella
 di servizio sul NAS (*Importazione automatica › Librerie da consultare sul telefono*; nell'app la stessa cartella in
 *Impostazioni › Libreria di casa*). Foto e cataloghi restano dove sono.
 - **Sfoglia** per data di scatto, con le **pile** di LightCraft (copertina e numero di foto; tocca il numero per aprirle o
@@ -214,6 +218,10 @@ di servizio sul NAS (*Importazione automatica › Librerie da consultare sul tel
   lunga per selezionare). Le modifiche si vedono subito con un pallino arancione e vengono lasciate sul NAS;
   PresetCraftAppLicator le applica a LightCraft (con LightCraft chiuso, dopo un backup) e il pallino sparisce quando il
   nuovo indice le conferma.
+- **Raggruppa in una pila** le foto selezionate (la prima selezionata è la copertina; le pile in cui sono già vengono
+  unite) o spostale nel **cestino di LightCraft** (*Eliminate di recente*). Il telefono non cancella mai i file: restano sul
+  NAS finché non li ricontrolli in LightCraft o li cancelli con [CleanCraftNas](https://github.com/poty87/CleanCraftNas).
+  Serve PresetCraftAppLicator 1.15.0 o successivo.
 - **Scarica** le foto selezionate in `Pictures/ViewerCraftStar Download`: l'originale o il JPEG della fotocamera, in
   background con una notifica.
 

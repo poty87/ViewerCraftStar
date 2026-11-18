@@ -56,6 +56,11 @@ class Settings(context: Context) {
         get() = prefs.getString("lib_folder", "")!!
         set(v) = prefs.edit().putString("lib_folder", v.trim().replace('/', '\\').trim('\\')).apply()
 
+    /** Riduci consigli interfaccia: solo testi brevi. */
+    var compactTips: Boolean
+        get() = prefs.getBoolean("compact_tips", false)
+        set(v) = prefs.edit().putBoolean("compact_tips", v).apply()
+
     /** La libreria scelta l'ultima volta. */
     var library: String
         get() = prefs.getString("library", "")!!

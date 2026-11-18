@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BuildConfigInfo.version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
         granted = hasPermission()
+        Tips.compact = vm.settings.compactTips
         setContent {
             AppTheme {
                 if (!granted) PermissionScreen { ask.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES)) }

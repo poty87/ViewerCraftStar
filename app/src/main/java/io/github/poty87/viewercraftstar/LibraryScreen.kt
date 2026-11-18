@@ -21,8 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -34,6 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
@@ -62,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -159,46 +162,38 @@ fun TextsDialog(p: LibPhoto, onDismiss: () -> Unit, onSave: (String, String, Lis
 fun DownloadDialog(count: Int, onDismiss: () -> Unit, onPick: (Boolean) -> Unit) {
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text(L.t("Scarica $count foto sul telefono", "Download $count photos to the phone")) },
-        text = { Text(L.t("Originale: il file così com'è sul NAS (DNG, CR2, JPG…). JPEG: l'anteprima della fotocamera, leggera e pronta da condividere (per i TIF è solo una miniatura). Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
-            "Original: the file as it is on the NAS (DNG, CR2, JPG…). JPEG: the camera's preview, light and ready to share (for TIFFs only a thumbnail). They go to ${DownloadService.FOLDER.trimEnd('/')}.")) },
+        text = { Text(tip(L.t("Originale: il file così com'è sul NAS (DNG, CR2, JPG…). JPEG: l'anteprima della fotocamera, leggera e pronta da condividere (per i TIF è solo una miniatura). Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
+            "Original: the file as it is on the NAS (DNG, CR2, JPG…). JPEG: the camera's preview, light and ready to share (for TIFFs only a thumbnail). They go to ${DownloadService.FOLDER.trimEnd('/')}."),
+            L.t("In ${DownloadService.FOLDER.trimEnd('/')}.", "To ${DownloadService.FOLDER.trimEnd('/')}.")) ?: "") },
         confirmButton = { TextButton(onClick = { onPick(false) }) { Text(L.t("Originale", "Original")) } },
         dismissButton = { TextButton(onClick = { onPick(true) }) { Text("JPEG") } })
 }
 
-/** Contenuto della scheda Libreria (sotto le schede in alto). */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/** Nel cestino di LightCraft: conferma, con la spiegazione di cosa succede ai file. */
 @Composable
-fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit) {
+fun TrashDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(L.t("Spostare $count foto nel cestino di LightCraft?", "Move $count photos to LightCraft's trash?")) },
+        text = { Text(tip(L.t("Finiscono in «Eliminate di recente» quando il PC di casa applica la richiesta. I file restano sul NAS: al PC puoi ricontrollarle in LightCraft o cancellarle definitivamente con CleanCraftNas.",
+            "They go to “Recently Deleted” when the home PC applies the request. The files stay on the NAS: at the PC you can check them in LightCraft or delete them for good with CleanCraftNas."),
+            L.t("I file restano sul NAS finché non usi CleanCraftNas.", "The files stay on the NAS until you use CleanCraftNas.")) ?: "") },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(L.t("Nel cestino", "Move to trash")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) } })
+}
+
+/** Intestazione della scheda Libreria: libreria, aggiornamento, filtri, conteggio (scorre via con la griglia). */
+@Composable
+fun LibraryHeader(lib: LibraryViewModel) {
     LaunchedEffect(Unit) { lib.refresh() }
     if (!lib.configured) {
-        Text(L.t("Imposta nelle Impostazioni la cartella del NAS con le librerie (la stessa scelta in PresetCraftAppLicator › Importazione automatica › Librerie da consultare sul telefono).",
+        Text(tip(L.t("Imposta nelle Impostazioni la cartella del NAS con le librerie (la stessa scelta in PresetCraftAppLicator › Importazione automatica › Librerie da consultare sul telefono).",
             "In Settings, set the NAS folder with the libraries (the one chosen in PresetCraftAppLicator › Automatic import › Libraries to browse on the phone)."),
+            L.t("Imposta la cartella delle librerie nelle Impostazioni.", "Set the libraries folder in Settings.")) ?: "",
             color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         return
     }
-    var asking by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf(false) }
-    if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg ->
-        asking = false
-        lib.download(lib.selected, jpeg)
-    }
-    if (editing) AlertDialog(onDismissRequest = { editing = false },
-        title = { Text(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos")) },
-        text = { EditControls(lib, lib.selected, null) },
-        confirmButton = { TextButton(onClick = { editing = false }) { Text(L.t("Fine", "Done")) } })
-    Column(Modifier.fillMaxSize()) {
-        // selezione multipla: al posto della riga della libreria
-        if (lib.selecting) Row(Modifier.fillMaxWidth().background(Color(0xFF253650)).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { lib.clearSelection() }) { Icon(Icons.Filled.Close, L.t("Annulla", "Cancel"), tint = C.text) }
-            Text(L.t("${lib.selected.size} selezionate", "${lib.selected.size} selected"), color = C.text, fontSize = 15.sp,
-                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { lib.selectAll() }) { Text(L.t("Tutte", "All")) }
-            TextButton(onClick = { editing = true }) { Text(L.t("Modifica", "Edit")) }
-            TextButton(onClick = { asking = true }) { Text(L.t("Scarica", "Download")) }
-        }
-        // libreria scelta e aggiornamento
-        if (!lib.selecting) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 0.dp), verticalAlignment = Alignment.CenterVertically) {
             var open by remember { mutableStateOf(false) }
             Box(Modifier.weight(1f)) {
                 Column(Modifier.clickable { open = true }.padding(vertical = 6.dp)) {
@@ -216,63 +211,96 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
                 else Icon(Icons.Filled.Refresh, L.t("Aggiorna", "Refresh"), tint = C.text)
             }
         }
-        if (lib.message.isNotEmpty()) Banner(lib.messageLevel, lib.message, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        if (lib.message.isNotEmpty()) Banner(lib.messageLevel, lib.message, Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
         Filters(lib)
         val idx = lib.index
-        val cells = lib.cells()
-        if (idx == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (idx != null) Text(if (lib.filtering) L.t("${lib.cells().size} foto con questi filtri", "${lib.cells().size} photos match")
+            else L.t("${lib.cells().size} elementi", "${lib.cells().size} items"), color = C.muted, fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+    }
+}
+
+/** Le celle della Libreria nella griglia comune (sotto l'intestazione). */
+@OptIn(ExperimentalFoundationApi::class)
+fun LazyGridScope.libraryItems(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit) {
+    if (!lib.configured) return
+    val idx = lib.index
+    if (idx == null) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                 if (lib.loading) CircularProgressIndicator(color = C.accent)
                 else Text(L.t("Nessuna libreria scaricata.", "No library downloaded yet."), color = C.muted)
             }
-            return@Column
         }
-        Text(if (lib.filtering) L.t("${cells.size} foto con questi filtri", "${cells.size} photos match")
-            else L.t("${cells.size} elementi", "${cells.size} items"), color = C.muted, fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.fillMaxSize().padding(horizontal = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            itemsIndexed(cells, key = { _, c -> c.photo.id }) { i, c ->
-                val p = c.photo
-                val inOpenStack = c.open
-                val chosen = p.id in lib.selected
-                Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp))
-                    .then(if (chosen) Modifier.border(3.dp, Color.White, RoundedCornerShape(5.dp))
-                    else if (inOpenStack) Modifier.border(2.dp, C.accent.copy(alpha = 0.7f), RoundedCornerShape(5.dp)) else Modifier)
-                    .combinedClickable(
-                        onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells.map { it.photo }, i) },
-                        onLongClick = { lib.toggleSelect(p.id) })) {
-                    RemoteImage(lib, p, RemotePreview.THUMB, Modifier.fillMaxSize(), crop = true)
-                    if (p.flag == "reject") Box(Modifier.fillMaxSize().background(Color(0x99000000)))
-                    if (p.flag != "none") Box(Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp).clip(CircleShape)
-                        .background(if (p.flag == "pick") C.pick.second else C.reject.second), contentAlignment = Alignment.Center) {
-                        Icon(if (p.flag == "pick") Icons.Filled.Check else Icons.Filled.Close, null,
-                            tint = if (p.flag == "pick") C.pick.first else C.reject.first, modifier = Modifier.size(12.dp))
-                    }
-                    labelColors[p.label.lowercase()]?.let {
-                        Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(11.dp).clip(CircleShape).background(it))
-                    }
-                    // pila: copertina con il numero di foto; tocco sul numero = apri / chiudi (come in LightCraft)
-                    if (c.cover && c.stack != null) Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)
-                        .clip(RoundedCornerShape(4.dp)).background(if (c.open) C.accent else Color(0xCC000000))
-                        .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
-                        Text((if (c.open) "▾ " else "▣ ") + c.stack.photos.size, color = if (c.open) Color.Black else Color.White,
-                            fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                    if (chosen) Box(Modifier.fillMaxSize().background(Color(0x553B82F6)), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(26.dp).clip(CircleShape).background(C.accent), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    // modifica fatta sul telefono, non ancora in LightCraft
-                    if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
-                        .background(Color(0xFFFB923C)))
-                    if (p.rating > 0) Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
-                        .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
-                        repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
-                    }
+        return
+    }
+    val cells = lib.cells()
+    itemsIndexed(cells, key = { _, c -> "lib" + c.photo.id }) { i, c ->
+        val p = c.photo
+        val chosen = p.id in lib.selected
+        Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp))
+            .then(if (chosen) Modifier.border(3.dp, Color.White, RoundedCornerShape(5.dp))
+            else if (c.open) Modifier.border(2.dp, C.accent.copy(alpha = 0.7f), RoundedCornerShape(5.dp)) else Modifier)
+            .combinedClickable(
+                onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells.map { it.photo }, i) },
+                onLongClick = { lib.toggleSelect(p.id) })) {
+            RemoteImage(lib, p, RemotePreview.THUMB, Modifier.fillMaxSize(), crop = true)
+            if (p.flag == "reject") Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+            if (p.flag != "none") Box(Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp).clip(CircleShape)
+                .background(if (p.flag == "pick") C.pick.second else C.reject.second), contentAlignment = Alignment.Center) {
+                Icon(if (p.flag == "pick") Icons.Filled.Check else Icons.Filled.Close, null,
+                    tint = if (p.flag == "pick") C.pick.first else C.reject.first, modifier = Modifier.size(12.dp))
+            }
+            labelColors[p.label.lowercase()]?.let {
+                Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(11.dp).clip(CircleShape).background(it))
+            }
+            // pila: copertina con il numero di foto; tocco sul numero = apri / chiudi (come in LightCraft)
+            if (c.cover && c.stack != null) Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                .clip(RoundedCornerShape(4.dp)).background(if (c.open) C.accent else Color(0xCC000000))
+                .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
+                Text((if (c.open) "▾ " else "▣ ") + c.stack.photos.size, color = if (c.open) Color.Black else Color.White,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            if (chosen) Box(Modifier.fillMaxSize().background(Color(0x553B82F6)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(26.dp).clip(CircleShape).background(C.accent), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
                 }
             }
+            // modifica fatta sul telefono, non ancora in LightCraft
+            if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
+                .background(Color(0xFFFB923C)))
+            if (p.rating > 0) Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
+                .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
+                repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
+            }
+        }
+    }
+}
+
+/** Barra della selezione multipla, fissa in basso (resta raggiungibile anche scorrendo la griglia). */
+@Composable
+fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
+    var asking by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var trashing by remember { mutableStateOf(false) }
+    if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(lib.selected, jpeg) }
+    if (trashing) TrashDialog(lib.selected.size, onDismiss = { trashing = false }) { trashing = false; lib.trash(lib.selected) }
+    if (editing) AlertDialog(onDismissRequest = { editing = false },
+        title = { Text(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos")) },
+        text = { EditControls(lib, lib.selected, null) },
+        confirmButton = { TextButton(onClick = { editing = false }) { Text(L.t("Fine", "Done")) } })
+    Column(modifier.fillMaxWidth().background(Color(0xF2253650)).navigationBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { lib.clearSelection() }) { Icon(Icons.Filled.Close, L.t("Annulla", "Cancel"), tint = C.text) }
+            Text(L.t("${lib.selected.size} selezionate", "${lib.selected.size} selected"), color = C.text, fontSize = 15.sp,
+                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { lib.selectAll() }) { Text(L.t("Tutte", "All")) }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            TextButton(onClick = { editing = true }) { Text(L.t("Modifica", "Edit")) }
+            TextButton(onClick = { asking = true }) { Text(L.t("Scarica", "Download")) }
+            TextButton(onClick = { lib.stack(lib.selected) }, enabled = lib.selected.size >= 2) { Text(L.t("Pila", "Stack")) }
+            TextButton(onClick = { trashing = true }) { Text(L.t("Cestino", "Trash"), color = Color(0xFFF87171)) }
         }
     }
 }
@@ -282,6 +310,7 @@ fun LibraryContent(lib: LibraryViewModel, onOpen: (List<LibPhoto>, Int) -> Unit)
 private fun Filters(lib: LibraryViewModel) {
     var menu by remember { mutableStateOf("") }
     var dates by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf(false) }
     val chipColors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
         selectedContainerColor = Color(0xFF253650), selectedLabelColor = Color(0xFFDCE8FB))
     Column {
@@ -324,11 +353,20 @@ private fun Filters(lib: LibraryViewModel) {
                 Text(if (lib.dateFrom == null && lib.dateTo == null) L.t("Date", "Dates")
                 else "${lib.dateFrom?.format(f) ?: "…"} – ${lib.dateTo?.format(f) ?: "…"}", fontSize = 13.sp)
             })
-            if (lib.filtering) TextButton(onClick = { lib.clearFilters() }) { Text(L.t("Azzera", "Clear")) }
+            FilterChip(lib.text.isNotBlank() || search, { search = !search }, colors = chipColors,
+                leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
+                label = { Text(lib.text.ifBlank { L.t("Cerca", "Search") }, fontSize = 13.sp, maxLines = 1) })
+            if (lib.filtering) TextButton(onClick = { lib.clearFilters(); search = false }) { Text(L.t("Azzera", "Clear")) }
         }
-        OutlinedTextField(lib.text, { lib.text = it }, singleLine = true,
-            placeholder = { Text(L.t("Cerca nome, titolo, parole chiave…", "Search name, title, keywords…"), fontSize = 13.sp) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp))
+        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+        if (search) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        if (search) OutlinedTextField(lib.text, { lib.text = it }, singleLine = true,
+            placeholder = { Text(L.t("Nome, titolo, parole chiave…", "Name, title, keywords…"), fontSize = 13.sp) },
+            trailingIcon = {
+                IconButton(onClick = { lib.text = ""; search = false }) { Icon(Icons.Filled.Close, L.t("Cancella", "Clear"), tint = C.text) }
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)
+                .focusRequester(focus))
     }
     if (dates) {
         val zone = ZoneOffset.UTC
@@ -344,9 +382,16 @@ private fun Filters(lib: LibraryViewModel) {
         }, dismissButton = {
             TextButton(onClick = { lib.dateFrom = null; lib.dateTo = null; dates = false }) { Text(L.t("Tutte le date", "Any date")) }
         }) {
+            // intestazione compatta: inizio e fine su una riga sola
+            val f = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+            fun day(ms: Long?) = ms?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(f) } ?: "…"
             DateRangePicker(state, Modifier.weight(1f), title = {
-                Text(L.t("Data di scatto", "Capture date"), Modifier.padding(start = 24.dp, top = 16.dp))
-            })
+                Text(L.t("Data di scatto", "Capture date"), fontSize = 13.sp, color = C.muted,
+                    modifier = Modifier.padding(start = 20.dp, top = 14.dp))
+            }, headline = {
+                Text("${day(state.selectedStartDateMillis)} – ${day(state.selectedEndDateMillis)}", fontSize = 18.sp,
+                    maxLines = 1, modifier = Modifier.padding(start = 20.dp, end = 12.dp, bottom = 8.dp))
+            }, showModeToggle = false)
         }
     }
 }
@@ -373,8 +418,11 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     var info by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
     var texts by remember { mutableStateOf(false) }
+    var trashing by remember { mutableStateOf(false) }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
     if (texts) TextsDialog(p, onDismiss = { texts = false }) { t, c, k -> texts = false; lib.setTexts(p.id, t, c, k) }
+    if (trashing) TrashDialog(1, onDismiss = { trashing = false }) { trashing = false; lib.trash(listOf(p.id)) }
+    val inTrash = lib.edits[p.id]?.trash == true
     if (asking) DownloadDialog(1, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(listOf(p.id), jpeg) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
@@ -389,6 +437,10 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     Text(p.name + (if (p.copyName.isNotEmpty()) " · ${p.copyName}" else ""), color = C.text, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${pager.currentPage + 1} / ${list.size} · ${dateText(p.captured)}", color = C.muted, fontSize = 12.sp)
+                }
+                IconButton(onClick = { trashing = true }, enabled = !inTrash) {
+                    Icon(Icons.Filled.Delete, L.t("Nel cestino di LightCraft", "Move to LightCraft's trash"),
+                        tint = if (inTrash) C.muted else C.text)
                 }
                 IconButton(onClick = { asking = true }) {
                     Icon(Icons.Filled.KeyboardArrowDown, L.t("Scarica sul telefono", "Download to the phone"), tint = C.text)
@@ -421,7 +473,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     p.creator.takeIf { it.isNotEmpty() }?.let { L.t("Autore", "Creator") to it },
                     p.copyright.takeIf { it.isNotEmpty() }?.let { "Copyright" to it },
                     (L.t("File", "File") to p.path),
-                    lib.index?.stackOf?.get(p.id)?.let { L.t("Pila", "Stack") to L.t("${it.photos.size} foto", "${it.photos.size} photos") },
+                    lib.stackOf(p.id)?.let { L.t("Pila", "Stack") to L.t("${it.photos.size} foto", "${it.photos.size} photos") },
                 )
                 rows.forEach { (k, v) ->
                     Row { Text(k, color = C.muted, fontSize = 12.sp, modifier = Modifier.width(96.dp)); Text(v, color = C.text, fontSize = 13.sp) }
@@ -430,12 +482,18 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
             // modifica: stelle, bandierina, etichetta, testi
             Column(Modifier.fillMaxWidth().background(Color(0xD9141414)).navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (inTrash) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(L.t("Nel cestino di LightCraft (in attesa del PC di casa).", "In LightCraft's trash (waiting for the home PC)."),
+                        color = Color(0xFFF87171), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { lib.untrash(p.id) }) { Text(L.t("Annulla", "Undo")) }
+                }
                 EditControls(lib, listOf(p.id), p)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { texts = true }) { Text(L.t("Titolo e parole chiave…", "Title and keywords…")) }
                     if (p.id in lib.edits) Text(if (lib.edits.getValue(p.id).sent > 0)
-                        L.t("Inviata: entra in LightCraft quando il PC di casa la applica.", "Sent: enters LightCraft when the home PC applies it.")
-                        else L.t("Da inviare al NAS.", "To be sent to the NAS."), color = Color(0xFFFB923C), fontSize = 12.sp)
+                        (tip(L.t("Inviata: entra in LightCraft quando il PC di casa la applica.", "Sent: enters LightCraft when the home PC applies it."),
+                            L.t("Inviata", "Sent")) ?: "")
+                        else L.t("Da inviare", "To send"), color = Color(0xFFFB923C), fontSize = 12.sp)
                 }
             }
             }

@@ -20,6 +20,10 @@ data class LibEdit(
     val title: String? = null,
     val caption: String? = null,
     val keywords: List<String>? = null,
+    /** true = nel cestino di LightCraft, false = ripristinare, null = non toccato. */
+    val trash: Boolean? = null,
+    /** In una pila con copertina questa foto (id); null = non toccato. */
+    val stack: Int? = null,
     val at: Long = 0,
     val sent: Long = 0,
 ) {
@@ -28,7 +32,7 @@ data class LibEdit(
         title = title ?: p.title, caption = caption ?: p.caption, keywords = keywords ?: p.keywords)
 
     /** La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. */
-    fun settledIn(p: LibPhoto) = (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
+    fun settledIn(p: LibPhoto, home: LibStack?) = trash != true && (stack == null || home?.photos?.contains(stack) == true) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
         (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords)
 }
@@ -52,6 +56,8 @@ object LibraryEdits {
                 title = e.optString("title").takeIf { e.has("title") },
                 caption = e.optString("caption").takeIf { e.has("caption") },
                 keywords = e.optJSONArray("keywords")?.let { a -> (0 until a.length()).map { a.getString(it) } },
+                trash = if (e.has("trash")) e.getBoolean("trash") else null,
+                stack = if (e.has("stack")) e.getInt("stack") else null,
                 at = e.optLong("at"), sent = e.optLong("sent"))
         }
     }.getOrDefault(emptyMap())
@@ -75,6 +81,8 @@ object LibraryEdits {
         e.title?.let { put("title", it) }
         e.caption?.let { put("caption", it) }
         e.keywords?.let { put("keywords", JSONArray(it)) }
+        e.trash?.let { put("trash", it) }
+        e.stack?.let { put("stack", it) }
     }
 
     /** Lascia sul NAS una richiesta con le modifiche indicate (file nascosto finché non è completo). */
