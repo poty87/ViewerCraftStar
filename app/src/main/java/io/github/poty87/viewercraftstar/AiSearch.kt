@@ -40,8 +40,11 @@ object AiStore {
     /** Cartella del modello del telefono descritto dal manifest (una per modello e compressione, condivisa tra librerie). */
     fun modelDir(context: Context, m: JSONObject): File? {
         val ph = m.optJSONObject("phone") ?: return null
-        val data = ph.optJSONObject("files")?.optJSONObject(ph.optString("onnx") + ".data")?.optString("sha256") ?: ""
-        return File(modelRoot(context), "${ph.optString("model")}-${ph.optInt("bits")}-${data.take(12)}")
+        val files = ph.optJSONObject("files")
+        val data = files?.optJSONObject(ph.optString("onnx") + ".data")?.optString("sha256") ?: ""
+        // anche il file .onnx: un modello nuovo può avere gli stessi pesi e un grafo diverso
+        val onnx = files?.optJSONObject(ph.optString("onnx"))?.optString("sha256") ?: ""
+        return File(modelRoot(context), "${ph.optString("model")}-${ph.optInt("bits")}-${data.take(12)}-${onnx.take(8)}")
     }
 
     /** Il modello del telefono per questa libreria è già scaricato e completo. */
@@ -133,6 +136,10 @@ object AiStore {
             val sha = info.getString("sha256")
             val dest = File(dir, name)
             if (dest.exists() && dest.length() == size) { before += size; progress(before, total); continue }
+            // lo stesso file già scaricato per un'altra versione del modello (di solito i pesi): si sposta, non si riscarica
+            val same = modelRoot(context).listFiles()?.filter { it.isDirectory && it != dir }
+                ?.map { File(it, name) }?.firstOrNull { it.length() == size && sha256(it) == sha }
+            if (same != null && same.renameTo(dest)) { before += size; progress(before, total); continue }
             val part = File(dir, "$name.part")
             Remote.use(cfg, share) { s ->
                 Remote.open(s, join(folder, lib, "ia", "telefono", name)).use { r ->
@@ -256,6 +263,8 @@ class TextEncoder(dir: File) : AutoCloseable {
     private val session: OrtSession
     private val maxLen = info.optInt("max_len", 77)
     private val pad = info.optInt("pad_id", 1)
+    /** Modelli da PresetCraftAppLicator 1.18.0: la frase va passata lunga quanto è (molto più veloce). */
+    private val dynamicLen = info.optBoolean("dynamic_len", false)
     private val input = info.optString("input", "input_ids")
 
     init {
@@ -268,10 +277,10 @@ class TextEncoder(dir: File) : AutoCloseable {
 
     fun encode(text: String): FloatArray {
         val ids = tokenizer.encode(text)
-        val arr = LongArray(maxLen) { pad.toLong() }
+        val arr = LongArray(if (dynamicLen) minOf(maxLen, ids.size) else maxLen) { pad.toLong() }
         for (i in 0 until minOf(maxLen, ids.size)) arr[i] = ids[i].toLong()
         if (ids.size > maxLen) arr[maxLen - 1] = tokenizer.eos.toLong() // frase troppo lunga: si tronca, chiusa con </s>
-        OnnxTensor.createTensor(env, LongBuffer.wrap(arr), longArrayOf(1, maxLen.toLong())).use { t ->
+        OnnxTensor.createTensor(env, LongBuffer.wrap(arr), longArrayOf(1, arr.size.toLong())).use { t ->
             session.run(mapOf(input to t)).use { r ->
                 @Suppress("UNCHECKED_CAST")
                 val out = (r[0].value as Array<FloatArray>)[0]
