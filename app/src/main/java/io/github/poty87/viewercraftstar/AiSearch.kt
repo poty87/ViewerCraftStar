@@ -18,6 +18,7 @@ import java.security.MessageDigest
  *   manifest.json   modello, numero di foto, file del telefono (con dimensione e SHA-256)
  *   visivo.bin      un'impronta per foto: "VCSV", formato, dimensione, quante, tipo (1 = float16), id (int32), vettori
  *   telefono/       la parte "testo" del modello (ONNX, pesi compressi) + tokenizer.json
+ *   descrizioni.json.gz  (facoltativo) una o due frasi e le parole chiave per foto, scritte da Qwen3-VL sul PC
  * Sul telefono: la frase diventa un'impronta (ONNX Runtime) e si confronta con quelle delle foto.
  */
 object AiStore {
@@ -33,6 +34,8 @@ object AiStore {
         File(libDir(context, lib), "manifest.json").takeIf { it.exists() }?.let { runCatching { JSONObject(it.readText()) }.getOrNull() }
 
     fun visualFile(context: Context, lib: String) = File(libDir(context, lib), "visivo.bin")
+
+    fun descriptionsFile(context: Context, lib: String) = File(libDir(context, lib), "descrizioni.json.gz")
 
     /** Cartella del modello del telefono descritto dal manifest (una per modello e compressione, condivisa tra librerie). */
     fun modelDir(context: Context, m: JSONObject): File? {
@@ -84,9 +87,30 @@ object AiStore {
                     }
                 }
                 tmp.renameTo(vis)
-                File(dir, "manifest.json").writeText(text)
                 AiEngine.forget(vis)
             }
+            // descrizioni: si riscaricano quando cambiano (dimensione diversa da quella del manifest)
+            val desc = remote.optJSONObject("descriptions")
+            val descFile = File(dir, "descrizioni.json.gz")
+            if (desc != null && descFile.length() != desc.optLong("size")) {
+                val tmp = File(dir, "descrizioni.json.gz.tmp")
+                Remote.open(s, join(folder, lib, "ia", desc.optString("file", "descrizioni.json.gz"))).use { r ->
+                    tmp.outputStream().use { out ->
+                        var at = 0L
+                        while (at < r.size) {
+                            val chunk = r.read(at, 1024 * 1024)
+                            if (chunk.isEmpty()) break
+                            out.write(chunk)
+                            at += chunk.size
+                        }
+                    }
+                }
+                tmp.renameTo(descFile)
+                AiEngine.forget(descFile)
+            } else if (desc == null && descFile.exists()) {
+                descFile.delete()
+            }
+            if (!same || local?.optJSONObject("descriptions")?.toString() != desc?.toString()) File(dir, "manifest.json").writeText(text)
             remote
         }
     }
@@ -264,6 +288,76 @@ class TextEncoder(dir: File) : AutoCloseable {
     }
 }
 
+/**
+ * Le descrizioni delle foto scritte dal PC (Qwen3-VL): il testo per i dettagli della foto e, per la ricerca, le parole
+ * normalizzate (minuscole, senza accenti, senza la vocale finale: «gatto» e «gatti» sono la stessa parola).
+ */
+class Descriptions(file: File) {
+    val text: Map<Int, String>
+    private val words = HashMap<Int, Set<String>>()
+
+    init {
+        val raw = java.util.zip.GZIPInputStream(file.inputStream()).use { it.readBytes().toString(Charsets.UTF_8) }
+        val items = JSONObject(raw).optJSONObject("items") ?: JSONObject()
+        val m = HashMap<Int, String>(items.length() * 2)
+        items.keys().forEach { k -> k.toIntOrNull()?.let { m[it] = items.getString(k) } }
+        text = m
+    }
+
+    fun has(id: Int) = id in text
+
+    private fun wordsOf(id: Int): Set<String> = words.getOrPut(id) { stems(text[id] ?: "").toSet() }
+
+    /**
+     * Quota delle parole della ricerca presenti nella descrizione (0..1), o null se la foto non ha descrizione.
+     * Una parola conta anche se nella descrizione c'è un suo sinonimo (vedi SINONIMI).
+     */
+    fun match(id: Int, query: List<String>): Float? {
+        if (id !in text) return null
+        if (query.isEmpty()) return 0f
+        val w = wordsOf(id)
+        return query.count { q -> q in w || SINONIMI[q]?.any { it in w } == true }.toFloat() / query.size
+    }
+
+    companion object {
+        private val STOP = ("di a da in con su per tra fra il lo la i gli le un uno una e o al allo alla ai agli alle del " +
+            "dello della dei degli delle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle col coi che " +
+            "foto immagine").split(' ').toSet()
+
+        /**
+         * Sinonimi (già normalizzati come da stems): il modello delle descrizioni scrive spesso «auto classica» o
+         * «vintage» invece di «d'epoca», «scooter» o «Vespa» invece di «motorino».
+         */
+        private val GRUPPI = listOf(
+            listOf("epoc", "classic", "vintag", "storic", "retr", "antic"),
+            listOf("motorin", "scooter", "vesp", "ciclomotor", "motociclett", "mot"),
+            listOf("aut", "macchin", "automobil", "vettur"),
+            listOf("bambin", "bimb", "ragazzin", "fanciull"),
+            listOf("can", "cagnolin", "cucciol"),
+            listOf("gatt", "gattin", "micin", "felin"),
+            listOf("donn", "ragazz", "signor"),
+            listOf("uom", "ragazz", "signor"),
+            listOf("bici", "biciclett", "mountain", "bik"),
+            listOf("mar", "spiagg", "litoral", "cost"),
+            listOf("montagn", "mont", "vett", "alpin"),
+            listOf("tort", "dolc", "compleann"),
+            listOf("matrimoni", "spos", "nozz"),
+        )
+        private val SINONIMI: Map<String, Set<String>> = buildMap<String, MutableSet<String>> {
+            for (g in GRUPPI) for (w in g) getOrPut(w) { mutableSetOf() }.addAll(g - w)
+        }
+
+        /** Le parole "significative" di un testo, normalizzate come sul PC (ricerca ibrida provata sulle foto vere). */
+        fun stems(t: String): List<String> {
+            val n = java.text.Normalizer.normalize(t.lowercase(), java.text.Normalizer.Form.NFD)
+                .replace(Regex("\\p{M}+"), "").replace('\'', ' ').replace('\u2019', ' ')
+            return Regex("[a-z0-9]+").findAll(n).map { it.value }
+                .filter { it.length > 2 && it !in STOP }
+                .map { if (it.length >= 4 && it.last() in "aeiou") it.dropLast(1) else it }.toList()
+        }
+    }
+}
+
 /** Modello e impronte tenuti in memoria tra una ricerca e l'altra (caricarli costa qualche secondo). */
 object AiEngine {
     private var encoder: TextEncoder? = null
@@ -271,6 +365,21 @@ object AiEngine {
     private var index: VisualIndex? = null
     private var indexFile: File? = null
     private var indexStamp = 0L
+    private var desc: Descriptions? = null
+    private var descFile: File? = null
+    private var descStamp = 0L
+
+    /** Le descrizioni della libreria, o null se non ci sono. */
+    @Synchronized
+    fun descriptions(file: File): Descriptions? {
+        if (!file.exists()) return null
+        if (descFile != file || desc == null || descStamp != file.lastModified()) {
+            desc = runCatching { Descriptions(file) }.getOrNull()
+            descFile = file
+            descStamp = file.lastModified()
+        }
+        return desc
+    }
 
     @Synchronized
     fun encoder(dir: File): TextEncoder {
@@ -295,6 +404,7 @@ object AiEngine {
     @Synchronized
     fun forget(file: File) {
         if (indexFile == file) { index = null; indexFile = null }
+        if (descFile == file) { desc = null; descFile = null }
     }
 
     @Synchronized

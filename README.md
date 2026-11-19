@@ -75,7 +75,10 @@ folder on the NAS (*Automatic import › Libraries to browse on the phone*; set 
   [MetaCLIP 2](https://github.com/facebookresearch/MetaCLIP), CC BY-NC 4.0: non-commercial use only). The first time the
   app downloads from the NAS the text part of the model (about 830 MB, once; *Settings* shows its size and deletes it);
   then search runs on the phone, even without the NAS, in about 2 seconds. Search starts with *Search* on the keyboard
-  or after a short pause; *Names and keywords* searches the text instead.
+  or after a short pause; *Names and keywords* searches the text instead. If the PC also wrote **descriptions** of the
+  photos (PresetCraftAppLicator 1.17.0, optional), photos whose description contains the words searched for move up:
+  more precise in the details (colours, objects, a car rather than a scooter). The description shows in the photo's
+  details, and *Names and keywords* searches it too.
 - **Filter**: the row has *Search*, *All filters* and *Stars*. *All filters* opens a panel with everything together —
   text or subject, stars, capture dates, colour labels, camera, flag, file type (RAW, JPEG, TIFF/PSD) — applied with
   *Apply*; the button turns blue with the number of filters set in it, *Clear all* removes them.
@@ -226,7 +229,10 @@ di servizio sul NAS (*Importazione automatica › Librerie da consultare sul tel
   PresetCraftAppLicator (1.16.0 o successivo, modello [MetaCLIP 2](https://github.com/facebookresearch/MetaCLIP), CC BY-NC
   4.0: solo uso non commerciale). La prima volta l'app scarica dal NAS la parte "testo" del modello (circa 830 MB, una volta
   sola; in *Impostazioni* vedi quanto occupa e lo elimini); poi la ricerca gira sul telefono, anche senza NAS, in circa 2
-  secondi. Parte con *Cerca* sulla tastiera o dopo una breve pausa; *Nomi e parole chiave* cerca invece nel testo.
+  secondi. Parte con *Cerca* sulla tastiera o dopo una breve pausa; *Nomi e parole chiave* cerca invece nel testo. Se il
+  PC ha scritto anche le **descrizioni** delle foto (PresetCraftAppLicator 1.17.0, facoltative), salgono le foto la cui
+  descrizione contiene le parole cercate: più precisione nei dettagli (colori, oggetti, un'auto e non una Vespa). La
+  descrizione si vede nei dettagli della foto, e *Nomi e parole chiave* cerca anche lì.
 - **Filtra**: nella riga ci sono *Cerca*, *Tutti i filtri* e *Stelle*. *Tutti i filtri* apre un pannello con tutto insieme
   — testo o soggetto, stelle, date di scatto, etichette colore, fotocamera, bandierina, tipo di file (RAW, JPEG, TIFF/PSD)
   — che si applica con *Applica*; il pulsante diventa blu con il numero dei filtri impostati lì, *Azzera tutto* li toglie.

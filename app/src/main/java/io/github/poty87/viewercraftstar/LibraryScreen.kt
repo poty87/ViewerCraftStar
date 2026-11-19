@@ -647,6 +647,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     p.title.takeIf { it.isNotEmpty() }?.let { L.t("Titolo", "Title") to it },
                     p.caption.takeIf { it.isNotEmpty() }?.let { L.t("Didascalia", "Caption") to it },
                     p.keywords.takeIf { it.isNotEmpty() }?.let { L.t("Parole chiave", "Keywords") to it.joinToString(", ") },
+                    lib.aiDescription(p.id)?.takeIf { it.isNotEmpty() }?.let { L.t("Descrizione (IA)", "Description (AI)") to it },
                     (L.t("Scatto", "Taken") to dateText(p.captured)),
                     p.camera.takeIf { it.isNotEmpty() }?.let { L.t("Fotocamera", "Camera") to it },
                     p.lens.takeIf { it.isNotEmpty() }?.let { L.t("Obiettivo", "Lens") to it },

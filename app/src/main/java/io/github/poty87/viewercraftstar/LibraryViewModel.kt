@@ -61,6 +61,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private var aiScores by mutableStateOf<Map<Int, Float>?>(null)
     private var aiScoresFor by mutableStateOf("")
     private var aiJob: Job? = null
+    /** Media delle 5 foto più somiglianti (solo per immagine) dell'ultima ricerca per soggetto. */
+    @Volatile private var aiTop5 = 0f
     private val aiLock = Mutex() // un calcolo alla volta: il modello usa già più core
 
     /** Ricerca per soggetto in attesa: i risultati mostrati non sono ancora quelli della frase scritta. */
@@ -122,11 +124,22 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val e = enc.encode(aiPhrase(q))
                     val t3 = System.currentTimeMillis()
                     val sc = vi.scores(e)
+                    // la soglia "vicino alle migliori" si calcola sui punteggi visivi: le descrizioni possono solo far
+                    // salire o scendere le foto, non spostare la soglia (altrimenti ne escludono di giuste)
+                    aiTop5 = sc.sortedArrayDescending().take(5).average().toFloat()
+                    // descrizioni (se ci sono): sale chi ha le parole cercate, scende un po' chi è descritta ma non le ha
+                    val desc = AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))
+                    val qw = Descriptions.stems(q)
+                    if (desc != null && qw.isNotEmpty()) for (i in sc.indices) {
+                        val m = desc.match(vi.ids[i], qw) ?: continue
+                        // tutte le parole (o sinonimi): sale; solo alcune: resta dov'è; nessuna: scende un po'
+                        sc[i] += when { m >= 1f -> AI_DESC_BONUS; m > 0f -> 0f; else -> -AI_DESC_BONUS / 2 }
+                    }
                     val t4 = System.currentTimeMillis()
                     val top = sc.indices.sortedByDescending { sc[it] }.take(8)
                         .joinToString { "${idx.byId[vi.ids[it]]?.name ?: vi.ids[it]} %.3f".format(sc[it]) }
                     val line = "«$q» (${idx.library}): modello ${t1 - t0} ms, impronte ${t2 - t1} ms (${vi.ids.size} foto), " +
-                        "frase ${t3 - t2} ms, confronto ${t4 - t3} ms; sopra ${"%.3f".format(AI_MIN)}: ${sc.count { it >= AI_MIN }}, " +
+                        "frase ${t3 - t2} ms, confronto ${t4 - t3} ms, descrizioni ${desc?.text?.size ?: 0}; sopra ${"%.3f".format(AI_MIN)}: ${sc.count { it >= AI_MIN }}, " +
                         "sopra ${"%.3f".format(AI_MIN_MORE)}: ${sc.count { it >= AI_MIN_MORE }}; primi: $top"
                     android.util.Log.i("VcsAi", line)
                     logSearch(line)
@@ -151,6 +164,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         val l = q.lowercase()
         val already = listOf("foto", "una foto", "fotografia", "immagine", "photo", "a photo", "picture").any { l.startsWith(it) }
         return if (already) q else "una foto di $q"
+    }
+
+    /** La descrizione della foto scritta dal PC (motore IA), o null. */
+    fun aiDescription(id: Int): String? {
+        val idx = index ?: return null
+        return AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))?.text?.get(id)
+            ?.substringBefore("Parole chiave:")?.trim()
     }
 
     /** Quante foto ha trovato la ricerca per soggetto in corso (dopo soglia e doppioni), o null se non attiva. */
@@ -444,7 +464,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
         val q = if (useText) text.trim().lowercase() else ""
         if (q.isNotEmpty() && listOf(p.name, p.title, p.caption, p.copyName).none { it.lowercase().contains(q) } &&
-            p.keywords.none { it.lowercase().contains(q) }) return false
+            p.keywords.none { it.lowercase().contains(q) } && aiDescription(p.id)?.lowercase()?.contains(q) != true) return false
         return true
     }
 
@@ -473,7 +493,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val candidates = ordered.filter { edits[it.id]?.trash != true && it.id in scores && matches(it, useText = false) }
             // soglia che si adatta alla ricerca: fissa, ma mai troppo sotto le 5 foto migliori (le ricerche con persone
             // hanno punteggi più alti per tutte le foto con persone: senza, «donna con il cappello» darebbe 600 foto)
-            val top5 = scores.values.sortedDescending().take(5).average().toFloat()
+            val top5 = aiTop5
             val normal = maxOf(minAiScore(), top5 - AI_BAND)
             val more = maxOf(minAiScoreMore(), top5 - AI_BAND_MORE)
             val cutoff = if (aiShowMore) more else normal
@@ -528,6 +548,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
         /** Al massimo quanti risultati mostra la ricerca per soggetto. */
         const val AI_RESULTS = 600
+        /** Quanto sale una foto con tutte le parole cercate nella descrizione (provato sulle foto vere: 0,04). */
+        const val AI_DESC_BONUS = 0.04f
         const val AI_MIN = 0.19f
         const val AI_MIN_MORE = 0.175f
         /** Quanto sotto la media delle 5 migliori si può stare (e con "meno somiglianti"). */
