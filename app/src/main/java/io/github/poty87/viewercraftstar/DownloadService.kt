@@ -115,8 +115,10 @@ class DownloadService : Service() {
                 Remote.open(s, path).use { r ->
                     cr.openOutputStream(uri)?.use { out ->
                         if (jpeg) {
-                            val bytes = RemotePreview.pick(r, photo, RemotePreview.FULL)?.first ?: error("no preview")
-                            out.write(bytes)
+                            val picked = RemotePreview.pick(r, photo, RemotePreview.FULL) ?: error("no preview")
+                            if (picked.isPlainJpeg) out.write(picked.jpeg)
+                            else (RemotePreview.decode(picked, Int.MAX_VALUE) ?: error("no preview"))
+                                .compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
                         } else {
                             var at = 0L
                             while (at < r.size) {

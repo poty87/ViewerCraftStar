@@ -14,8 +14,10 @@ android {
         applicationId = "io.github.poty87.viewercraftstar"
         minSdk = 33 // Android 13: permesso READ_MEDIA_IMAGES
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.10.0"
+        versionCode = 20
+        versionName = "0.11.0"
+        // librerie native (ONNX Runtime per la ricerca IA): solo telefoni a 64 bit (tutti quelli con Android 13+)
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     // firma delle release: chiave e password in keystore.properties (fuori dal repository, mai pubblicati)
@@ -45,6 +47,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     packaging {
+        // librerie native compresse nell'APK: il download è molto più piccolo (si estraggono all'installazione)
+        jniLibs { useLegacyPackaging = true }
         resources { excludes += setOf("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/versions/**", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*") }
     }
 }
@@ -60,5 +64,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     // SMB2/3 verso il NAS (Apache 2.0)
     implementation("com.hierynomus:smbj:0.13.0")
+    // ricerca per soggetti: la parte "testo" del modello IA sul telefono (MIT)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     testImplementation("junit:junit:4.13.2")
+    // org.json vero nei test sul PC (quello di Android lì è solo uno stub)
+    testImplementation("org.json:json:20240303")
 }

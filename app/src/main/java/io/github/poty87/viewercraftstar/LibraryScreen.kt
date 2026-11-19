@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -310,77 +312,83 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
 private fun Filters(lib: LibraryViewModel) {
     var menu by remember { mutableStateOf("") }
     var dates by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf(false) }
+    // il campo di ricerca è aperto finché c'è una ricerca (anche tornando dal visualizzatore) o finché l'ha aperto l'utente
+    val search = lib.searchOpen || lib.text.isNotBlank()
+    var focusNow by remember { mutableStateOf(false) }
+    var advanced by remember { mutableStateOf(false) }
     val chipColors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
         selectedContainerColor = Color(0xFF253650), selectedLabelColor = Color(0xFFDCE8FB))
     Column {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(search, {
+                if (search && lib.text.isBlank()) lib.searchOpen = false else { lib.searchOpen = true; focusNow = true }
+            }, colors = chipColors,
+                leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
+                label = { Text(lib.text.ifBlank { L.t("Cerca", "Search") }, fontSize = 13.sp, maxLines = 1) })
+            // tutti i parametri insieme, con "Applica": acceso e con il numero dei filtri attivi lì dentro (date, etichette,
+            // fotocamera, bandierina, tipo di file), così un filtro impostato non passa inosservato
+            val inside = lib.advancedCount
+            FilterChip(inside > 0, { advanced = true }, colors = chipColors,
+                leadingIcon = { Icon(Icons.Filled.Menu, null, modifier = Modifier.size(16.dp)) },
+                label = { Text(L.t("Tutti i filtri", "All filters") + if (inside > 0) " · $inside" else "", fontSize = 13.sp) })
             Box {
                 FilterChip(lib.stars != StarFilter.ANY, { menu = "stars" }, label = { Text(starsText(lib.stars), fontSize = 13.sp) }, colors = chipColors)
                 DropdownMenu(menu == "stars", { menu = "" }) {
                     StarFilter.entries.forEach { f -> DropdownMenuItem({ Text(starsText(f)) }, onClick = { lib.stars = f; menu = "" }) }
                 }
             }
-            Box {
-                FilterChip(lib.flag.isNotEmpty(), { menu = "flag" }, label = { Text(flagText(lib.flag), fontSize = 13.sp) }, colors = chipColors)
-                DropdownMenu(menu == "flag", { menu = "" }) {
-                    listOf("", "pick", "reject", "none").forEach { f -> DropdownMenuItem({ Text(flagText(f)) }, onClick = { lib.flag = f; menu = "" }) }
-                }
-            }
-            Box {
-                FilterChip(lib.labels.isNotEmpty(), { menu = "label" }, colors = chipColors, label = {
-                    Text(if (lib.labels.isEmpty()) L.t("Etichetta", "Label") else lib.labels.joinToString(", ") { labelName(it) }, fontSize = 13.sp)
-                })
-                DropdownMenu(menu == "label", { menu = "" }) {
-                    labelColors.forEach { (key, color) ->
-                        DropdownMenuItem({ Text((if (key in lib.labels) "✓ " else "    ") + labelName(key)) },
-                            leadingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) },
-                            onClick = { lib.labels = if (key in lib.labels) lib.labels - key else lib.labels + key })
-                    }
-                }
-            }
-            if (lib.cameras.size > 1) Box {
-                FilterChip(lib.camera.isNotEmpty(), { menu = "camera" }, colors = chipColors,
-                    label = { Text(lib.camera.ifEmpty { L.t("Fotocamera", "Camera") }, fontSize = 13.sp, maxLines = 1) })
-                DropdownMenu(menu == "camera", { menu = "" }) {
-                    DropdownMenuItem({ Text(L.t("Tutte", "All")) }, onClick = { lib.camera = ""; menu = "" })
-                    lib.cameras.forEach { c -> DropdownMenuItem({ Text(c) }, onClick = { lib.camera = c; menu = "" }) }
-                }
-            }
-            FilterChip(lib.dateFrom != null || lib.dateTo != null, { dates = true }, colors = chipColors, label = {
-                val f = DateTimeFormatter.ofPattern("dd/MM/yy")
-                Text(if (lib.dateFrom == null && lib.dateTo == null) L.t("Date", "Dates")
-                else "${lib.dateFrom?.format(f) ?: "…"} – ${lib.dateTo?.format(f) ?: "…"}", fontSize = 13.sp)
-            })
-            FilterChip(lib.text.isNotBlank() || search, { search = !search }, colors = chipColors,
-                leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
-                label = { Text(lib.text.ifBlank { L.t("Cerca", "Search") }, fontSize = 13.sp, maxLines = 1) })
-            if (lib.filtering) TextButton(onClick = { lib.clearFilters(); search = false }) { Text(L.t("Azzera", "Clear")) }
+            if (lib.filtering) TextButton(onClick = { lib.clearFilters(); lib.searchOpen = false }) { Text(L.t("Azzera", "Clear")) }
         }
         val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-        if (search) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        if (search && focusNow) LaunchedEffect(Unit) { runCatching { focus.requestFocus() }; focusNow = false }
+        val ai = lib.aiMode && lib.aiAvailable
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        // ricerca per soggetto: i risultati si calcolano dopo una breve pausa di scrittura
+        LaunchedEffect(lib.text, lib.aiMode, lib.aiModelReady, lib.aiPending) { lib.requestAi() }
         if (search) OutlinedTextField(lib.text, { lib.text = it }, singleLine = true,
-            placeholder = { Text(L.t("Nome, titolo, parole chiave…", "Name, title, keywords…"), fontSize = 13.sp) },
-            trailingIcon = {
-                IconButton(onClick = { lib.text = ""; search = false }) { Icon(Icons.Filled.Close, L.t("Cancella", "Clear"), tint = C.text) }
+            placeholder = {
+                Text(if (ai) L.t("Cosa cerchi? es. gatti, auto d'epoca, tramonto al mare", "What are you looking for? e.g. cats, vintage car, sunset at the beach")
+                else L.t("Nome, titolo, parole chiave…", "Name, title, keywords…"), fontSize = 13.sp, maxLines = 1)
             },
+            trailingIcon = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (lib.aiBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = C.accent)
+                    IconButton(onClick = { lib.text = ""; lib.searchOpen = false }) { Icon(Icons.Filled.Close, L.t("Cancella", "Clear"), tint = C.text) }
+                }
+            },
+            // "Cerca" sulla tastiera: la ricerca per soggetto parte subito
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = {
+                lib.requestAi(now = true)
+                keyboard?.hide()
+            }),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)
                 .focusRequester(focus))
+        if (search && lib.aiAvailable) AiSearchBar(lib)
     }
-    if (dates) {
+    if (dates) DateRangeDialog(lib.dateFrom, lib.dateTo, { a, b -> lib.dateFrom = a; lib.dateTo = b; dates = false }) { dates = false }
+    if (advanced) AdvancedSearchSheet(lib) { advanced = false }
+}
+
+/** Intervallo di date di scatto: OK con l'intervallo scelto, "Tutte le date" per toglierlo. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateRangeDialog(from: java.time.LocalDate?, to: java.time.LocalDate?,
+                            onPick: (java.time.LocalDate?, java.time.LocalDate?) -> Unit, onDismiss: () -> Unit) {
+    run {
         val zone = ZoneOffset.UTC
         val state = rememberDateRangePickerState(
-            initialSelectedStartDateMillis = lib.dateFrom?.atStartOfDay(zone)?.toInstant()?.toEpochMilli(),
-            initialSelectedEndDateMillis = lib.dateTo?.atStartOfDay(zone)?.toInstant()?.toEpochMilli())
-        DatePickerDialog(onDismissRequest = { dates = false }, confirmButton = {
+            initialSelectedStartDateMillis = from?.atStartOfDay(zone)?.toInstant()?.toEpochMilli(),
+            initialSelectedEndDateMillis = to?.atStartOfDay(zone)?.toInstant()?.toEpochMilli())
+        DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
             TextButton(onClick = {
-                lib.dateFrom = state.selectedStartDateMillis?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
-                lib.dateTo = state.selectedEndDateMillis?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() } ?: lib.dateFrom
-                dates = false
+                val a = state.selectedStartDateMillis?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+                val b = state.selectedEndDateMillis?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() } ?: a
+                onPick(a, b)
             }) { Text("OK") }
         }, dismissButton = {
-            TextButton(onClick = { lib.dateFrom = null; lib.dateTo = null; dates = false }) { Text(L.t("Tutte le date", "Any date")) }
+            TextButton(onClick = { onPick(null, null) }) { Text(L.t("Tutte le date", "Any date")) }
         }) {
             // intestazione compatta: inizio e fine su una riga sola
             val f = DateTimeFormatter.ofPattern("dd/MM/yyyy")
@@ -394,6 +402,181 @@ private fun Filters(lib: LibraryViewModel) {
             }, showModeToggle = false)
         }
     }
+}
+
+/** Sotto il campo di ricerca: cercare per soggetto (IA) o nel testo; la prima volta, il download del modello. */
+@Composable
+private fun AiSearchBar(lib: LibraryViewModel) {
+    val chipColors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
+        selectedContainerColor = C.accent.copy(alpha = 0.25f), selectedLabelColor = C.text)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(lib.aiMode, { lib.aiMode = true }, colors = chipColors,
+                label = { Text(L.t("Per soggetto (IA)", "By subject (AI)"), fontSize = 13.sp) })
+            FilterChip(!lib.aiMode, { lib.aiMode = false }, colors = chipColors,
+                label = { Text(L.t("Nomi e parole chiave", "Names and keywords"), fontSize = 13.sp) })
+        }
+        val dl = lib.aiDownload
+        if (lib.aiPending) Text(L.t("Cerco «${lib.text.trim()}»… (premi Cerca sulla tastiera per partire subito)",
+            "Searching for “${lib.text.trim()}”… (press Search on the keyboard to start right away)"),
+            color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        val found = lib.aiFound
+        if (lib.aiActive && !lib.aiPending && found != null) Text(
+            if (found == 0) L.t("Nessuna foto per «${lib.text.trim()}» (prova a dirlo in un altro modo)", "No photos for “${lib.text.trim()}” (try saying it another way)")
+            else L.t("$found foto per «${lib.text.trim()}», dalla più somigliante", "$found photos for “${lib.text.trim()}”, most similar first"),
+            color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        if (lib.aiActive && !lib.aiPending && found != null && lib.aiMore > 0)
+            TextButton(onClick = { lib.aiShowMore = true }) {
+                Text(L.t("Mostra anche le meno somiglianti (altre ${lib.aiMore})", "Also show less similar ones (${lib.aiMore} more)"))
+            }
+        if (lib.aiMode && !lib.aiModelReady) {
+            val mb = lib.aiModelSize / 1_000_000
+            if (dl != null) {
+                Text(L.t("Scarico il modello IA… ${dl.first / 1_000_000} di ${dl.second / 1_000_000} MB",
+                    "Downloading the AI model… ${dl.first / 1_000_000} of ${dl.second / 1_000_000} MB"),
+                    color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { if (dl.second > 0) dl.first.toFloat() / dl.second else 0f }, color = C.accent,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+            } else {
+                Text(tip(L.t("Per cercare per soggetto serve il modello IA ($mb MB), da scaricare una volta dal NAS: meglio in Wi-Fi a casa. Poi la ricerca funziona anche senza NAS.",
+                    "Searching by subject needs the AI model ($mb MB), downloaded once from the NAS: better on home Wi-Fi. Then search works even without the NAS."),
+                    L.t("Serve il modello IA ($mb MB), una volta.", "Needs the AI model ($mb MB), once.")) ?: "",
+                    color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                TextButton(onClick = { lib.downloadAiModel() }) { Text(L.t("Scarica il modello ($mb MB)", "Download the model ($mb MB)")) }
+            }
+        }
+    }
+}
+
+/**
+ * Ricerca con tutti i parametri insieme (testo o soggetto, stelle, date, etichette, fotocamera, bandierina, tipo di file):
+ * si sceglie tutto e poi "Applica". Le scelte restano una bozza finché non si applica.
+ */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AdvancedSearchSheet(lib: LibraryViewModel, onClose: () -> Unit) {
+    var text by remember { mutableStateOf(lib.text) }
+    var aiMode by remember { mutableStateOf(lib.aiMode) }
+    var stars by remember { mutableStateOf(lib.stars) }
+    var from by remember { mutableStateOf(lib.dateFrom) }
+    var to by remember { mutableStateOf(lib.dateTo) }
+    var labels by remember { mutableStateOf(lib.labels) }
+    var camera by remember { mutableStateOf(lib.camera) }
+    var flag by remember { mutableStateOf(lib.flag) }
+    var fileType by remember { mutableStateOf(lib.fileType) }
+    var pickDates by remember { mutableStateOf(false) }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val chipColors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
+        selectedContainerColor = Color(0xFF253650), selectedLabelColor = Color(0xFFDCE8FB))
+
+    @Composable
+    fun Section(title: String) = Text(title, color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onClose, containerColor = C.bg,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        // pulsanti fissi in basso (sopra la tastiera), le scelte scorrono sopra
+        Column(Modifier.fillMaxWidth().imePadding()) {
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 8.dp)) {
+            Text(L.t("Cerca le foto", "Find photos"), color = C.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Section(if (lib.aiAvailable) L.t("Cosa c'è nella foto, o nome e parole chiave", "What's in the photo, or name and keywords")
+                else L.t("Nome, titolo, parole chiave", "Name, title, keywords"))
+            OutlinedTextField(text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(if (lib.aiAvailable && aiMode) L.t("es. gatti, auto d'epoca, tramonto al mare", "e.g. cats, vintage car, sunset at the beach")
+                    else L.t("es. IMG_1234, compleanno…", "e.g. IMG_1234, birthday…"), fontSize = 13.sp)
+                },
+                trailingIcon = { if (text.isNotEmpty()) IconButton(onClick = { text = "" }) { Icon(Icons.Filled.Close, null, tint = C.text) } },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide() }))
+            if (lib.aiAvailable) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 6.dp)) {
+                FilterChip(aiMode, { aiMode = true }, colors = chipColors, label = { Text(L.t("Per soggetto (IA)", "By subject (AI)"), fontSize = 13.sp) })
+                FilterChip(!aiMode, { aiMode = false }, colors = chipColors, label = { Text(L.t("Nomi e parole chiave", "Names and keywords"), fontSize = 13.sp) })
+            }
+
+            Section(L.t("Stelle", "Stars"))
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StarFilter.entries.forEach { f ->
+                    FilterChip(stars == f, { stars = f }, colors = chipColors,
+                        label = { Text(if (f == StarFilter.ANY) L.t("Tutte", "All") else starsText(f), fontSize = 13.sp) })
+                }
+            }
+
+            Section(L.t("Data di scatto", "Capture date"))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val f = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                FilterChip(from != null || to != null, { pickDates = true }, colors = chipColors, label = {
+                    Text(if (from == null && to == null) L.t("Tutte le date", "Any date")
+                    else "${from?.format(f) ?: "…"} – ${to?.format(f) ?: "…"}", fontSize = 13.sp)
+                })
+                if (from != null || to != null) TextButton(onClick = { from = null; to = null }) { Text(L.t("Togli", "Remove")) }
+            }
+
+            Section(L.t("Etichetta", "Label"))
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                labelColors.forEach { (key, color) ->
+                    FilterChip(key in labels, { labels = if (key in labels) labels - key else labels + key }, colors = chipColors,
+                        leadingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) },
+                        label = { Text(labelName(key), fontSize = 13.sp) })
+                }
+            }
+
+            if (lib.cameras.size > 1) {
+                Section(L.t("Fotocamera", "Camera"))
+                var open by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.OutlinedButton(onClick = { open = true }) {
+                        Text(if (camera.isEmpty()) L.t("Tutte le fotocamere", "All cameras") else cameraName(camera), color = C.text)
+                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = C.text)
+                    }
+                    DropdownMenu(open, { open = false }) {
+                        DropdownMenuItem({ Text(L.t("Tutte le fotocamere", "All cameras")) }, onClick = { camera = ""; open = false })
+                        lib.cameras.forEach { c -> DropdownMenuItem({ Text(cameraName(c)) }, onClick = { camera = c; open = false }) }
+                    }
+                }
+            }
+
+            Section(L.t("Bandierina", "Flag"))
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("", "pick", "reject", "none").forEach { f ->
+                    FilterChip(flag == f, { flag = f }, colors = chipColors, label = { Text(flagText(f), fontSize = 13.sp) })
+                }
+            }
+
+            Section(L.t("Tipo di file", "File type"))
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("" to L.t("Tutti", "All"), "raw" to "RAW", "jpeg" to "JPEG", "tiff" to "TIFF / PSD").forEach { (k, name) ->
+                    FilterChip(fileType == k, { fileType = k }, colors = chipColors, label = { Text(name, fontSize = 13.sp) })
+                }
+            }
+
+        }
+            Row(Modifier.fillMaxWidth().background(C.bg).padding(horizontal = 20.dp, vertical = 10.dp).navigationBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    lib.clearFilters()
+                    lib.searchOpen = false
+                    onClose()
+                }) { Text(L.t("Azzera tutto", "Clear all")) }
+                Spacer(Modifier.weight(1f))
+                androidx.compose.material3.Button(onClick = {
+                    lib.text = text.trim(); lib.aiMode = aiMode; lib.stars = stars; lib.dateFrom = from; lib.dateTo = to
+                    lib.labels = labels; lib.camera = camera; lib.flag = flag; lib.fileType = fileType
+                    lib.searchOpen = text.isNotBlank()
+                    lib.requestAi(now = true)
+                    onClose()
+                }) { Text(L.t("Applica", "Apply")) }
+            }
+        }
+    }
+    if (pickDates) DateRangeDialog(from, to, { a, b -> from = a; to = b; pickDates = false }) { pickDates = false }
+}
+
+/** Il nome della fotocamera senza la marca ripetuta (i dati EXIF spesso hanno "Nikon" + "Nikon D90"). */
+private fun cameraName(c: String): String {
+    val first = c.substringBefore(' ')
+    return if (first.isNotEmpty() && c.startsWith("$first $first", ignoreCase = true)) c.substring(first.length + 1) else c
 }
 
 private fun starsText(f: StarFilter) = when (f) {

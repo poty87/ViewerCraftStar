@@ -10,7 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import kotlin.coroutines.cancellation.CancellationException
 import java.time.LocalDate
 
 /** Stelle: tutte, esattamente 5, almeno N, nessuna. */
@@ -37,9 +41,165 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     var flag by mutableStateOf("")            // "", pick, reject, none
     var labels by mutableStateOf(setOf<String>())
     var text by mutableStateOf("")
+    /** Il campo di ricerca è aperto (resta così anche aprendo una foto e tornando indietro). */
+    var searchOpen by mutableStateOf(false)
     var camera by mutableStateOf("")
     var dateFrom by mutableStateOf<LocalDate?>(null)
     var dateTo by mutableStateOf<LocalDate?>(null)
+    /** Tipo di file: "" tutti, "raw", "jpeg", "tiff". */
+    var fileType by mutableStateOf("")
+
+    // ---- ricerca per soggetti (IA): catalogo preparato dal PC di casa, modello "testo" sul telefono
+    /** Cercare per soggetto (IA) invece che nei nomi e nelle parole chiave. */
+    var aiMode by mutableStateOf(true)
+    /** Il manifest del catalogo IA della libreria (null = la libreria non è stata analizzata dal PC). */
+    var aiManifest by mutableStateOf<JSONObject?>(null); private set
+    var aiModelReady by mutableStateOf(false); private set
+    /** Download del modello in corso: (byte arrivati, totale). */
+    var aiDownload by mutableStateOf<Pair<Long, Long>?>(null); private set
+    var aiBusy by mutableStateOf(false); private set
+    private var aiScores by mutableStateOf<Map<Int, Float>?>(null)
+    private var aiScoresFor by mutableStateOf("")
+    private var aiJob: Job? = null
+    private val aiLock = Mutex() // un calcolo alla volta: il modello usa già più core
+
+    /** Ricerca per soggetto in attesa: i risultati mostrati non sono ancora quelli della frase scritta. */
+    val aiPending: Boolean get() = aiActive && aiScoresFor != text.trim()
+
+    /** La libreria ha un catalogo IA sul telefono. */
+    val aiAvailable: Boolean get() = aiManifest != null && index?.let { AiStore.visualFile(getApplication(), it.library).exists() } == true
+    /** Si sta cercando per soggetto. */
+    val aiActive: Boolean get() = aiMode && aiAvailable && aiModelReady && text.isNotBlank()
+    val aiModelSize: Long get() = AiStore.modelSize(aiManifest)
+
+    private fun loadAiLocal(lib: String) {
+        val m = AiStore.manifest(getApplication(), lib)
+        aiManifest = m
+        aiModelReady = AiStore.modelReady(getApplication(), m)
+        aiScores = null
+        aiScoresFor = ""
+    }
+
+    /** Aggiorna dal NAS il catalogo IA della libreria (solo se cambiato). */
+    private suspend fun syncAi(name: String) {
+        val m = runCatching { AiStore.syncLibrary(getApplication(), settings.nas, share, settings.libFolder, name) }.getOrNull()
+        if (current == name) {
+            val next = m ?: AiStore.manifest(getApplication(), name)
+            val changed = next?.optString("updated") != aiManifest?.optString("updated") ||
+                next?.optString("model") != aiManifest?.optString("model")
+            aiManifest = next
+            aiModelReady = AiStore.modelReady(getApplication(), aiManifest)
+            if (changed) { // catalogo nuovo: la ricerca in corso si rifà con quello
+                aiScores = null
+                aiScoresFor = ""
+                memo = null
+            }
+        }
+    }
+
+    /**
+     * Calcola i risultati della ricerca per soggetto per la frase scritta: subito con "Cerca" sulla tastiera
+     * (`now`), altrimenti dopo una pausa di scrittura (il modello impiega circa un secondo o due per frase).
+     */
+    fun requestAi(now: Boolean = false) {
+        val q = text.trim()
+        if (!aiMode || !aiAvailable || !aiModelReady || q.isEmpty() || q == aiScoresFor) return
+        val idx = index ?: return
+        val m = aiManifest ?: return
+        val dir = AiStore.modelDir(getApplication(), m) ?: return
+        val file = AiStore.visualFile(getApplication(), idx.library)
+        aiJob?.cancel()
+        aiJob = viewModelScope.launch {
+            if (!now) delay(1000)
+            aiBusy = true
+            val r = runCatching {
+                aiLock.withLock { withContext(Dispatchers.Default) {
+                    val t0 = System.currentTimeMillis()
+                    val enc = AiEngine.encoder(dir)
+                    val t1 = System.currentTimeMillis()
+                    val vi = AiEngine.index(file)
+                    val t2 = System.currentTimeMillis()
+                    val e = enc.encode(aiPhrase(q))
+                    val t3 = System.currentTimeMillis()
+                    val sc = vi.scores(e)
+                    val t4 = System.currentTimeMillis()
+                    val top = sc.indices.sortedByDescending { sc[it] }.take(8)
+                        .joinToString { "${idx.byId[vi.ids[it]]?.name ?: vi.ids[it]} %.3f".format(sc[it]) }
+                    val line = "«$q» (${idx.library}): modello ${t1 - t0} ms, impronte ${t2 - t1} ms (${vi.ids.size} foto), " +
+                        "frase ${t3 - t2} ms, confronto ${t4 - t3} ms; sopra ${"%.3f".format(AI_MIN)}: ${sc.count { it >= AI_MIN }}, " +
+                        "sopra ${"%.3f".format(AI_MIN_MORE)}: ${sc.count { it >= AI_MIN_MORE }}; primi: $top"
+                    android.util.Log.i("VcsAi", line)
+                    logSearch(line)
+                    HashMap<Int, Float>(vi.ids.size * 2).also { map -> vi.ids.forEachIndexed { i, id -> map[id] = sc[i] } }
+                } }
+            }
+            if (aiJob == coroutineContext[Job]) aiBusy = false
+            r.onSuccess { if (text.trim() == q) { aiScores = it; aiScoresFor = q; aiShowMore = false; memo = null } }
+                .onFailure { e ->
+                    if (e is CancellationException) return@onFailure // superata da una ricerca più nuova: non è un errore
+                    android.util.Log.w("VcsAi", "ricerca non riuscita", e)
+                    say("error", L.t("Ricerca IA non riuscita: ", "AI search failed: ") + (e.message ?: e.javaClass.simpleName))
+                }
+        }
+    }
+
+    /**
+     * La frase data al modello: questi modelli rendono meglio con "una foto di …" che con la parola nuda (provato sulle
+     * foto vere: «insetti» da 6 a 8 insetti veri nei primi 10). Se la frase parla già di foto si lascia com'è.
+     */
+    private fun aiPhrase(q: String): String {
+        val l = q.lowercase()
+        val already = listOf("foto", "una foto", "fotografia", "immagine", "photo", "a photo", "picture").any { l.startsWith(it) }
+        return if (already) q else "una foto di $q"
+    }
+
+    /** Quante foto ha trovato la ricerca per soggetto in corso (dopo soglia e doppioni), o null se non attiva. */
+    var aiFound by mutableStateOf<Int?>(null); private set
+    /** Quante altre, meno somiglianti, si vedrebbero con "Mostra anche le meno somiglianti". */
+    var aiMore by mutableStateOf(0); private set
+    /** Mostrare anche le meno somiglianti (soglia più bassa) per la ricerca in corso. */
+    var aiShowMore by mutableStateOf(false)
+
+    /** Registro delle ricerche (frase, tempi, quanti risultati, i primi): per capire cosa migliorare. */
+    private fun logSearch(line: String) {
+        runCatching {
+            val dir = getApplication<Application>().getExternalFilesDir(null) ?: return
+            val f = java.io.File(dir, "ricerche-ia.log")
+            if (f.length() > 2_000_000) f.delete()
+            f.appendText("${java.time.LocalDateTime.now().withNano(0)} $line\n")
+        }
+    }
+
+    /** Scarica il modello "testo" dal NAS (una volta; riprende se interrotto). */
+    fun downloadAiModel() {
+        val idx = index ?: return
+        val m = aiManifest ?: return
+        if (aiDownload != null || !configured) return
+        val cfg = settings.nas
+        viewModelScope.launch {
+            aiDownload = 0L to AiStore.modelSize(m)
+            val r = runCatching {
+                AiStore.downloadModel(getApplication(), cfg, share, settings.libFolder, idx.library, m) { d, t -> aiDownload = d to t }
+            }
+            aiDownload = null
+            r.onSuccess {
+                aiModelReady = AiStore.modelReady(getApplication(), m)
+                say("ok", L.t("Modello IA scaricato: ora puoi cercare per soggetto.", "AI model downloaded: you can now search by subject."))
+                requestAi()
+            }.onFailure { e ->
+                say("warn", L.t("Download del modello interrotto: riprova, riparte da dove era arrivato. ", "Model download interrupted: try again, it resumes where it stopped. ") +
+                    (e.message ?: ""))
+            }
+        }
+    }
+
+    fun deleteAiModel() {
+        AiStore.deleteModels(getApplication())
+        aiModelReady = false
+        aiScores = null
+        aiScoresFor = ""
+        memo = null
+    }
 
     /** Modifiche fatte sul telefono non ancora confermate dalla libreria di casa (id → modifica). */
     var edits by mutableStateOf<Map<Int, LibEdit>>(emptyMap()); private set
@@ -169,10 +329,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     val filtering: Boolean
         get() = stars != StarFilter.ANY || flag.isNotEmpty() || labels.isNotEmpty() || text.isNotBlank() ||
-            camera.isNotEmpty() || dateFrom != null || dateTo != null
+            camera.isNotEmpty() || dateFrom != null || dateTo != null || fileType.isNotEmpty()
+
+    /** Quanti filtri sono attivi tra quelli che stanno solo nel pannello "Tutti i filtri". */
+    val advancedCount: Int
+        get() = listOf(dateFrom != null || dateTo != null, labels.isNotEmpty(), camera.isNotEmpty(), flag.isNotEmpty(),
+            fileType.isNotEmpty()).count { it }
 
     fun clearFilters() {
         stars = StarFilter.ANY; flag = ""; labels = emptySet(); text = ""; camera = ""; dateFrom = null; dateTo = null
+        fileType = ""
     }
 
     val cameras: List<String> get() = index?.photos?.map { it.camera }?.filter { it.isNotEmpty() }?.distinct()?.sorted() ?: emptyList()
@@ -196,6 +362,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun show(idx: LibIndex) {
         val sameLibrary = index?.library == idx.library
         index = idx
+        if (!sameLibrary) loadAiLocal(idx.library)
         if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
@@ -220,6 +387,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val idx = withContext(Dispatchers.IO) { LibraryStore.load(getApplication(), name) }
                     if (current != name) { current = name; settings.library = name; index = null; clearFilters() }
                     if (idx != null && (index == null || index?.updated != idx.updated || index?.library != idx.library)) show(idx)
+                    syncAi(name)
                 }
                 names
             }
@@ -260,7 +428,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private var memo: Pair<List<Any?>, List<Cell>>? = null
 
-    private fun matches(p: LibPhoto): Boolean {
+    private fun matches(p: LibPhoto, useText: Boolean = true): Boolean {
         if (stars != StarFilter.ANY) {
             if (stars.exact && p.rating != stars.min) return false
             if (!stars.exact && p.rating < stars.min) return false
@@ -268,12 +436,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (flag.isNotEmpty() && p.flag != flag) return false
         if (labels.isNotEmpty() && p.label.lowercase() !in labels) return false
         if (camera.isNotEmpty() && p.camera != camera) return false
+        if (fileType.isNotEmpty() && fileTypeOf(p.name) != fileType) return false
         if (dateFrom != null || dateTo != null) {
             val d = runCatching { LocalDate.parse(p.captured.take(10)) }.getOrNull() ?: return false
             if (dateFrom != null && d < dateFrom) return false
             if (dateTo != null && d > dateTo) return false
         }
-        val q = text.trim().lowercase()
+        val q = if (useText) text.trim().lowercase() else ""
         if (q.isNotEmpty() && listOf(p.name, p.title, p.caption, p.copyName).none { it.lowercase().contains(q) } &&
             p.keywords.none { it.lowercase().contains(q) }) return false
         return true
@@ -285,15 +454,43 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun cells(): List<Cell> {
         val idx = index ?: return emptyList()
-        val key = listOf(idx, stars, flag, labels, text, camera, dateFrom, dateTo, expanded, edits)
+        val key = listOf(idx, stars, flag, labels, text, camera, dateFrom, dateTo, fileType, expanded, edits, aiActive, aiScores,
+            aiScoresFor, aiShowMore)
         memo?.let { (k, v) -> if (k == key) return v }
         val stackOf = stackMap(idx)
         stacksNow = stackOf
         val ordered = idx.photos.map { effective(it) }
             .sortedWith(compareByDescending<LibPhoto> { it.captured }.thenByDescending { it.id })
         val out = ArrayList<Cell>()
-        if (filtering) {
-            for (p in ordered) if (edits[p.id]?.trash != true && matches(p)) out += Cell(p, stackOf[p.id], cover = false, open = false)
+        aiFound = null
+        val scores = aiScores
+        if (aiActive && aiScoresFor != text.trim()) {
+            // la frase scritta non è ancora stata cercata: niente risultati di una ricerca precedente
+        } else if (aiActive && scores != null) {
+            // per soggetto: le più somiglianti prima; dello stesso scatto in due formati (DNG + JPG) solo una. Solo quelle
+            // vicine alla migliore e sopra una soglia minima: se il soggetto non c'è, nessun risultato (non 150 a caso)
+            val seen = HashSet<String>()
+            val candidates = ordered.filter { edits[it.id]?.trash != true && it.id in scores && matches(it, useText = false) }
+            // soglia che si adatta alla ricerca: fissa, ma mai troppo sotto le 5 foto migliori (le ricerche con persone
+            // hanno punteggi più alti per tutte le foto con persone: senza, «donna con il cappello» darebbe 600 foto)
+            val top5 = scores.values.sortedDescending().take(5).average().toFloat()
+            val normal = maxOf(minAiScore(), top5 - AI_BAND)
+            val more = maxOf(minAiScoreMore(), top5 - AI_BAND_MORE)
+            val cutoff = if (aiShowMore) more else normal
+            aiMore = if (aiShowMore) 0 else candidates.count { scores.getValue(it.id) in more..<normal }
+            candidates.asSequence()
+                .filter { scores.getValue(it.id) >= cutoff }
+                .sortedByDescending { scores.getValue(it.id) }
+                .filter { p ->
+                    // tutte le foto che corrispondono, anche della stessa pila (una pila è spesso una serie dello stesso
+                    // soggetto: la Giulia, la piscina); si toglie solo lo stesso scatto in due formati (DNG + JPG)
+                    seen.add(p.name.substringBeforeLast('.').lowercase() + "|" + p.copyName)
+                }
+                .take(AI_RESULTS)
+                .forEach { out += Cell(it, stackOf[it.id], cover = false, open = false) }
+            aiFound = out.size
+        } else if (filtering) {
+            for (p in ordered) if (edits[p.id]?.trash != true && matches(p, useText = !aiActive)) out += Cell(p, stackOf[p.id], cover = false, open = false)
         } else {
             for (p in ordered) {
                 if (edits[p.id]?.trash == true) continue // nel cestino (in attesa del PC)
@@ -308,6 +505,34 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
         memo = key to out
         return out
+    }
+
+    /**
+     * Punteggio minimo per essere tra i risultati, misurato sulle foto vere con MetaCLIP 2 giant e "una foto di …":
+     * piscina, donna con il cappello, motorino rosso, auto d'epoca hanno le foto giuste fin verso 0,19-0,20; sotto
+     * prevalgono quelle che non c'entrano. "Mostra anche le meno somiglianti" scende a 0,175.
+     */
+    private fun minAiScore(): Float = if (aiManifest?.optString("model") == "metaclip2-giant") AI_MIN else 0.15f
+    private fun minAiScoreMore(): Float = if (aiManifest?.optString("model") == "metaclip2-giant") AI_MIN_MORE else 0.13f
+
+    companion object {
+        private val RAW = setOf("dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "orf", "rw2", "raf", "pef", "srw", "x3f", "3fr", "iiq")
+
+        /** "raw", "jpeg", "tiff" o "altro" dall'estensione del file. */
+        fun fileTypeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+            in RAW -> "raw"
+            "jpg", "jpeg" -> "jpeg"
+            "tif", "tiff", "psd" -> "tiff"
+            else -> "altro"
+        }
+
+        /** Al massimo quanti risultati mostra la ricerca per soggetto. */
+        const val AI_RESULTS = 600
+        const val AI_MIN = 0.19f
+        const val AI_MIN_MORE = 0.175f
+        /** Quanto sotto la media delle 5 migliori si può stare (e con "meno somiglianti"). */
+        const val AI_BAND = 0.05f
+        const val AI_BAND_MORE = 0.065f
     }
 
     fun toggle(stack: LibStack) {

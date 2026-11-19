@@ -33,12 +33,27 @@ class PreviewTest {
             if (!File(path).exists()) { report.append("MANCA  $path\n"); continue }
             val photo = LibPhoto(1, File(path).name, path, "", "", 0, "none", "", "raw", 0, 0)
             FileSource(path).use { src ->
-                val jpegs = runCatching { RemotePreview.tiffJpegs(src)?.first?.map { "${it.width}x${it.height}@${it.offset}+${it.length}" } }
+                val jpegs = runCatching { RemotePreview.tiffJpegs(src)?.first?.map { "${it.width}x${it.height}@${it.offset}+${it.length}" + (it.tiles?.let { t -> "[${t.size} tasselli${if (it.develop != null) " da sviluppare" else ""}]" } ?: "") } }
                 for (side in listOf(RemotePreview.THUMB, RemotePreview.FULL)) {
                     val r = runCatching { RemotePreview.pick(src, photo, side) }
-                    val bytes = r.getOrNull()?.first
-                    val ok = bytes != null && bytes.size > 4 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()
-                    report.append("${if (ok) "OK   " else "NO   "} $side ${File(path).name}: ${bytes?.size ?: 0} byte" +
+                    val picked = r.getOrNull()
+                    fun jpeg(b: ByteArray) = b.size > 4 && b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte()
+                    val bytes = picked?.let { if (it.tiles.isEmpty()) it.jpeg else it.tiles.reduce { a, b -> a + b } }
+                    val px = picked?.pixels
+                    val ok = picked != null && when {
+                        px != null -> px.size == picked.width * picked.height && px.distinct().size > 16
+                        picked.tiles.isEmpty() -> jpeg(picked.jpeg)
+                        else -> picked.tiles.all(::jpeg)
+                    }
+                    if (px != null) { // i pixel letti, da guardare (PPM: formato senza compressione)
+                        val out = java.io.ByteArrayOutputStream()
+                        out.write("P6\n${picked.width} ${picked.height}\n255\n".toByteArray())
+                        for (c in px) { out.write(c shr 16 and 0xFF); out.write(c shr 8 and 0xFF); out.write(c and 0xFF) }
+                        File(System.getProperty("java.io.tmpdir"), "vcs-pixels-${File(path).nameWithoutExtension}-$side.ppm")
+                            .writeBytes(out.toByteArray())
+                    }
+                    report.append("${if (ok) "OK   " else "NO   "} $side ${File(path).name}: " +
+                        (if (px != null) "pixel ${picked.width}x${picked.height}" else "${bytes?.size ?: 0} byte") + (if (picked?.develop != null) " SVILUPPO" else "") +
                         (r.exceptionOrNull()?.let { " ERRORE $it" } ?: "") + " | jpeg trovati ${jpegs.getOrNull()}\n")
                 }
             }

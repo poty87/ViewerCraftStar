@@ -647,7 +647,7 @@ private fun Field(label: String, value: String, lines: Int = 1, password: Boolea
 // ---------------------------------------------------------------- impostazioni
 
 @Composable
-fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit) {
     val s = vm.settings
     val nas = remember { s.nas }
     var host by remember { mutableStateOf(nas.host) }
@@ -721,6 +721,20 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             color = C.muted, fontSize = 12.sp)
         Field(L.t("Cartella condivisa (vuota = la stessa di sopra)", "Shared folder (empty = the same as above)"), libShare) { libShare = it }
         Field(L.t("Cartella delle librerie dentro la condivisione (es. ViewerCraftStar)", "Libraries folder inside the share (e.g. ViewerCraftStar)"), libFolder) { libFolder = it }
+        // ricerca per soggetti: il modello IA scaricato occupa spazio (centinaia di MB)
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var aiBytes by remember { mutableStateOf(AiStore.modelsSize(context)) }
+        SectionLabel(L.t("Ricerca per soggetti (IA)", "Search by subject (AI)"), Modifier.padding(top = 12.dp))
+        if (!Tips.compact) Text(L.t("Nella Libreria, «Cerca» trova le foto per quello che contengono («gatti», «auto d'epoca») se la libreria è stata analizzata con il motore IA di PresetCraftAppLicator. Il modello si scarica una volta dal NAS alla prima ricerca.",
+            "In the Library, “Search” finds photos by what they contain (“cats”, “vintage car”) if the library has been analyzed with PresetCraftAppLicator's AI engine. The model is downloaded once from the NAS at the first search."),
+            color = C.muted, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (aiBytes > 0) L.t("Modello sul telefono: ${aiBytes / 1_000_000} MB", "Model on the phone: ${aiBytes / 1_000_000} MB")
+            else L.t("Modello non ancora scaricato", "Model not downloaded yet"), color = C.text, modifier = Modifier.weight(1f))
+            if (aiBytes > 0) OutlinedButton(onClick = { libVm.deleteAiModel(); aiBytes = AiStore.modelsSize(context) }) {
+                Text(L.t("Elimina", "Delete"))
+            }
+        }
 
         SectionLabel(L.t("Notifiche della spedizione", "Sending notifications"), Modifier.padding(top = 12.dp))
         if (!Tips.compact) Text(L.t("Dopo «Spedisci al NAS» una notifica mostra quante foto, con i loro metadati, sono già al sicuro sul NAS.",

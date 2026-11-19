@@ -64,16 +64,25 @@ LightCraft).
 ## Library: your home LightCraft library on the phone
 
 The **Library** tab shows your LightCraft libraries — all of them, not only the photos sent from the phone — from the
-index that [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) (1.15.0 or later) writes in a service
+index that [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) (1.15.0 or later; 1.16.0 for search by subject) writes in a service
 folder on the NAS (*Automatic import › Libraries to browse on the phone*; set the same folder in the app under
 *Settings › Home library*). Photos and catalogs stay where they are.
 
 - **Browse** by capture date, with LightCraft's **stacks** (cover and number of photos; tap the number to open or close).
-- **Filter** by stars (exactly 5, at least N, none), flag, colour labels, camera, capture dates and text (name, title,
-  keywords).
+- **Search by subject** (AI): write what is in the photo — *cats*, *vintage car*, *sunset at the beach*, *woman with a
+  hat* — and get every matching photo, most similar first (also photos of the same stack; *Also show less similar ones*
+  for more). It works for the libraries analyzed by PresetCraftAppLicator's optional AI engine (1.16.0 or later, model
+  [MetaCLIP 2](https://github.com/facebookresearch/MetaCLIP), CC BY-NC 4.0: non-commercial use only). The first time the
+  app downloads from the NAS the text part of the model (about 830 MB, once; *Settings* shows its size and deletes it);
+  then search runs on the phone, even without the NAS, in about 2 seconds. Search starts with *Search* on the keyboard
+  or after a short pause; *Names and keywords* searches the text instead.
+- **Filter**: the row has *Search*, *All filters* and *Stars*. *All filters* opens a panel with everything together —
+  text or subject, stars, capture dates, colour labels, camera, flag, file type (RAW, JPEG, TIFF/PSD) — applied with
+  *Apply*; the button turns blue with the number of filters set in it, *Clear all* removes them.
 - **View** full screen with swipe and photo details. Previews are the JPEGs the camera embedded in the files (DNG, CR2,
-  ORF, JPG; a small thumbnail for TIFFs saved by Photoshop), read from the NAS a piece at a time: they show the photo as
-  shot, not with LightCraft's edits. Thumbnails stay on the phone.
+  ORF, JPG), read from the NAS a piece at a time: they show the photo as shot, not with LightCraft's edits. DNGs saved
+  by Lightroom whose preview is split into tiles, or that only have Lightroom's "fast load data", are put together and
+  developed on the phone; TIFFs without a preview are read pixel by pixel. Thumbnails stay on the phone.
 - **Edit** stars, flags, colour labels, title, caption and keywords, one photo at a time or many at once (long press to
   select). Changes show at once with an orange dot and are left on the NAS; PresetCraftAppLicator applies them to
   LightCraft (with LightCraft closed, after a backup) and the dot disappears when the new index confirms them.
@@ -147,7 +156,8 @@ keyPassword=…
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Uses [smbj](https://github.com/hierynomus/smbj) (Apache 2.0) and Jetpack Compose (Apache 2.0).
+MIT — see [LICENSE](LICENSE). Uses [smbj](https://github.com/hierynomus/smbj) (Apache 2.0), Jetpack Compose (Apache 2.0)
+and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT) for search by subject.
 
 ---
 
@@ -210,10 +220,21 @@ di servizio sul NAS (*Importazione automatica › Librerie da consultare sul tel
 *Impostazioni › Libreria di casa*). Foto e cataloghi restano dove sono.
 - **Sfoglia** per data di scatto, con le **pile** di LightCraft (copertina e numero di foto; tocca il numero per aprirle o
   chiuderle).
-- **Filtra** per stelle (esattamente 5, almeno N, nessuna), bandierina, etichette colore, fotocamera, date di scatto e testo.
+- **Cerca per soggetto** (IA): scrivi cosa c'è nella foto — *gatti*, *auto d'epoca*, *tramonto al mare*, *donna con il
+  cappello* — e trovi tutte le foto che corrispondono, dalla più somigliante (anche quelle della stessa pila; *Mostra
+  anche le meno somiglianti* per averne di più). Funziona con le librerie analizzate dal motore IA facoltativo di
+  PresetCraftAppLicator (1.16.0 o successivo, modello [MetaCLIP 2](https://github.com/facebookresearch/MetaCLIP), CC BY-NC
+  4.0: solo uso non commerciale). La prima volta l'app scarica dal NAS la parte "testo" del modello (circa 830 MB, una volta
+  sola; in *Impostazioni* vedi quanto occupa e lo elimini); poi la ricerca gira sul telefono, anche senza NAS, in circa 2
+  secondi. Parte con *Cerca* sulla tastiera o dopo una breve pausa; *Nomi e parole chiave* cerca invece nel testo.
+- **Filtra**: nella riga ci sono *Cerca*, *Tutti i filtri* e *Stelle*. *Tutti i filtri* apre un pannello con tutto insieme
+  — testo o soggetto, stelle, date di scatto, etichette colore, fotocamera, bandierina, tipo di file (RAW, JPEG, TIFF/PSD)
+  — che si applica con *Applica*; il pulsante diventa blu con il numero dei filtri impostati lì, *Azzera tutto* li toglie.
 - **Guarda** a tutto schermo con lo scorrimento e i dettagli della foto. Le anteprime sono i JPEG che la fotocamera ha
-  messo nei file (DNG, CR2, ORF, JPG; per i TIF salvati da Photoshop una miniatura), letti dal NAS a pezzi: mostrano la foto
-  come scattata, non con le modifiche di LightCraft. Le miniature restano sul telefono.
+  messo nei file (DNG, CR2, ORF, JPG), letti dal NAS a pezzi: mostrano la foto come scattata, non con le modifiche di
+  LightCraft. I DNG salvati da Lightroom con l'anteprima divisa in tasselli, o con solo i "fast load data" di Lightroom,
+  vengono ricomposti e sviluppati sul telefono; i TIF senza anteprima si leggono pixel per pixel. Le miniature restano sul
+  telefono.
 - **Modifica** stelle, bandierine, etichette, titolo, didascalia e parole chiave, di una foto o di molte insieme (pressione
   lunga per selezionare). Le modifiche si vedono subito con un pallino arancione e vengono lasciate sul NAS;
   PresetCraftAppLicator le applica a LightCraft (con LightCraft chiuso, dopo un backup) e il pallino sparisce quando il

@@ -78,7 +78,7 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
     when (screen) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
         "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
-        "settings" -> SettingsScreen(vm) { screen = "grid"; vm.reload(); lib.refresh() }
+        "settings" -> SettingsScreen(vm, lib) { screen = "grid"; vm.reload(); lib.refresh() }
         else -> GridScreen(vm, lib, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
             onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" },
             onSettings = { screen = "settings" })
