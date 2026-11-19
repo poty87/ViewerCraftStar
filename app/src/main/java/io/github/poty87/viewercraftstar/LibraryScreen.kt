@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -104,7 +105,10 @@ private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, mo
     val dev = sig?.let { RemotePreview.Developed(lib.libShare, listOf(lib.libRoot, lib.current, "previews", "${photo.id}.jpg").joinToString("\\"), it) }
     val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB)
         RemotePreview.cachedThumb(context, idx.library, photo, dev) else null, photo.id, maxSide, sig) {
-        if (value == null) value = runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
+        // si riparte anche quando cambia lo sviluppo (sig): l'immagine vecchia resta finché arriva quella nuova
+        val cached = if (maxSide <= RemotePreview.THUMB) RemotePreview.cachedThumb(context, idx.library, photo, dev) else null
+        value = cached ?: runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
+            ?: value
     }
     Box(modifier.background(C.card), contentAlignment = Alignment.Center) {
         val b = bmp
@@ -191,7 +195,18 @@ fun TrashDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
 /** Intestazione della scheda Libreria: libreria, aggiornamento, filtri, conteggio (scorre via con la griglia). */
 @Composable
 fun LibraryHeader(lib: LibraryViewModel) {
-    LaunchedEffect(Unit) { lib.refresh() }
+    // all'apertura, a ogni ritorno nell'app e poi ogni minuto finché la Libreria resta in primo piano: le novità del
+    // PC (indice, anteprime sviluppate, ricerca IA) arrivano senza premere il tasto di aggiornamento
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    LaunchedEffect(owner) {
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            lib.refresh()
+            while (true) {
+                kotlinx.coroutines.delay(LibraryViewModel.AUTO_REFRESH_MS)
+                lib.refresh(background = true)
+            }
+        }
+    }
     if (!lib.configured) {
         Text(tip(L.t("Imposta nelle Impostazioni la cartella del NAS con le librerie (la stessa scelta in PresetCraftAppLicator › Importazione automatica › Librerie da consultare sul telefono).",
             "In Settings, set the NAS folder with the libraries (the one chosen in PresetCraftAppLicator › Automatic import › Libraries to browse on the phone)."),

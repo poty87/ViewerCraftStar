@@ -434,8 +434,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         memo = null
     }
 
-    /** Aggiorna l'elenco delle librerie sul NAS e (se cambiato) l'indice di quella scelta. */
-    fun refresh(quiet: Boolean = true) {
+    /**
+     * Aggiorna l'elenco delle librerie sul NAS e (se cambiato) l'indice di quella scelta. `background`: controllo
+     * automatico mentre la Libreria è aperta (si scarica solo ciò che è cambiato; nessun avviso se il NAS non risponde).
+     */
+    fun refresh(quiet: Boolean = true, background: Boolean = false) {
         if (!configured || loading) return
         val cfg = settings.nas
         viewModelScope.launch {
@@ -457,11 +460,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             }
             loading = false
             result.onSuccess { names ->
-                if (names.isEmpty()) say("warn", L.t("Nessuna libreria nella cartella del NAS: in PresetCraftAppLicator, Importazione automatica › Librerie da consultare sul telefono.",
+                if (names.isEmpty() && !background) say("warn", L.t("Nessuna libreria nella cartella del NAS: in PresetCraftAppLicator, Importazione automatica › Librerie da consultare sul telefono.",
                     "No library in the NAS folder: in PresetCraftAppLicator, Automatic import › Libraries to browse on the phone."))
                 else if (!quiet) say("ok", L.t("Libreria aggiornata.", "Library updated."))
                 sendPending()
             }.onFailure { e ->
+                if (background) return@onFailure
                 if (index != null) say("warn", L.t("NAS non raggiungibile: mostro l'ultima copia della libreria sul telefono.",
                     "NAS not reachable: showing the last copy of the library on the phone."))
                 else say("error", L.t("NAS non raggiungibile: ", "NAS not reachable: ") + (e.message ?: e.javaClass.simpleName))
@@ -596,6 +600,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         const val AI_DESC_BONUS = 0.04f
         /** Pausa di scrittura prima di cercare (con il modello veloce una ricerca costa ~0,1 s). */
         const val AI_PAUSE_MS = 350L
+        /** Ogni quanto, con la Libreria aperta, si guarda se sul NAS è cambiato qualcosa (pochi byte se niente). */
+        const val AUTO_REFRESH_MS = 60_000L
         /** Lettere minime per cercare mentre si scrive ("ga", "t" danno risultati a caso). */
         const val AI_MIN_CHARS = 3
         const val AI_MIN = 0.19f
