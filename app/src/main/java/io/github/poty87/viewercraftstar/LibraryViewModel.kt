@@ -68,6 +68,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** Ricerca per soggetto in attesa: i risultati mostrati non sono ancora quelli della frase scritta. */
     val aiPending: Boolean get() = aiActive && aiScoresFor != text.trim()
 
+    /** Frase troppo corta per cercare mentre si scrive (si cerca solo con "Cerca" sulla tastiera). */
+    val aiTooShort: Boolean get() = text.trim().let { it.isNotEmpty() && it.codePointCount(0, it.length) < AI_MIN_CHARS }
+
     /** La libreria ha un catalogo IA sul telefono. */
     val aiAvailable: Boolean get() = aiManifest != null && index?.let { AiStore.visualFile(getApplication(), it.library).exists() } == true
     /** Si sta cercando per soggetto. */
@@ -80,11 +83,34 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         aiModelReady = AiStore.modelReady(getApplication(), m)
         aiScores = null
         aiScoresFor = ""
+        warmUpAi()
+    }
+
+    /**
+     * Carica in anticipo, in background, modello, impronte e descrizioni della libreria e fa una frase di prova:
+     * così anche la prima ricerca è immediata (altrimenti la prima costa circa un secondo in più).
+     */
+    private fun warmUpAi() {
+        val idx = index ?: return
+        val m = aiManifest ?: return
+        if (!aiModelReady || !aiAvailable) return
+        val dir = AiStore.modelDir(getApplication(), m) ?: return
+        val file = AiStore.visualFile(getApplication(), idx.library)
+        val descFile = AiStore.descriptionsFile(getApplication(), idx.library)
+        viewModelScope.launch {
+            runCatching {
+                aiLock.withLock { withContext(Dispatchers.Default) {
+                    val t0 = System.currentTimeMillis()
+                    AiEngine.warmUp(dir, file, descFile)
+                    android.util.Log.i("VcsAi", "pronto in ${System.currentTimeMillis() - t0} ms")
+                } }
+            }.onFailure { android.util.Log.w("VcsAi", "preparazione non riuscita", it) }
+        }
     }
 
     /** Aggiorna dal NAS il catalogo IA della libreria (solo se cambiato). */
     private suspend fun syncAi(name: String) {
-        val m = runCatching { AiStore.syncLibrary(getApplication(), settings.nas, share, settings.libFolder, name) }.getOrNull()
+        val m = runCatching { AiStore.syncLibrary(getApplication(), settings.nas, share, libRoot, name) }.getOrNull()
         if (current == name) {
             val next = m ?: AiStore.manifest(getApplication(), name)
             val changed = next?.optString("updated") != aiManifest?.optString("updated") ||
@@ -96,23 +122,26 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 aiScoresFor = ""
                 memo = null
             }
+            warmUpAi()
         }
     }
 
     /**
      * Calcola i risultati della ricerca per soggetto per la frase scritta: subito con "Cerca" sulla tastiera
-     * (`now`), altrimenti dopo una pausa di scrittura (il modello impiega circa un secondo o due per frase).
+     * (`now`), altrimenti dopo una breve pausa di scrittura (una ricerca costa circa un decimo di secondo). Mentre si
+     * scrive, una o due lettere non bastano: si aspetta la terza (con "Cerca" si cerca comunque).
      */
     fun requestAi(now: Boolean = false) {
         val q = text.trim()
         if (!aiMode || !aiAvailable || !aiModelReady || q.isEmpty() || q == aiScoresFor) return
+        if (!now && aiTooShort) { aiJob?.cancel(); aiBusy = false; return }
         val idx = index ?: return
         val m = aiManifest ?: return
         val dir = AiStore.modelDir(getApplication(), m) ?: return
         val file = AiStore.visualFile(getApplication(), idx.library)
         aiJob?.cancel()
         aiJob = viewModelScope.launch {
-            if (!now) delay(1000)
+            if (!now) delay(AI_PAUSE_MS)
             aiBusy = true
             val r = runCatching {
                 aiLock.withLock { withContext(Dispatchers.Default) {
@@ -199,11 +228,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             aiDownload = 0L to AiStore.modelSize(m)
             val r = runCatching {
-                AiStore.downloadModel(getApplication(), cfg, share, settings.libFolder, idx.library, m) { d, t -> aiDownload = d to t }
+                AiStore.downloadModel(getApplication(), cfg, share, libRoot, idx.library, m) { d, t -> aiDownload = d to t }
             }
             aiDownload = null
             r.onSuccess {
                 aiModelReady = AiStore.modelReady(getApplication(), m)
+                warmUpAi()
                 say("ok", L.t("Modello IA scaricato: ora puoi cercare per soggetto.", "AI model downloaded: you can now search by subject."))
                 requestAi()
             }.onFailure { e ->
@@ -305,7 +335,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (unsent.isEmpty() || !configured) return
         val cfg = settings.nas
         viewModelScope.launch {
-            val r = runCatching { LibraryEdits.send(cfg, share, settings.libFolder, idx.library, unsent) }
+            val r = runCatching { LibraryEdits.send(cfg, share, libRoot, idx.library, unsent) }
             r.onSuccess {
                 val now = System.currentTimeMillis()
                 edits = edits.mapValues { (id, e) -> if (id in unsent && e.at == unsent.getValue(id).at) e.copy(sent = now) else e }
@@ -368,6 +398,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val share: String get() = settings.libShare.ifEmpty { settings.nas.share }
 
+    /** La cartella delle librerie sul NAS (trovata all'ultimo aggiornamento; prima, quella delle versioni recenti). */
+    private var rootFound: String? = null
+    val libRoot: String get() = rootFound ?: LibraryStore.defaultRoot(settings.libFolder)
+    val libShare: String get() = share
+
+    /** Foto con l'anteprima sviluppata da PresetCraftAppLicator (ritoccate in LightCraft): id → firma. */
+    var developed by mutableStateOf<Map<Int, String>>(emptyMap()); private set
+
+    /** Nel visualizzatore: l'anteprima della fotocamera (com'era allo scatto) invece di quella sviluppata. */
+    var showOriginal by mutableStateOf(false)
+
     init {
         if (current.isNotEmpty()) openCached(current)
     }
@@ -382,6 +423,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun show(idx: LibIndex) {
         val sameLibrary = index?.library == idx.library
         index = idx
+        developed = LibraryStore.previews(getApplication(), idx.library)
         if (!sameLibrary) loadAiLocal(idx.library)
         if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
@@ -399,12 +441,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             loading = true
             val result = runCatching {
-                val names = LibraryStore.list(cfg, share, settings.libFolder)
+                val (root, names) = LibraryStore.list(cfg, share, settings.libFolder)
+                rootFound = root
                 libraries = names
                 val name = current.takeIf { it in names } ?: names.firstOrNull() ?: ""
                 if (name.isNotEmpty()) {
-                    LibraryStore.download(getApplication(), cfg, share, settings.libFolder, name)
+                    val fresh = LibraryStore.download(getApplication(), cfg, share, libRoot, name)
                     val idx = withContext(Dispatchers.IO) { LibraryStore.load(getApplication(), name) }
+                    if (fresh && idx != null && index?.library == idx.library) developed = LibraryStore.previews(getApplication(), name)
                     if (current != name) { current = name; settings.library = name; index = null; clearFilters() }
                     if (idx != null && (index == null || index?.updated != idx.updated || index?.library != idx.library)) show(idx)
                     syncAi(name)
@@ -550,6 +594,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         const val AI_RESULTS = 600
         /** Quanto sale una foto con tutte le parole cercate nella descrizione (provato sulle foto vere: 0,04). */
         const val AI_DESC_BONUS = 0.04f
+        /** Pausa di scrittura prima di cercare (con il modello veloce una ricerca costa ~0,1 s). */
+        const val AI_PAUSE_MS = 350L
+        /** Lettere minime per cercare mentre si scrive ("ga", "t" danno risultati a caso). */
+        const val AI_MIN_CHARS = 3
         const val AI_MIN = 0.19f
         const val AI_MIN_MORE = 0.175f
         /** Quanto sotto la media delle 5 migliori si può stare (e con "meno somiglianti"). */

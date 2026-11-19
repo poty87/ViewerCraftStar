@@ -62,27 +62,40 @@ object RemotePreview {
     /** Cambia quando cambia il modo di ricavare le miniature, così quelle vecchie (sbagliate) non si usano più. */
     private const val CACHE_VERSION = 2
 
-    private fun diskFile(context: Context, lib: String, photo: LibPhoto) =
-        File(context.cacheDir, "library/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/${photo.id}_${photo.name.hashCode()}_v$CACHE_VERSION.jpg")
+    /** Un'anteprima sviluppata da PresetCraftAppLicator sul NAS (JPEG già dritto); `sig` cambia con lo sviluppo. */
+    class Developed(val share: String, val path: String, val sig: String)
+
+    private fun diskFile(context: Context, lib: String, photo: LibPhoto, dev: Developed? = null) =
+        File(context.cacheDir, "library/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") +
+            "/${photo.id}_${photo.name.hashCode()}_v$CACHE_VERSION" + (dev?.let { "_d${it.sig}" } ?: "") + ".jpg")
 
     /** La miniatura già sul telefono (nessun accesso al NAS), o null. */
-    fun cachedThumb(context: Context, lib: String, photo: LibPhoto): Bitmap? {
-        val key = "$lib:${photo.id}:$THUMB"
+    fun cachedThumb(context: Context, lib: String, photo: LibPhoto, dev: Developed? = null): Bitmap? {
+        val key = "$lib:${photo.id}:$THUMB:${dev?.sig ?: ""}"
         memory.get(key)?.let { return it }
-        val f = diskFile(context, lib, photo)
+        val f = diskFile(context, lib, photo, dev)
         return if (f.exists()) BitmapFactory.decodeFile(f.path)?.also { memory.put(key, it) } else null
     }
 
-    suspend fun load(context: Context, cfg: NasConfig, index: LibIndex, photo: LibPhoto, maxSide: Int): Bitmap? {
-        val key = "${index.library}:${photo.id}:$maxSide"
+    suspend fun load(context: Context, cfg: NasConfig, index: LibIndex, photo: LibPhoto, maxSide: Int,
+                     dev: Developed? = null): Bitmap? {
+        val key = "${index.library}:${photo.id}:$maxSide:${dev?.sig ?: ""}"
         memory.get(key)?.let { return it }
-        if (maxSide <= THUMB) cachedThumb(context, index.library, photo)?.let { return it }
-        val (share, path) = index.locate(photo) ?: return null
-        val picked = Remote.use(cfg, share) { s -> Remote.open(s, path).use { r -> pick(r, photo, maxSide) } } ?: return null
-        val bmp = decode(picked, maxSide) ?: return null
+        if (maxSide <= THUMB) cachedThumb(context, index.library, photo, dev)?.let { return it }
+        val bmp = if (dev != null) {
+            // sviluppata: se non si legge (appena tolta, o non ancora copiata) si mostra quella della fotocamera
+            val bytes = runCatching {
+                Remote.use(cfg, dev.share) { s -> Remote.open(s, dev.path).use { r -> r.read(0, r.size.toInt()) } }
+            }.getOrNull()
+            bytes?.let { decodeJpeg(it, maxSide) } ?: return load(context, cfg, index, photo, maxSide, null)
+        } else {
+            val (share, path) = index.locate(photo) ?: return null
+            val picked = Remote.use(cfg, share) { s -> Remote.open(s, path).use { r -> pick(r, photo, maxSide) } } ?: return null
+            decode(picked, maxSide) ?: return null
+        }
         memory.put(key, bmp)
         if (maxSide <= THUMB) runCatching {
-            val f = diskFile(context, index.library, photo)
+            val f = diskFile(context, index.library, photo, dev)
             f.parentFile?.mkdirs()
             f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         }

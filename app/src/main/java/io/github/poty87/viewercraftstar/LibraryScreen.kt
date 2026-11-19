@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -94,12 +95,16 @@ private fun dateText(iso: String): String = runCatching {
 
 /** Miniatura dal NAS (o dal telefono se già vista), con il segnaposto finché non arriva. */
 @Composable
-private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, modifier: Modifier, crop: Boolean) {
+private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, modifier: Modifier, crop: Boolean,
+                        original: Boolean = false) {
     val context = LocalContext.current
     val idx = lib.index ?: return
+    // ritoccata in LightCraft: l'anteprima sviluppata dal PC (se non si chiede quella della fotocamera)
+    val sig = if (original) null else lib.developed[photo.id]
+    val dev = sig?.let { RemotePreview.Developed(lib.libShare, listOf(lib.libRoot, lib.current, "previews", "${photo.id}.jpg").joinToString("\\"), it) }
     val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB)
-        RemotePreview.cachedThumb(context, idx.library, photo) else null, photo.id, maxSide) {
-        if (value == null) value = runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide) }.getOrNull()
+        RemotePreview.cachedThumb(context, idx.library, photo, dev) else null, photo.id, maxSide, sig) {
+        if (value == null) value = runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
     }
     Box(modifier.background(C.card), contentAlignment = Alignment.Center) {
         val b = bmp
@@ -268,6 +273,13 @@ fun LazyGridScope.libraryItems(lib: LibraryViewModel, onOpen: (List<LibPhoto>, I
                     Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
                 }
             }
+            // ritoccata in LightCraft (l'anteprima è quella sviluppata dal PC)
+            if (p.id in lib.developed) Box(Modifier.align(Alignment.BottomEnd)
+                .padding(end = 4.dp, bottom = if (c.cover && c.stack != null) 28.dp else 4.dp).size(18.dp).clip(CircleShape)
+                .background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Edit, L.t("Ritoccata in LightCraft", "Edited in LightCraft"), tint = Color.White,
+                    modifier = Modifier.size(11.dp))
+            }
             // modifica fatta sul telefono, non ancora in LightCraft
             if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
                 .background(Color(0xFFFB923C)))
@@ -417,8 +429,11 @@ private fun AiSearchBar(lib: LibraryViewModel) {
                 label = { Text(L.t("Nomi e parole chiave", "Names and keywords"), fontSize = 13.sp) })
         }
         val dl = lib.aiDownload
-        if (lib.aiPending) Text(L.t("Cerco «${lib.text.trim()}»… (premi Cerca sulla tastiera per partire subito)",
-            "Searching for “${lib.text.trim()}”… (press Search on the keyboard to start right away)"),
+        if (lib.aiPending) Text(
+            if (lib.aiTooShort) L.t("Scrivi almeno 3 lettere (o premi Cerca sulla tastiera)",
+                "Type at least 3 letters (or press Search on the keyboard)")
+            else L.t("Cerco «${lib.text.trim()}»… (premi Cerca sulla tastiera per partire subito)",
+                "Searching for “${lib.text.trim()}”… (press Search on the keyboard to start right away)"),
             color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         val found = lib.aiFound
         if (lib.aiActive && !lib.aiPending && found != null) Text(
@@ -610,7 +625,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
             RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black)
-                .clickable { controls = !controls }, crop = false)
+                .clickable { controls = !controls }, crop = false, original = lib.showOriginal)
         }
         if (controls) {
             Row(Modifier.fillMaxWidth().background(Color(0xB3141414)).statusBarsPadding().padding(4.dp),
@@ -620,6 +635,11 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     Text(p.name + (if (p.copyName.isNotEmpty()) " · ${p.copyName}" else ""), color = C.text, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${pager.currentPage + 1} / ${list.size} · ${dateText(p.captured)}", color = C.muted, fontSize = 12.sp)
+                }
+                // ritoccata in LightCraft: com'è adesso (sviluppata dal PC) o com'era allo scatto
+                if (p.id in lib.developed) TextButton(onClick = { lib.showOriginal = !lib.showOriginal }) {
+                    Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
+                        color = if (lib.showOriginal) C.muted else C.accent, fontSize = 13.sp)
                 }
                 IconButton(onClick = { trashing = true }, enabled = !inTrash) {
                     Icon(Icons.Filled.Delete, L.t("Nel cestino di LightCraft", "Move to LightCraft's trash"),

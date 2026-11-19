@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.JsonReader
 import android.util.JsonToken
 import com.hierynomus.msfscc.FileAttributes
+import com.hierynomus.smbj.share.DiskShare
+import org.json.JSONObject
 import java.io.File
 import java.io.InputStreamReader
 import java.util.zip.GZIPInputStream
@@ -75,49 +77,76 @@ class LibIndex(
 /** Le librerie pubblicate sul NAS: elenco, copia dell'indice sul telefono, lettura. */
 object LibraryStore {
     const val INDEX = "index.json.gz"
+    /** Le anteprime sviluppate da PresetCraftAppLicator (foto ritoccate in LightCraft): {id: firma}. */
+    const val PREVIEWS = "previews.json"
+    /** Sottocartella delle librerie nella cartella di servizio (PresetCraftAppLicator 1.19 e successivi). */
+    const val LIBRARIES_DIR = "libraries"
 
     private fun dir(context: Context, name: String) = File(context.filesDir, "libraries/" + name.replace(Regex("[\\\\/:*?\"<>|]"), "_"))
 
-    /** Le librerie nella cartella del NAS (sottocartelle con un indice). */
-    suspend fun list(cfg: NasConfig, share: String, folder: String): List<String> = Remote.use(cfg, share) { s ->
-        s.list(folder).filter { e ->
+    /**
+     * Le librerie nella cartella di servizio sul NAS (sottocartelle con un indice) e la cartella che le contiene:
+     * <cartella>\libraries, oppure la cartella stessa se PresetCraftAppLicator è di una versione precedente.
+     */
+    suspend fun list(cfg: NasConfig, share: String, folder: String): Pair<String, List<String>> = Remote.use(cfg, share) { s ->
+        val sub = join(folder, LIBRARIES_DIR)
+        val root = if (s.folderExists(sub)) sub else folder
+        root to s.list(root).filter { e ->
             val isDir = (e.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value) != 0L
             isDir && !e.fileName.startsWith(".") && e.fileName != "." && e.fileName != ".." &&
-                s.fileExists(join(folder, e.fileName, INDEX))
+                s.fileExists(join(root, e.fileName, INDEX))
         }.map { it.fileName }.sorted()
     }
+
+    /** La cartella delle librerie quando non si è ancora parlato col NAS (PresetCraftAppLicator recente). */
+    fun defaultRoot(folder: String) = join(folder, LIBRARIES_DIR)
 
     /** Le librerie già scaricate sul telefono (per consultarle anche senza NAS). */
     fun cached(context: Context): List<String> =
         File(context.filesDir, "libraries").listFiles()?.filter { File(it, INDEX).exists() }?.map { it.name }?.sorted()
             ?: emptyList()
 
-    /** Scarica l'indice se sul NAS è cambiato (o non c'è sul telefono). True se ne è arrivato uno nuovo. */
-    suspend fun download(context: Context, cfg: NasConfig, share: String, folder: String, name: String): Boolean {
-        val local = File(dir(context, name), INDEX)
-        val stampFile = File(dir(context, name), "stamp")
-        return Remote.use(cfg, share) { s ->
-            val path = join(folder, name, INDEX)
-            val info = s.getFileInformation(path)
-            val stamp = "${info.basicInformation.lastWriteTime.toEpochMillis()}:${info.standardInformation.endOfFile}"
-            if (local.exists() && stampFile.exists() && stampFile.readText() == stamp) return@use false
-            local.parentFile?.mkdirs()
-            val tmp = File(local.path + ".tmp")
-            Remote.open(s, path).use { r ->
-                tmp.outputStream().use { out ->
-                    var at = 0L
-                    while (at < r.size) {
-                        val chunk = r.read(at, 256 * 1024)
-                        if (chunk.isEmpty()) break
-                        out.write(chunk)
-                        at += chunk.size
-                    }
+    /**
+     * Scarica l'indice (e l'elenco delle anteprime sviluppate) se sul NAS è cambiato o non c'è sul telefono. True se
+     * è arrivato qualcosa di nuovo.
+     */
+    suspend fun download(context: Context, cfg: NasConfig, share: String, folder: String, name: String): Boolean =
+        Remote.use(cfg, share) { s ->
+            val index = fetch(s, join(folder, name, INDEX), File(dir(context, name), INDEX), "stamp")
+            val previews = File(dir(context, name), PREVIEWS)
+            val dev = if (s.fileExists(join(folder, name, PREVIEWS)))
+                fetch(s, join(folder, name, PREVIEWS), previews, "stamp-previews")
+            else previews.exists() && previews.delete()
+            index || dev
+        }
+
+    /** Le anteprime sviluppate della libreria (id → firma), già sul telefono. */
+    fun previews(context: Context, name: String): Map<Int, String> = runCatching {
+        val o = JSONObject(File(dir(context, name), PREVIEWS).readText()).getJSONObject("photos")
+        o.keys().asSequence().associate { it.toInt() to o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    private fun fetch(s: DiskShare, path: String, local: File, stampName: String): Boolean {
+        val stampFile = File(local.parentFile, stampName)
+        val info = s.getFileInformation(path)
+        val stamp = "${info.basicInformation.lastWriteTime.toEpochMillis()}:${info.standardInformation.endOfFile}"
+        if (local.exists() && stampFile.exists() && stampFile.readText() == stamp) return false
+        local.parentFile?.mkdirs()
+        val tmp = File(local.path + ".tmp")
+        Remote.open(s, path).use { r ->
+            tmp.outputStream().use { out ->
+                var at = 0L
+                while (at < r.size) {
+                    val chunk = r.read(at, 256 * 1024)
+                    if (chunk.isEmpty()) break
+                    out.write(chunk)
+                    at += chunk.size
                 }
             }
-            tmp.renameTo(local)
-            stampFile.writeText(stamp)
-            true
         }
+        tmp.renameTo(local)
+        stampFile.writeText(stamp)
+        return true
     }
 
     fun load(context: Context, name: String): LibIndex? {

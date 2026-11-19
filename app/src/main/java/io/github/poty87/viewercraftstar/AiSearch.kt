@@ -315,6 +315,11 @@ class Descriptions(file: File) {
 
     fun has(id: Int) = id in text
 
+    /** Prepara in anticipo le parole di tutte le descrizioni (altrimenti si fa alla prima ricerca). */
+    fun warm() {
+        for (id in text.keys) wordsOf(id)
+    }
+
     private fun wordsOf(id: Int): Set<String> = words.getOrPut(id) { stems(text[id] ?: "").toSet() }
 
     /**
@@ -388,6 +393,18 @@ object AiEngine {
             descStamp = file.lastModified()
         }
         return desc
+    }
+
+    private var warmed: File? = null
+
+    /** Carica tutto quello che serve a cercare e fa girare il modello una volta (la prima esecuzione è più lenta). */
+    fun warmUp(dir: File, visual: File, desc: File) {
+        val enc = encoder(dir)
+        index(visual)
+        descriptions(desc)?.warm()
+        synchronized(this) { if (warmed == dir) return }
+        enc.encode("una foto di gatti")
+        synchronized(this) { warmed = dir }
     }
 
     @Synchronized
