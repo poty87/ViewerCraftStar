@@ -668,7 +668,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
     var notifyEnd by remember { mutableStateOf(s.notifyEnd) }
     var test by remember { mutableStateOf("" to "info") }
 
-    fun config() = NasConfig(host, share, folder, sub, user, password)
+    fun config() = NasConfig(host, share, folder, sub, user, password, libShare, libFolder)
     fun save() {
         s.nas = config(); s.phoneFolder = phone; s.workFolder = work; s.defaultCreator = creator; s.defaultCopyright = copyright; s.advance = advance
         s.notifyLightCraft = notifyLc; s.notifyEnd = notifyEnd

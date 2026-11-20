@@ -18,6 +18,9 @@ data class NasConfig(
     val subfolders: Boolean = true,
     val user: String = "",
     val password: String = "",
+    /** La cartella di servizio di PresetCraftAppLicator (condivisione, vuota = quella sopra, e cartella). */
+    val libShare: String = "",
+    val libFolder: String = "",
 ) {
     val complete: Boolean get() = host.isNotBlank() && share.isNotBlank() && user.isNotBlank() && password.isNotEmpty()
 }
@@ -84,6 +87,8 @@ class Settings(context: Context) {
             subfolders = prefs.getBoolean("nas_subfolders", true),
             user = prefs.getString("nas_user", "")!!,
             password = prefs.getString("nas_password", null)?.let(::decrypt) ?: "",
+            libShare = libShare,
+            libFolder = libFolder,
         )
         set(v) {
             prefs.edit()

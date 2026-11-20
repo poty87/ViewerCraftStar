@@ -7,7 +7,7 @@ import java.io.File
 
 /**
  * Quello che l'app sa del NAS dall'ultimo controllo: quali DNG ci sono nella cartella, e il battito del PC di casa
- * (scritto da PresetCraftAppLicator in .viewercraftstar/heartbeat.json a ogni suo controllo). Tenuto nel telefono.
+ * (scritto da PresetCraftAppLicator in heartbeat.json, nella cartella di servizio, a ogni suo controllo). Tenuto nel telefono.
  */
 class NasState(val names: Set<String>, val pcTs: Long, val pcInterval: Int, val pcPhase: String) {
     fun has(item: PhotoItem) = item.name.lowercase() in names

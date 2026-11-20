@@ -5,7 +5,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Il resoconto che PresetCraftAppLicator scrive sul NAS (.viewercraftstar/status.json): per ogni foto della cartella
+ * Il resoconto che PresetCraftAppLicator scrive sul NAS (cartella di servizio, status-….json della cartella): per ogni foto della cartella
  * che è in libreria LightCraft, la versione dei metadati del telefono che ha applicato. Tenuto anche nel telefono.
  */
 class HomeStatus(val photos: Map<String, Long>, val updated: String) {
