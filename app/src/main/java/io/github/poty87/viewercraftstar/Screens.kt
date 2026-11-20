@@ -143,8 +143,20 @@ private fun FlagBadge(flag: Flag, size: Dp) {
 // ---------------------------------------------------------------- griglia
 
 @Composable
-fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit,
-               onSettings: () -> Unit) {
+fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit, onSettings: () -> Unit) {
+    // tornando dal visualizzatore: se l'ultima foto vista (magari raggiunta scorrendo) non è sullo schermo, la si porta lì
+    LaunchedEffect(lib.lastViewedAt) {
+        val id = lib.lastViewed ?: return@LaunchedEffect
+        if (!vm.inLibrary || lib.lastViewedAt == 0L) return@LaunchedEffect
+        val i = lib.cells().indexOfFirst { it.photo.id == id }
+        if (i < 0) return@LaunchedEffect
+        val target = i + 1 // prima delle foto c'è l'intestazione
+        val info = gridState.layoutInfo
+        if (info.visibleItemsInfo.none { it.index == target }) {
+            gridState.scrollToItem(target, -info.viewportSize.height / 3)
+        }
+    }
     vm.vpnAsk?.let { names ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.answerVpn(false) },
@@ -160,7 +172,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, onOpen: (Int) -> Unit, o
     Box(Modifier.fillMaxSize().background(C.bg)) {
         // una griglia sola: tutto quello che sta in alto è il suo inizio, quindi scorre via con le foto e torna in cima
         LazyVerticalGrid(GridCells.Adaptive(if (vm.inLibrary) 110.dp else 118.dp),
-            Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 6.dp),
+            Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 6.dp), state = gridState,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = if (lib.selecting) 120.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (vm.inLibrary) 5.dp else 6.dp),
             horizontalArrangement = Arrangement.spacedBy(if (vm.inLibrary) 5.dp else 6.dp)) {

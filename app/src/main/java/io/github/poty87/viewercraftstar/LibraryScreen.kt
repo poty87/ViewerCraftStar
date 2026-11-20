@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -93,6 +95,25 @@ private fun labelName(key: String) = when (key) {
 private fun dateText(iso: String): String = runCatching {
     java.time.LocalDateTime.parse(iso.take(19)).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
 }.getOrDefault(iso)
+
+/**
+ * L'ultima foto vista: un velo grigio chiaro che lampeggia lentamente tre volte dopo il ritorno alla griglia e si ferma
+ * al suo minimo (non sparisce di colpo); poi resta un bordo leggero, così in una pila di foto simili si ritrova quella
+ * appena guardata.
+ */
+@Composable
+private fun LastViewedMark(at: Long) {
+    val pulse = remember(at) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(at) {
+        repeat(3) {
+            pulse.animateTo(1f, androidx.compose.animation.core.tween(1100))
+            pulse.animateTo(0f, androidx.compose.animation.core.tween(1100))
+        }
+    }
+    val v = pulse.value
+    Box(Modifier.fillMaxSize().background(Color(0xFFE5E7EB).copy(alpha = 0.4f * v))
+        .border(2.dp, Color(0xFFE5E7EB).copy(alpha = 0.6f + 0.3f * v), RoundedCornerShape(5.dp)))
+}
 
 /** Miniatura dal NAS (o dal telefono se già vista), con il segnaposto finché non arriva. */
 @Composable
@@ -166,6 +187,74 @@ fun TextsDialog(p: LibPhoto, onDismiss: () -> Unit, onSave: (String, String, Lis
             Text(L.t("Salva", "Save"))
         }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) } })
+}
+
+/** Nome di un volto: scritto o scelto tra le persone già nella libreria. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun FaceNameDialog(face: LibFace, known: List<String>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    // un volto senza nome con un suggerimento: la domanda è già la risposta («Forse è Marta?»), basta confermare
+    val guess = face.suggest.takeIf { face.name.isEmpty() && it.isNotEmpty() }
+    var name by remember { mutableStateOf(face.name.ifEmpty { guess ?: "" }) }
+    val hits = known.filter { name.isBlank() || it.contains(name.trim(), ignoreCase = true) }.sorted().take(12)
+    AlertDialog(onDismissRequest = onDismiss, title = {
+        Text(if (guess != null) L.t("Forse è $guess?", "Is it $guess?") else L.t("Chi è?", "Who is it?"))
+    }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(name, { name = it }, label = { Text(L.t("Nome", "Name")) }, singleLine = true)
+            if (hits.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                hits.forEach { n ->
+                    Box(Modifier.clip(RoundedCornerShape(14.dp)).background(C.card).clickable { name = n }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)) { Text(n, color = C.text, fontSize = 13.sp) }
+                }
+            }
+            Text(tip(L.t("Il nome va in LightCraft quando il PC di casa applica le modifiche: lì LightCraft lo usa per riconoscere la persona nelle altre foto (se hai attivato i volti).",
+                "The name goes to LightCraft when the home PC applies the changes: there LightCraft uses it to recognise the person in other photos (if faces are turned on)."),
+                L.t("Arriva in LightCraft dal PC di casa.", "Reaches LightCraft through the home PC.")) ?: "",
+                color = C.muted, fontSize = 12.sp)
+        }
+    }, confirmButton = {
+        TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) {
+            Text(if (guess != null && name.trim() == guess) L.t("Sì, è $guess", "Yes, it's $guess") else L.t("Salva", "Save"))
+        }
+    }, dismissButton = {
+        Row {
+            if (face.name.isNotEmpty()) TextButton(onClick = { onSave("") }) { Text(L.t("Togli il nome", "Remove name")) }
+            TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) }
+        }
+    })
+}
+
+/** I riquadri dei volti sopra la foto (mostrata intera, al centro): un tocco per dare o cambiare il nome. */
+@Composable
+private fun FaceOverlay(photo: LibPhoto, onTap: (LibFace) -> Unit) {
+    if (photo.width <= 0 || photo.height <= 0) return
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val w = photo.width.toFloat()
+        val h = photo.height.toFloat()
+        val scale = minOf(maxWidth.value / w, maxHeight.value / h)
+        val dw = w * scale
+        val dh = h * scale
+        val ox = (maxWidth.value - dw) / 2
+        val oy = (maxHeight.value - dh) / 2
+        photo.faces.forEach { f ->
+            val named = f.name.isNotEmpty()
+            val guess = !named && f.suggest.isNotEmpty()  // suggerimento di LightCraft, da confermare
+            Box(Modifier.offset(x = (ox + f.x0 * dw).dp, y = (oy + f.y0 * dh).dp)
+                .size(((f.x1 - f.x0) * dw).coerceAtLeast(18f).dp, ((f.y1 - f.y0) * dh).coerceAtLeast(18f).dp)
+                .border(2.dp, when { named -> C.accent; guess -> Color(0xFFFBBF24); else -> Color.White.copy(alpha = 0.85f) },
+                    RoundedCornerShape(4.dp))
+                .clickable { onTap(f) })
+            Box(Modifier.offset(x = (ox + f.x0 * dw).dp, y = (oy + f.y1 * dh + 2).dp)
+                .clip(RoundedCornerShape(4.dp)).background(Color(0xB3000000)).clickable { onTap(f) }
+                .padding(horizontal = 5.dp, vertical = 1.dp)) {
+                Text(when { named -> f.name; guess -> "${f.suggest}?"; else -> "?" },
+                    color = when { named -> Color.White; guess -> Color(0xFFFBBF24); else -> C.muted }, fontSize = 11.sp,
+                    maxLines = 1)
+            }
+        }
+    }
 }
 
 /** Scelta di cosa scaricare: l'originale o il JPEG della fotocamera. */
@@ -267,6 +356,7 @@ fun LazyGridScope.libraryItems(lib: LibraryViewModel, onOpen: (List<LibPhoto>, I
                 onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells.map { it.photo }, i) },
                 onLongClick = { lib.toggleSelect(p.id) })) {
             RemoteImage(lib, p, RemotePreview.THUMB, Modifier.fillMaxSize(), crop = true)
+            if (p.id == lib.lastViewed && lib.lastViewedAt > 0) LastViewedMark(lib.lastViewedAt)
             if (p.flag == "reject") Box(Modifier.fillMaxSize().background(Color(0x99000000)))
             if (p.flag != "none") Box(Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp).clip(CircleShape)
                 .background(if (p.flag == "pick") C.pick.second else C.reject.second), contentAlignment = Alignment.Center) {
@@ -632,15 +722,27 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     var asking by remember { mutableStateOf(false) }
     var texts by remember { mutableStateOf(false) }
     var trashing by remember { mutableStateOf(false) }
+    // volti: i riquadri trovati da LightCraft sulla foto com'era allo scatto (l'anteprima sviluppata può essere ritagliata)
+    var faceMode by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf<LibFace?>(null) }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
+    // l'ultima foto vista: la griglia la ritrova e la evidenzia quando si torna indietro
+    LaunchedEffect(p.id) { lib.lastViewed = p.id }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { lib.lastViewedAt = System.currentTimeMillis() } }
+    naming?.let { f ->
+        FaceNameDialog(f, lib.index?.people.orEmpty(), onDismiss = { naming = null }) { n -> naming = null; lib.setFaceName(p.id, f, n) }
+    }
     if (texts) TextsDialog(p, onDismiss = { texts = false }) { t, c, k -> texts = false; lib.setTexts(p.id, t, c, k) }
     if (trashing) TrashDialog(1, onDismiss = { trashing = false }) { trashing = false; lib.trash(listOf(p.id)) }
     val inTrash = lib.edits[p.id]?.trash == true
     if (asking) DownloadDialog(1, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(listOf(p.id), jpeg) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
-            RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black)
-                .clickable { controls = !controls }, crop = false, original = lib.showOriginal)
+            Box(Modifier.fillMaxSize()) {
+                RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black)
+                    .clickable { controls = !controls }, crop = false, original = lib.showOriginal || faceMode)
+                if (faceMode) FaceOverlay(lib.effective(list[page])) { naming = it }
+            }
         }
         if (controls) {
             Row(Modifier.fillMaxWidth().background(Color(0xB3141414)).statusBarsPadding().padding(4.dp),
@@ -651,8 +753,12 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${pager.currentPage + 1} / ${list.size} · ${dateText(p.captured)}", color = C.muted, fontSize = 12.sp)
                 }
+                // volti trovati da LightCraft: mostra i riquadri per dare un nome
+                if (p.faces.isNotEmpty()) IconButton(onClick = { faceMode = !faceMode }) {
+                    Icon(Icons.Filled.Face, L.t("Volti", "Faces"), tint = if (faceMode) C.accent else C.text)
+                }
                 // ritoccata in LightCraft: com'è adesso (sviluppata dal PC) o com'era allo scatto
-                if (p.id in lib.developed) TextButton(onClick = { lib.showOriginal = !lib.showOriginal }) {
+                if (p.id in lib.developed && !faceMode) TextButton(onClick = { lib.showOriginal = !lib.showOriginal }) {
                     Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
                         color = if (lib.showOriginal) C.muted else C.accent, fontSize = 13.sp)
                 }
@@ -682,6 +788,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     p.title.takeIf { it.isNotEmpty() }?.let { L.t("Titolo", "Title") to it },
                     p.caption.takeIf { it.isNotEmpty() }?.let { L.t("Didascalia", "Caption") to it },
                     p.keywords.takeIf { it.isNotEmpty() }?.let { L.t("Parole chiave", "Keywords") to it.joinToString(", ") },
+                    p.people.takeIf { it.isNotEmpty() }?.let { L.t("Persone", "People") to it.joinToString(", ") },
                     lib.aiDescription(p.id)?.takeIf { it.isNotEmpty() }?.let { L.t("Descrizione (IA)", "Description (AI)") to it },
                     (L.t("Scatto", "Taken") to dateText(p.captured)),
                     p.camera.takeIf { it.isNotEmpty() }?.let { L.t("Fotocamera", "Camera") to it },

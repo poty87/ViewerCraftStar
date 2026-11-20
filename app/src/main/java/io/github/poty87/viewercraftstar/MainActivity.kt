@@ -74,12 +74,14 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
     var start by remember { mutableIntStateOf(0) }
     var list by remember { mutableStateOf<List<PhotoItem>>(emptyList()) }
     var libList by remember { mutableStateOf<List<LibPhoto>>(emptyList()) }
+    // la posizione della griglia vive qui: chiudendo una foto si torna esattamente dov'eri
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     BackHandler(enabled = screen != "grid") { screen = "grid" }
     when (screen) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
         "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
         "settings" -> SettingsScreen(vm, lib) { screen = "grid"; vm.reload(); lib.refresh() }
-        else -> GridScreen(vm, lib, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
+        else -> GridScreen(vm, lib, gridState, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
             onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" },
             onSettings = { screen = "settings" })
     }

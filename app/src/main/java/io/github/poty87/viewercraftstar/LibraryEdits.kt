@@ -24,17 +24,27 @@ data class LibEdit(
     val trash: Boolean? = null,
     /** In una pila con copertina questa foto (id); null = non toccato. */
     val stack: Int? = null,
+    /** Nomi dati ai volti sul telefono: riquadro (LibFace.key) → nome ("" = togli il nome); null = non toccato. */
+    val faces: Map<String, String>? = null,
     val at: Long = 0,
     val sent: Long = 0,
 ) {
     /** La foto come la vede il telefono, con la modifica sopra. */
-    fun applyTo(p: LibPhoto) = p.copy(rating = rating ?: p.rating, flag = flag ?: p.flag, label = label ?: p.label,
-        title = title ?: p.title, caption = caption ?: p.caption, keywords = keywords ?: p.keywords)
+    fun applyTo(p: LibPhoto): LibPhoto {
+        val newFaces = faces?.let { f -> p.faces.map { face -> f[face.key]?.let { face.copy(name = it) } ?: face } } ?: p.faces
+        // persone: quelle dei volti dopo la modifica, più quelle che non vengono dai volti
+        val people = if (faces == null) p.people else
+            ((p.people - p.faces.map { it.name }.toSet()) + newFaces.map { it.name }.filter { it.isNotEmpty() }).distinct()
+        return p.copy(rating = rating ?: p.rating, flag = flag ?: p.flag, label = label ?: p.label,
+            title = title ?: p.title, caption = caption ?: p.caption, keywords = keywords ?: p.keywords,
+            faces = newFaces, people = people)
+    }
 
     /** La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. */
     fun settledIn(p: LibPhoto, home: LibStack?) = trash != true && (stack == null || home?.photos?.contains(stack) == true) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
-        (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords)
+        (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords) &&
+        (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n } ?: true })
 }
 
 /**
@@ -58,6 +68,14 @@ object LibraryEdits {
                 keywords = e.optJSONArray("keywords")?.let { a -> (0 until a.length()).map { a.getString(it) } },
                 trash = if (e.has("trash")) e.getBoolean("trash") else null,
                 stack = if (e.has("stack")) e.getInt("stack") else null,
+                faces = e.optJSONArray("faces")?.let { a ->
+                    (0 until a.length()).associate { i ->
+                        val f = a.getJSONObject(i)
+                        val r = f.getJSONArray("rect")
+                        LibFace(r.getDouble(0).toFloat(), r.getDouble(1).toFloat(), r.getDouble(2).toFloat(),
+                            r.getDouble(3).toFloat(), "").key to f.optString("name")
+                    }
+                },
                 at = e.optLong("at"), sent = e.optLong("sent"))
         }
     }.getOrDefault(emptyMap())
@@ -83,6 +101,9 @@ object LibraryEdits {
         e.keywords?.let { put("keywords", JSONArray(it)) }
         e.trash?.let { put("trash", it) }
         e.stack?.let { put("stack", it) }
+        e.faces?.let { f ->
+            put("faces", JSONArray(f.map { (k, n) -> JSONObject().put("rect", JSONArray(LibFace.rectOf(k))).put("name", n) }))
+        }
     }
 
     /** Lascia sul NAS una richiesta con le modifiche indicate (file nascosto finché non è completo). */

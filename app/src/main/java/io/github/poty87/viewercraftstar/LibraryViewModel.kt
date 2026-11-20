@@ -150,16 +150,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val t1 = System.currentTimeMillis()
                     val vi = AiEngine.index(file)
                     val t2 = System.currentTimeMillis()
-                    val e = enc.encode(aiPhrase(q))
+                    // un nome di persona (dato in LightCraft) nella frase: solo le sue foto, ordinate per il resto
+                    val (person, phrase) = splitPerson(idx, q)
+                    val sc = if (phrase.isEmpty()) FloatArray(vi.ids.size) { 1f } else vi.scores(enc.encode(aiPhrase(phrase)))
                     val t3 = System.currentTimeMillis()
-                    val sc = vi.scores(e)
+                    if (person != null) {
+                        val mine = idx.photos.filter { p -> p.people.any { it.equals(person, ignoreCase = true) } }
+                            .map { it.id }.toHashSet()
+                        for (i in sc.indices) if (vi.ids[i] !in mine) sc[i] = -1f
+                    }
                     // la soglia "vicino alle migliori" si calcola sui punteggi visivi: le descrizioni possono solo far
                     // salire o scendere le foto, non spostare la soglia (altrimenti ne escludono di giuste)
-                    aiTop5 = sc.sortedArrayDescending().take(5).average().toFloat()
+                    aiTop5 = sc.filter { it > -1f }.sortedDescending().take(5).average().toFloat()
                     // descrizioni (se ci sono): sale chi ha le parole cercate, scende un po' chi è descritta ma non le ha
                     val desc = AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))
-                    val qw = Descriptions.stems(q)
+                    val qw = Descriptions.stems(phrase)
                     if (desc != null && qw.isNotEmpty()) for (i in sc.indices) {
+                        if (sc[i] <= -1f) continue
                         val m = desc.match(vi.ids[i], qw) ?: continue
                         // tutte le parole (o sinonimi): sale; solo alcune: resta dov'è; nessuna: scende un po'
                         sc[i] += when { m >= 1f -> AI_DESC_BONUS; m > 0f -> 0f; else -> -AI_DESC_BONUS / 2 }
@@ -192,7 +199,32 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun aiPhrase(q: String): String {
         val l = q.lowercase()
         val already = listOf("foto", "una foto", "fotografia", "immagine", "photo", "a photo", "picture").any { l.startsWith(it) }
-        return if (already) q else "una foto di $q"
+        // dopo un nome tolto la frase può cominciare con una preposizione («al mare»): «una foto al mare»
+        val first = l.substringBefore(' ')
+        return when {
+            already -> q
+            first in PREPOSITIONS -> "una foto $q"
+            else -> "una foto di $q"
+        }
+    }
+
+    /**
+     * Il nome di una persona della libreria contenuto nella frase (parola intera, maiuscole indifferenti) e il resto
+     * della frase senza il nome e senza congiunzioni all'inizio o alla fine («Marta e il cane» → «il cane»).
+     */
+    private fun splitPerson(idx: LibIndex, q: String): Pair<String?, String> {
+        for (name in idx.people) {
+            val re = Regex("(?iU)(^|\\W)" + Regex.escape(name) + "(\\W|$)")
+            val m = re.find(q) ?: continue
+            var rest = (q.substring(0, m.range.first) + " " + q.substring(m.range.last + 1)).trim().replace(Regex("\\s+"), " ")
+            val joins = setOf("e", "ed", "con", "and", "with", "&", ",")
+            var words = rest.split(' ').filter { it.isNotEmpty() }
+            while (words.isNotEmpty() && words.first().lowercase() in joins) words = words.drop(1)
+            while (words.isNotEmpty() && words.last().lowercase() in joins) words = words.dropLast(1)
+            rest = words.joinToString(" ")
+            return name to rest
+        }
+        return null to q
     }
 
     /** La descrizione della foto scritta dal PC (motore IA), o null. */
@@ -325,6 +357,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** La pila della foto (comprese quelle create sul telefono). */
     fun stackOf(id: Int): LibStack? { cells(); return stacksNow[id] }
 
+    /** Nome a un volto trovato da LightCraft ("" = toglie il nome): arriva in LightCraft come le altre modifiche. */
+    fun setFaceName(id: Int, face: LibFace, name: String) =
+        edit(listOf(id)) { it.copy(faces = (it.faces ?: emptyMap()) + (face.key to name.trim())) }
+
     fun setTexts(id: Int, title: String, caption: String, keywords: List<String>) =
         edit(listOf(id)) { it.copy(title = title, caption = caption, keywords = keywords) }
 
@@ -405,6 +441,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Foto con l'anteprima sviluppata da PresetCraftAppLicator (ritoccate in LightCraft): id → firma. */
     var developed by mutableStateOf<Map<Int, String>>(emptyMap()); private set
+
+    /** L'ultima foto vista nel visualizzatore (evidenziata nella griglia) e quando lo si è chiuso. */
+    var lastViewed by mutableStateOf<Int?>(null)
+    var lastViewedAt by mutableStateOf(0L)
 
     /** Nel visualizzatore: l'anteprima della fotocamera (com'era allo scatto) invece di quella sviluppata. */
     var showOriginal by mutableStateOf(false)
@@ -512,7 +552,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
         val q = if (useText) text.trim().lowercase() else ""
         if (q.isNotEmpty() && listOf(p.name, p.title, p.caption, p.copyName).none { it.lowercase().contains(q) } &&
-            p.keywords.none { it.lowercase().contains(q) } && aiDescription(p.id)?.lowercase()?.contains(q) != true) return false
+            p.keywords.none { it.lowercase().contains(q) } && p.people.none { it.lowercase().contains(q) } &&
+            aiDescription(p.id)?.lowercase()?.contains(q) != true) return false
         return true
     }
 
@@ -600,6 +641,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         const val AI_DESC_BONUS = 0.04f
         /** Pausa di scrittura prima di cercare (con il modello veloce una ricerca costa ~0,1 s). */
         const val AI_PAUSE_MS = 350L
+        /** Preposizioni con cui può cominciare il resto della frase dopo un nome. */
+        val PREPOSITIONS = setOf("a", "al", "allo", "alla", "ai", "agli", "alle", "in", "nel", "nella", "nei", "sul",
+            "sulla", "sui", "da", "dal", "dalla", "su", "per", "tra", "fra", "at", "in", "on", "with")
         /** Ogni quanto, con la Libreria aperta, si guarda se sul NAS è cambiato qualcosa (pochi byte se niente). */
         const val AUTO_REFRESH_MS = 60_000L
         /** Lettere minime per cercare mentre si scrive ("ga", "t" danno risultati a caso). */

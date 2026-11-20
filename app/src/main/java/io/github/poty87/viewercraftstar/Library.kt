@@ -10,6 +10,20 @@ import java.io.File
 import java.io.InputStreamReader
 import java.util.zip.GZIPInputStream
 
+/**
+ * Un volto trovato da LightCraft: riquadro (0..1, foto dritta) e nome ("" = senza nome); per i volti senza nome, chi
+ * potrebbe essere secondo il riconoscimento di LightCraft (`suggest`, "" = nessuna idea) e quanto gli somiglia.
+ */
+data class LibFace(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val name: String,
+                   val suggest: String = "", val score: Float = 0f) {
+    /** Il riquadro come testo: lo stesso volto tra telefono e PC. */
+    val key: String get() = listOf(x0, y0, x1, y1).joinToString(",") { "%.4f".format(java.util.Locale.ROOT, it) }
+
+    companion object {
+        fun rectOf(key: String): List<Double> = key.split(',').map { it.toDouble() }
+    }
+}
+
 /** Una foto della libreria LightCraft di casa, come la descrive l'indice di PresetCraftAppLicator. */
 data class LibPhoto(
     val id: Int,
@@ -37,6 +51,10 @@ data class LibPhoto(
     val copyOf: Int? = null,
     val copyName: String = "",
     val edited: Boolean = false,
+    /** Le persone (e gli animali) a cui hai dato un nome in LightCraft, nei volti di questa foto. */
+    val people: List<String> = emptyList(),
+    /** I volti trovati da LightCraft, nel suo ordine. */
+    val faces: List<LibFace> = emptyList(),
 )
 
 /** Una pila: la prima foto è la copertina. */
@@ -51,6 +69,8 @@ class LibIndex(
     val stacks: List<LibStack>,
 ) {
     val byId = photos.associateBy { it.id }
+    /** I nomi delle persone della libreria, dal più lungo (così «Anna Maria» vince su «Anna»). */
+    val people: List<String> = photos.flatMap { it.people }.distinct().sortedByDescending { it.length }
     /** Foto → la sua pila. */
     val stackOf: Map<Int, LibStack> = buildMap { stacks.forEach { s -> s.photos.forEach { put(it, s) } } }
 
@@ -209,6 +229,8 @@ object LibraryStore {
         var creator = ""; var copyright = ""; var camera = ""; var lens = ""; var shutter = ""
         var focal: Double? = null; var aperture: Double? = null; var iso: Int? = null
         val keywords = ArrayList<String>(); var copyOf: Int? = null; var copyName = ""; var edited = false
+        val people = ArrayList<String>()
+        val faces = ArrayList<LibFace>()
         r.beginObject()
         while (r.hasNext()) {
             val key = r.nextName()
@@ -239,11 +261,26 @@ object LibraryStore {
                 "co" -> copyOf = r.nextInt()
                 "cn" -> copyName = r.nextString()
                 "e" -> { edited = r.nextInt() != 0 }
+                "pe" -> { r.beginArray(); while (r.hasNext()) people += r.nextString(); r.endArray() }
+                "fr" -> {
+                    r.beginArray()
+                    while (r.hasNext()) {
+                        r.beginArray()
+                        val v = FloatArray(4) { r.nextDouble().toFloat() }
+                        val n = if (r.hasNext()) r.nextString() else ""
+                        val guess = if (r.hasNext()) r.nextString() else ""
+                        val score = if (r.hasNext()) r.nextDouble().toFloat() else 0f
+                        while (r.hasNext()) r.skipValue()
+                        r.endArray()
+                        faces += LibFace(v[0], v[1], v[2], v[3], n, guess, score)
+                    }
+                    r.endArray()
+                }
                 else -> r.skipValue()
             }
         }
         r.endObject()
         return LibPhoto(id, name, path, captured, imported, rating, flag, label, kind, w, h, title, caption, creator,
-            copyright, camera, lens, shutter, focal, aperture, iso, keywords, copyOf, copyName, edited)
+            copyright, camera, lens, shutter, focal, aperture, iso, keywords, copyOf, copyName, edited, people, faces)
     }
 }
