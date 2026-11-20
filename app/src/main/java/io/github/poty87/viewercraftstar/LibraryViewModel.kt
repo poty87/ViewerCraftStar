@@ -385,9 +385,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Selezione multipla (id delle foto): si entra con la pressione lunga. */
+    /** Selezione multipla (id delle foto): si entra con la pressione lunga o con «Seleziona» nelle opzioni. */
     var selected by mutableStateOf(setOf<Int>())
-    val selecting: Boolean get() = selected.isNotEmpty()
+    var selectMode by mutableStateOf(false)
+    val selecting: Boolean get() = selectMode || selected.isNotEmpty()
 
     fun toggleSelect(id: Int) {
         selected = if (id in selected) selected - id else selected + id
@@ -399,6 +400,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelection() {
         selected = emptySet()
+        selectMode = false
     }
 
     /** Scarica sul telefono le foto indicate (originale o JPEG), in background. */
@@ -441,6 +443,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Foto con l'anteprima sviluppata da PresetCraftAppLicator (ritoccate in LightCraft): id → firma. */
     var developed by mutableStateOf<Map<Int, String>>(emptyMap()); private set
+
+    /** Come si vede la galleria (ricordato nelle impostazioni del telefono). */
+    var gridMode by mutableStateOf(settings.libGrid); private set
+    var gridSize by mutableStateOf(settings.libSize); private set
+    var segment by mutableStateOf(settings.libSegment); private set
+    var segmentBy by mutableStateOf(settings.libSegmentBy); private set
+    fun setGrid(mode: String) { gridMode = mode; settings.libGrid = mode }
+    fun setSize(size: Int) { gridSize = size.coerceIn(1, 5); settings.libSize = gridSize }
+    fun setSegmented(on: Boolean) { segment = on; settings.libSegment = on }
+    fun setSegmentKind(kind: String) { segmentBy = kind; settings.libSegmentBy = kind }
 
     /** L'ultima foto vista nel visualizzatore (evidenziata nella griglia) e quando lo si è chiuso. */
     var lastViewed by mutableStateOf<Int?>(null)
@@ -657,5 +669,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggle(stack: LibStack) {
         expanded = if (stack.id in expanded) expanded - stack.id else expanded + stack.id
+        toggledStack = stack.id
+        toggledAt = System.currentTimeMillis()
     }
+
+    /** L'ultima pila aperta o chiusa, e quando: le sue foto entrano in scena con un'animazione. */
+    var toggledStack by mutableStateOf<Int?>(null); private set
+    var toggledAt by mutableStateOf(0L); private set
 }

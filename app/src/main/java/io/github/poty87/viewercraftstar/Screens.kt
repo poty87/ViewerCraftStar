@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -51,6 +53,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -144,19 +148,10 @@ private fun FlagBadge(flag: Flag, size: Dp) {
 
 @Composable
 fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
-               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit, onSettings: () -> Unit) {
-    // tornando dal visualizzatore: se l'ultima foto vista (magari raggiunta scorrendo) non è sullo schermo, la si porta lì
-    LaunchedEffect(lib.lastViewedAt) {
-        val id = lib.lastViewed ?: return@LaunchedEffect
-        if (!vm.inLibrary || lib.lastViewedAt == 0L) return@LaunchedEffect
-        val i = lib.cells().indexOfFirst { it.photo.id == id }
-        if (i < 0) return@LaunchedEffect
-        val target = i + 1 // prima delle foto c'è l'intestazione
-        val info = gridState.layoutInfo
-        if (info.visibleItemsInfo.none { it.index == target }) {
-            gridState.scrollToItem(target, -info.viewportSize.height / 3)
-        }
-    }
+               libState: androidx.compose.foundation.lazy.LazyListState,
+               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit) {
+    var options by remember { mutableStateOf(false) }
+    if (options) GalleryOptionsSheet(lib) { options = false }
     vm.vpnAsk?.let { names ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.answerVpn(false) },
@@ -169,64 +164,48 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         )
     }
     val list = if (vm.inLibrary) emptyList() else vm.visible
-    Box(Modifier.fillMaxSize().background(C.bg)) {
-        // una griglia sola: tutto quello che sta in alto è il suo inizio, quindi scorre via con le foto e torna in cima
-        LazyVerticalGrid(GridCells.Adaptive(if (vm.inLibrary) 110.dp else 118.dp),
+    val header: @Composable () -> Unit = {
+        Column {
+            Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    TitleText(if (vm.inLibrary) L.t("Librerie", "Libraries") else L.t("Importa", "Import"))
+                    if (!vm.inLibrary) Text("${sectionFolder(vm)} · ${vm.countIn(vm.section)} DNG", color = C.muted,
+                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // opzioni della galleria (Libreria) o invio al NAS (Importa)
+                if (vm.inLibrary) IconButton(onClick = { options = true }) {
+                    Icon(Icons.Filled.MoreVert, L.t("Opzioni di visualizzazione", "View options"), tint = C.text)
+                }
+                else Box {
+                    IconButton(onClick = { vm.sync() }, enabled = !vm.syncing) {
+                        if (vm.syncing) CircularProgressIndicator(Modifier.size(20.dp), color = C.accent, strokeWidth = 2.dp)
+                        else Icon(Icons.Filled.Refresh, L.t("Invia al NAS", "Send to NAS"), tint = C.text)
+                    }
+                    if (vm.pending > 0) Text("${vm.pending}", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp).clip(CircleShape)
+                            .background(C.star).padding(horizontal = 5.dp))
+                }
+            }
+            ConnRow(vm)
+            Banner(vm.statusLevel, vm.status, Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+            if (!vm.inLibrary) SectionTabs(vm)
+            if (vm.inLibrary) LibraryHeader(lib)
+            else {
+                if (vm.section == Section.REVIEW) ReviewHeader(vm) else SentHeader(vm)
+                ImportFilters(vm)
+            }
+        }
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        if (vm.inLibrary) LibraryGallery(lib, libState, header, onOpenLib, Modifier.statusBarsPadding())
+        else LazyVerticalGrid(GridCells.Adaptive(118.dp),
             Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 6.dp), state = gridState,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = if (lib.selecting) 120.dp else 16.dp),
-            verticalArrangement = Arrangement.spacedBy(if (vm.inLibrary) 5.dp else 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(if (vm.inLibrary) 5.dp else 6.dp)) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            TitleText("ViewerCraftStar")
-                            if (!vm.inLibrary) Text("${sectionFolder(vm)} · ${vm.countIn(vm.section)} DNG", color = C.muted,
-                                fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        Box {
-                            IconButton(onClick = { vm.sync() }, enabled = !vm.syncing) {
-                                if (vm.syncing) CircularProgressIndicator(Modifier.size(20.dp), color = C.accent, strokeWidth = 2.dp)
-                                else Icon(Icons.Filled.Refresh, L.t("Invia al NAS", "Send to NAS"), tint = C.text)
-                            }
-                            if (vm.pending > 0) Text("${vm.pending}", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp).clip(CircleShape)
-                                    .background(C.star).padding(horizontal = 5.dp))
-                        }
-                        IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, L.t("Impostazioni", "Settings"), tint = C.text) }
-                    }
-                    ConnRow(vm)
-                    Banner(vm.statusLevel, vm.status, Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
-                    SectionTabs(vm)
-                    if (vm.inLibrary) LibraryHeader(lib)
-                    else {
-                        if (vm.section == Section.REVIEW) ReviewHeader(vm) else SentHeader(vm)
-                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val chips = listOf(
-                                Filter.ALL to L.t("Tutte", "All"), Filter.UNRATED to L.t("Da valutare", "Unrated"),
-                                Filter.PICKED to L.t("Scelte", "Picked"), Filter.REJECTED to L.t("Scartate", "Rejected"),
-                                Filter.STARRED to L.t("Con stelle", "Starred"), Filter.PENDING to L.t("Da inviare", "To send"),
-                            )
-                            for ((f, label) in chips) {
-                                FilterChip(selected = vm.filter == f, onClick = { vm.filter = f },
-                                    label = { Text("$label  ${vm.count(f)}", fontSize = 13.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
-                                        selectedContainerColor = Color(0xFF253650), selectedLabelColor = Color(0xFFDCE8FB)))
-                            }
-                        }
-                    }
-                }
-            }
-            if (vm.inLibrary) libraryItems(lib, onOpenLib)
-            else if (vm.loading) item(span = { GridItemSpan(maxLineSpan) }) {
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            item(span = { GridItemSpan(maxLineSpan) }) { header() }
+            if (vm.loading) item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = C.accent) }
-            }
-            else if (list.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                    Text(if (vm.countIn(vm.section) == 0) L.t("Nessun DNG in ${sectionFolder(vm)}", "No DNG files in ${sectionFolder(vm)}")
-                    else L.t("Nessuna foto con questo filtro", "No photos match this filter"), color = C.muted)
-                }
             }
             else itemsIndexed(list, key = { _, p -> p.id }) { i, p ->
                 val m = vm.meta(p.name)
@@ -248,24 +227,57 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             }
         }
         if (vm.inLibrary && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
+        if (!vm.inLibrary && !vm.loading && list.isEmpty()) Text(
+            if (vm.countIn(vm.section) == 0) L.t("Nessun DNG in ${sectionFolder(vm)}", "No DNG files in ${sectionFolder(vm)}")
+            else L.t("Nessuna foto con questi filtri", "No photos match these filters"),
+            color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp))
     }
 }
 
 @Composable
 private fun SectionTabs(vm: AppViewModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // la libreria LightCraft di casa
-        Box(Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (vm.inLibrary) Color(0xFF253650) else C.card)
-            .clickable { vm.inLibrary = true }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(L.t("Libreria", "Library"), color = if (vm.inLibrary) Color(0xFFDCE8FB) else C.text, fontSize = 14.sp,
-                fontWeight = if (vm.inLibrary) FontWeight.Bold else FontWeight.Normal)
+    // come le schede di un browser: quella aperta in blu, attaccata alla linea sotto; l'altra in grigio
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for ((sec, label) in listOf(Section.REVIEW to L.t("Da rivedere", "To review"), Section.SENT to L.t("Spedite", "Sent"))) {
+                val on = vm.section == sec
+                Box(Modifier.weight(1f).clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                    .background(if (on) C.accent else Color(0xFF2B2B2B))
+                    .clickable { vm.section = sec; vm.inLibrary = false }.padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center) {
+                    Text("$label  ${vm.countIn(sec)}", color = if (on) Color.Black else C.muted, fontSize = 14.sp,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
         }
-        for ((s, label) in listOf(Section.REVIEW to L.t("Da rivedere", "To review"), Section.SENT to L.t("Spedite", "Sent"))) {
-            val on = vm.section == s && !vm.inLibrary
-            Box(Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (on) Color(0xFF253650) else C.card)
-                .clickable { vm.section = s; vm.inLibrary = false }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Text("$label  ${vm.countIn(s)}", color = if (on) Color(0xFFDCE8FB) else C.text, fontSize = 14.sp,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+        Box(Modifier.fillMaxWidth().height(2.dp).background(C.accent))
+    }
+}
+
+/** Filtri della sezione Importa: «Tutte» e un menu a tendina in cui se ne sceglie uno o più. */
+@Composable
+private fun ImportFilters(vm: AppViewModel) {
+    var open by remember { mutableStateOf(false) }
+    val chipColors = FilterChipDefaults.filterChipColors(containerColor = C.card, labelColor = C.text,
+        selectedContainerColor = C.accent, selectedLabelColor = Color.Black, selectedLeadingIconColor = Color.Black)
+    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        FilterChip(vm.filters.isEmpty(), { vm.filters = emptySet() }, colors = chipColors,
+            label = { Text(L.t("Tutte", "All") + "  ${vm.count(Filter.ALL)}", fontSize = 13.sp) })
+        Box {
+            FilterChip(vm.filters.isNotEmpty(), { open = true }, colors = chipColors,
+                leadingIcon = { Icon(Icons.Filled.Menu, null, modifier = Modifier.size(16.dp)) },
+                label = { Text(L.t("Filtri", "Filters") + if (vm.filters.isNotEmpty()) " · ${vm.filters.size}" else "", fontSize = 13.sp) })
+            DropdownMenu(open, { open = false }) {
+                for ((f, label) in listOf(Filter.UNRATED to L.t("Da valutare", "Unrated"), Filter.PICKED to L.t("Scelte", "Picked"),
+                        Filter.REJECTED to L.t("Scartate", "Rejected"), Filter.STARRED to L.t("Con stelle", "Starred"),
+                        Filter.PENDING to L.t("Da inviare", "To send"))) {
+                    val on = f in vm.filters
+                    DropdownMenuItem({ Text("$label  ${vm.count(f)}", color = if (on) C.accent else C.text) },
+                        onClick = { vm.filters = if (on) vm.filters - f else vm.filters + f },
+                        leadingIcon = { Checkbox(on, null) })
+                }
             }
         }
     }
@@ -558,9 +570,9 @@ private fun PresetSheet(vm: AppViewModel, item: PhotoItem, close: () -> Unit) {
 @Composable
 private fun PresetRow(name: String, selected: Boolean, click: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-        .background(if (selected) Color(0xFF253650) else Color.Transparent).clickable(onClick = click)
+        .background(if (selected) C.accent else Color.Transparent).clickable(onClick = click)
         .padding(horizontal = 10.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(name, color = if (selected) Color(0xFFDCE8FB) else C.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(name, color = if (selected) Color.Black else C.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
         if (selected) Icon(Icons.Filled.Check, null, tint = C.accent, modifier = Modifier.size(18.dp))
     }
 }
@@ -687,89 +699,95 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         s.compactTips = compact; Tips.compact = compact
         s.libShare = libShare; s.libFolder = libFolder
     }
+    // dalla barra in basso si esce senza la freccia: si salva comunque
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { save() } }
 
-    Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()
-        .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()
+        .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { save(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = C.text) }
             TitleText(L.t("Impostazioni", "Settings"))
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(compact, { compact = it })
-            Text(L.t("Riduci consigli interfaccia (solo testi brevi)", "Fewer interface tips (short texts only)"), color = C.text)
-        }
-        SectionLabel(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone"), Modifier.padding(top = 8.dp))
-        Field(L.t("Cartella di lavoro (dove arrivano le foto nuove, NON sincronizzata)", "Work folder (where new photos land, NOT synced)"), work) { work = it }
-        Field(L.t("Cartella sincronizzata con il NAS da Synology Drive", "Folder synced to the NAS by Synology Drive"), phone) { phone = it }
-        if (!Tips.compact) Text(L.t("Percorsi nella memoria interna. Se la cartella di lavoro manca, l'app la crea; se c'è già non la tocca.",
-            "Paths in internal storage. If the work folder is missing the app creates it; if it exists it's left as is."),
-            color = C.muted, fontSize = 12.sp)
-
-        SectionLabel("NAS", Modifier.padding(top = 12.dp))
-        if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati da Synology Drive. Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
-            "The .xmp files are written next to the DNG files Synology Drive has already uploaded. On the NAS the app only writes .xmp files: it never deletes or changes photos."),
-            color = C.muted, fontSize = 12.sp)
-        Field(L.t("Indirizzo IP del NAS (es. 192.168.1.10)", "NAS IP address (e.g. 192.168.1.10)"), host) { host = it }
-        Field(L.t("Cartella condivisa (es. Foto)", "Shared folder (e.g. Photos)"), share) { share = it }
-        Field(L.t("Cartella dentro la condivisione (es. Catalogo)", "Folder inside the share (e.g. Catalog)"), folder) { folder = it }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(sub, { sub = it })
-            Text(L.t("Cerca i DNG anche nelle sottocartelle", "Also look for DNG files in subfolders"), color = C.text)
-        }
-        Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
-        Field(L.t("Password", "Password"), password, password = true) { password = it }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = {
-                save(); test = L.t("Provo la connessione…", "Testing the connection…") to "info"
-                vm.testNas(config()) { msg, ok -> test = msg to if (ok) "ok" else "error" }
-            }) { Text(L.t("Prova connessione", "Test connection")) }
-        }
-        Banner(test.second, test.first)
-
-        SectionLabel(L.t("Libreria di casa", "Home library"), Modifier.padding(top = 12.dp))
-        if (!Tips.compact) Text(L.t("La cartella del NAS in cui PresetCraftAppLicator scrive le librerie da consultare sul telefono (Importazione automatica › Librerie da consultare sul telefono). Usa lo stesso NAS, utente e password di sopra.",
-            "The NAS folder where PresetCraftAppLicator writes the libraries to browse on the phone (Automatic import › Libraries to browse on the phone). Same NAS, user and password as above."),
-            color = C.muted, fontSize = 12.sp)
-        Field(L.t("Cartella condivisa (vuota = la stessa di sopra)", "Shared folder (empty = the same as above)"), libShare) { libShare = it }
-        Field(L.t("Cartella delle librerie dentro la condivisione (es. ViewerCraftStar)", "Libraries folder inside the share (e.g. ViewerCraftStar)"), libFolder) { libFolder = it }
         // ricerca per soggetti: il modello IA scaricato occupa spazio (centinaia di MB)
         val context = androidx.compose.ui.platform.LocalContext.current
         var aiBytes by remember { mutableStateOf(AiStore.modelsSize(context)) }
-        SectionLabel(L.t("Ricerca per soggetti (IA)", "Search by subject (AI)"), Modifier.padding(top = 12.dp))
-        if (!Tips.compact) Text(L.t("Nella Libreria, «Cerca» trova le foto per quello che contengono («gatti», «auto d'epoca») se la libreria è stata analizzata con il motore IA di PresetCraftAppLicator. Il modello si scarica una volta dal NAS alla prima ricerca.",
-            "In the Library, “Search” finds photos by what they contain (“cats”, “vintage car”) if the library has been analyzed with PresetCraftAppLicator's AI engine. The model is downloaded once from the NAS at the first search."),
-            color = C.muted, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (aiBytes > 0) L.t("Modello sul telefono: ${aiBytes / 1_000_000} MB", "Model on the phone: ${aiBytes / 1_000_000} MB")
-            else L.t("Modello non ancora scaricato", "Model not downloaded yet"), color = C.text, modifier = Modifier.weight(1f))
-            if (aiBytes > 0) OutlinedButton(onClick = { libVm.deleteAiModel(); aiBytes = AiStore.modelsSize(context) }) {
-                Text(L.t("Elimina", "Delete"))
+        SettingsCard(L.t("Interfaccia", "Interface")) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(compact, { compact = it })
+                Text(L.t("Riduci consigli interfaccia (solo testi brevi)", "Fewer interface tips (short texts only)"), color = C.text)
             }
         }
-
-        SectionLabel(L.t("Notifiche della spedizione", "Sending notifications"), Modifier.padding(top = 12.dp))
-        if (!Tips.compact) Text(L.t("Dopo «Spedisci al NAS» una notifica mostra quante foto, con i loro metadati, sono già al sicuro sul NAS.",
-            "After “Send to the NAS” a notification shows how many photos, with their metadata, are already safe on the NAS."),
-            color = C.muted, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(notifyLc, { notifyLc = it })
-            Text(L.t("Segui anche l'ingresso in LightCraft (solo con il PC di casa acceso: la notifica resta finché non sono entrate)",
-                "Also follow their arrival in LightCraft (only with the home PC on: the notification stays until they are in)"),
-                color = C.text)
+        SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
+            Field(L.t("Cartella di lavoro (dove arrivano le foto nuove, NON sincronizzata)", "Work folder (where new photos land, NOT synced)"), work) { work = it }
+            Field(L.t("Cartella sincronizzata con il NAS da Synology Drive", "Folder synced to the NAS by Synology Drive"), phone) { phone = it }
+            if (!Tips.compact) Text(L.t("Percorsi nella memoria interna. Se la cartella di lavoro manca, l'app la crea; se c'è già non la tocca.",
+                "Paths in internal storage. If the work folder is missing the app creates it; if it exists it's left as is."),
+                color = C.muted, fontSize = 12.sp)
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(notifyEnd, { notifyEnd = it })
-            Text(L.t("Avvisami quando la spedizione è finita o sospesa", "Tell me when sending is finished or paused"), color = C.text)
+        SettingsCard("NAS") {
+            if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati da Synology Drive. Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
+                "The .xmp files are written next to the DNG files Synology Drive has already uploaded. On the NAS the app only writes .xmp files: it never deletes or changes photos."),
+                color = C.muted, fontSize = 12.sp)
+            Field(L.t("Indirizzo IP del NAS (es. 192.168.1.10)", "NAS IP address (e.g. 192.168.1.10)"), host) { host = it }
+            Field(L.t("Cartella condivisa (es. Foto)", "Shared folder (e.g. Photos)"), share) { share = it }
+            Field(L.t("Cartella dentro la condivisione (es. Catalogo)", "Folder inside the share (e.g. Catalog)"), folder) { folder = it }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(sub, { sub = it })
+                Text(L.t("Cerca i DNG anche nelle sottocartelle", "Also look for DNG files in subfolders"), color = C.text)
+            }
+            Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
+            Field(L.t("Password", "Password"), password, password = true) { password = it }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = {
+                    save(); test = L.t("Provo la connessione…", "Testing the connection…") to "info"
+                    vm.testNas(config()) { msg, ok -> test = msg to if (ok) "ok" else "error" }
+                }) { Text(L.t("Prova connessione", "Test connection")) }
+            }
+            Banner(test.second, test.first)
         }
-
-        SectionLabel(L.t("Valori predefiniti", "Defaults"), Modifier.padding(top = 12.dp))
-        Field(L.t("Autore", "Creator"), creator) { creator = it }
-        Field("Copyright", copyright) { copyright = it }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(advance, { advance = it })
-            Text(L.t("Passa alla foto successiva dopo una bandierina o una stella", "Go to the next photo after a flag or a star"),
-                color = C.text)
+        SettingsCard(L.t("Libreria di casa", "Home library")) {
+            if (!Tips.compact) Text(L.t("La cartella del NAS in cui PresetCraftAppLicator scrive le librerie da consultare sul telefono (Importazione automatica › Librerie da consultare sul telefono). Usa lo stesso NAS, utente e password di sopra.",
+                "The NAS folder where PresetCraftAppLicator writes the libraries to browse on the phone (Automatic import › Libraries to browse on the phone). Same NAS, user and password as above."),
+                color = C.muted, fontSize = 12.sp)
+            Field(L.t("Cartella condivisa (vuota = la stessa di sopra)", "Shared folder (empty = the same as above)"), libShare) { libShare = it }
+            Field(L.t("Cartella delle librerie dentro la condivisione (es. ViewerCraftStar)", "Libraries folder inside the share (e.g. ViewerCraftStar)"), libFolder) { libFolder = it }
+        }
+        SettingsCard(L.t("Ricerca per soggetti (IA)", "Search by subject (AI)")) {
+            if (!Tips.compact) Text(L.t("Nella Libreria, «Cerca» trova le foto per quello che contengono («gatti», «auto d'epoca») se la libreria è stata analizzata con il motore IA di PresetCraftAppLicator. Il modello si scarica una volta dal NAS alla prima ricerca.",
+                "In the Library, “Search” finds photos by what they contain (“cats”, “vintage car”) if the library has been analyzed with PresetCraftAppLicator's AI engine. The model is downloaded once from the NAS at the first search."),
+                color = C.muted, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (aiBytes > 0) L.t("Modello sul telefono: ${aiBytes / 1_000_000} MB", "Model on the phone: ${aiBytes / 1_000_000} MB")
+                else L.t("Modello non ancora scaricato", "Model not downloaded yet"), color = C.text, modifier = Modifier.weight(1f))
+                if (aiBytes > 0) OutlinedButton(onClick = { libVm.deleteAiModel(); aiBytes = AiStore.modelsSize(context) }) {
+                    Text(L.t("Elimina", "Delete"))
+                }
+            }
+        }
+        SettingsCard(L.t("Notifiche della spedizione", "Sending notifications")) {
+            if (!Tips.compact) Text(L.t("Dopo «Spedisci al NAS» una notifica mostra quante foto, con i loro metadati, sono già al sicuro sul NAS.",
+                "After “Send to the NAS” a notification shows how many photos, with their metadata, are already safe on the NAS."),
+                color = C.muted, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(notifyLc, { notifyLc = it })
+                Text(L.t("Segui anche l'ingresso in LightCraft (solo con il PC di casa acceso: la notifica resta finché non sono entrate)",
+                    "Also follow their arrival in LightCraft (only with the home PC on: the notification stays until they are in)"),
+                    color = C.text)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(notifyEnd, { notifyEnd = it })
+                Text(L.t("Avvisami quando la spedizione è finita o sospesa", "Tell me when sending is finished or paused"), color = C.text)
+            }
+        }
+        SettingsCard(L.t("Valori predefiniti", "Defaults")) {
+            Field(L.t("Autore", "Creator"), creator) { creator = it }
+            Field("Copyright", copyright) { copyright = it }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(advance, { advance = it })
+                Text(L.t("Passa alla foto successiva dopo una bandierina o una stella", "Go to the next photo after a flag or a star"),
+                    color = C.text)
+            }
         }
         Text("ViewerCraftStar ${BuildConfigInfo.version}", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
         Spacer(Modifier.height(24.dp))

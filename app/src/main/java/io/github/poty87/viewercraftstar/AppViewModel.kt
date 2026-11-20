@@ -28,7 +28,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     var photos by mutableStateOf<List<PhotoItem>>(emptyList()); private set
     var metas by mutableStateOf<Map<String, PhotoMeta>>(store.all()); private set
-    var filter by mutableStateOf(Filter.ALL)
+    /** Filtri della sezione Importa: vuoto = tutte; più filtri = le foto che ne soddisfano almeno uno. */
+    var filters by mutableStateOf(setOf<Filter>())
     var loading by mutableStateOf(false); private set
     var syncing by mutableStateOf(false); private set
     var status by mutableStateOf(""); private set
@@ -139,24 +140,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val visible: List<PhotoItem>
         get() = photos.filter { it.inWork == (section == Section.REVIEW) }.filter { p ->
-            val m = meta(p.name)
-            when (filter) {
-                Filter.ALL -> true
-                Filter.UNRATED -> m.flag == Flag.NONE && m.rating == 0
-                Filter.PICKED -> m.flag == Flag.PICK
-                Filter.REJECTED -> m.flag == Flag.REJECT
-                Filter.STARRED -> m.rating > 0
-                Filter.PENDING -> m.pending
-            }
+            filters.isEmpty() || filters.any { matches(it, meta(p.name)) }
         }
 
-    fun count(f: Filter): Int {
-        val old = filter
-        filter = f
-        val n = visible.size
-        filter = old
-        return n
+    private fun matches(f: Filter, m: PhotoMeta) = when (f) {
+        Filter.ALL -> true
+        Filter.UNRATED -> m.flag == Flag.NONE && m.rating == 0
+        Filter.PICKED -> m.flag == Flag.PICK
+        Filter.REJECTED -> m.flag == Flag.REJECT
+        Filter.STARRED -> m.rating > 0
+        Filter.PENDING -> m.pending
     }
+
+    fun count(f: Filter): Int =
+        photos.count { it.inWork == (section == Section.REVIEW) && matches(f, meta(it.name)) }
 
     /** Da inviare al NAS: solo le foto già spedite (quelle in lavorazione partono con "Spedisci al NAS"). */
     val pending: Int get() = photos.count { !it.inWork && meta(it.name).pending }

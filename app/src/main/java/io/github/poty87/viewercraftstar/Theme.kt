@@ -30,7 +30,7 @@ object C {
     val border = Color(0xFF5F6368)
     // banner di stato: (sfondo, accento)
     val levels = mapOf(
-        "info" to (Color(0xFF1D2633) to Color(0xFF60A5FA)),
+        "info" to (Color(0xFF262626) to Color(0xFF60A5FA)),
         "ok" to (Color(0xFF16261D) to Color(0xFF4ADE80)),
         "warn" to (Color(0xFF2C2416) to Color(0xFFFBBF24)),
         "error" to (Color(0xFF2D1A1C) to Color(0xFFF87171)),
@@ -48,8 +48,8 @@ fun AppTheme(content: @Composable () -> Unit) {
             primary = C.accent, onPrimary = Color(0xFF0B1220), background = C.bg, onBackground = C.text,
             surface = C.bg, onSurface = C.text, surfaceVariant = C.card, onSurfaceVariant = C.muted,
             surfaceContainer = C.card, surfaceContainerHigh = C.cardHigh, surfaceContainerHighest = C.cardHigh,
-            surfaceContainerLow = C.card, outline = C.border, secondaryContainer = Color(0xFF253650),
-            onSecondaryContainer = Color(0xFFDCE8FB),
+            surfaceContainerLow = C.card, outline = C.border, secondaryContainer = C.accent,
+            onSecondaryContainer = Color.Black,
         ),
         content = content,
     )
@@ -78,3 +78,14 @@ fun Banner(level: String, text: String, modifier: Modifier = Modifier) {
 
 @Suppress("unused")
 private fun Modifier.fullHeight() = fillMaxHeight()
+
+/** Una sezione delle impostazioni: riquadro con il titolo in evidenza, ben separato dagli altri. */
+@Composable
+fun SettingsCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()
+        .background(C.card, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).padding(16.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+        Text(title, color = C.accent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        content()
+    }
+}

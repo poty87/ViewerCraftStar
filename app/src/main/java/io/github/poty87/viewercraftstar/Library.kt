@@ -15,7 +15,9 @@ import java.util.zip.GZIPInputStream
  * potrebbe essere secondo il riconoscimento di LightCraft (`suggest`, "" = nessuna idea) e quanto gli somiglia.
  */
 data class LibFace(val x0: Float, val y0: Float, val x1: Float, val y1: Float, val name: String,
-                   val suggest: String = "", val score: Float = 0f) {
+                   val suggest: String = "", val score: Float = 0f,
+                   /** Nome dato da solo da PresetCraftAppLicator (somiglianza alta), non ancora confermato. */
+                   val auto: Boolean = false) {
     /** Il riquadro come testo: lo stesso volto tra telefono e PC. */
     val key: String get() = listOf(x0, y0, x1, y1).joinToString(",") { "%.4f".format(java.util.Locale.ROOT, it) }
 
@@ -270,9 +272,10 @@ object LibraryStore {
                         val n = if (r.hasNext()) r.nextString() else ""
                         val guess = if (r.hasNext()) r.nextString() else ""
                         val score = if (r.hasNext()) r.nextDouble().toFloat() else 0f
+                        val auto = if (r.hasNext()) r.nextInt() == 1 else false
                         while (r.hasNext()) r.skipValue()
                         r.endArray()
-                        faces += LibFace(v[0], v[1], v[2], v[3], n, guess, score)
+                        faces += LibFace(v[0], v[1], v[2], v[3], n, guess, score, auto)
                     }
                     r.endArray()
                 }

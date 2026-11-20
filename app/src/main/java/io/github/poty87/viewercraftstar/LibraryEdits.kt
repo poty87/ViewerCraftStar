@@ -31,7 +31,9 @@ data class LibEdit(
 ) {
     /** La foto come la vede il telefono, con la modifica sopra. */
     fun applyTo(p: LibPhoto): LibPhoto {
-        val newFaces = faces?.let { f -> p.faces.map { face -> f[face.key]?.let { face.copy(name = it) } ?: face } } ?: p.faces
+        // un nome dato o confermato qui non è più "automatico"
+        val newFaces = faces?.let { f -> p.faces.map { face -> f[face.key]?.let { face.copy(name = it, auto = false) } ?: face } }
+            ?: p.faces
         // persone: quelle dei volti dopo la modifica, più quelle che non vengono dai volti
         val people = if (faces == null) p.people else
             ((p.people - p.faces.map { it.name }.toSet()) + newFaces.map { it.name }.filter { it.isNotEmpty() }).distinct()
@@ -44,7 +46,7 @@ data class LibEdit(
     fun settledIn(p: LibPhoto, home: LibStack?) = trash != true && (stack == null || home?.photos?.contains(stack) == true) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
         (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords) &&
-        (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n } ?: true })
+        (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n && !it.auto } ?: true })
 }
 
 /**

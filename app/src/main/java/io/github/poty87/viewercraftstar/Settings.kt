@@ -64,6 +64,25 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("compact_tips", false)
         set(v) = prefs.edit().putBoolean("compact_tips", v).apply()
 
+    /** Galleria della Libreria: "justified" (righe con le proporzioni delle foto) o "square" (celle quadrate). */
+    var libGrid: String
+        get() = prefs.getString("lib_grid", "justified")!!
+        set(v) = prefs.edit().putString("lib_grid", v).apply()
+
+    /** Dimensione delle foto nella galleria: 1 (piccole, tante per riga) … 5 (grandi). */
+    var libSize: Int
+        get() = prefs.getInt("lib_size", 3)
+        set(v) = prefs.edit().putInt("lib_size", v.coerceIn(1, 5)).apply()
+
+    /** Galleria divisa per periodo, e per quale: "year", "month" o "day". */
+    var libSegment: Boolean
+        get() = prefs.getBoolean("lib_segment", true)
+        set(v) = prefs.edit().putBoolean("lib_segment", v).apply()
+
+    var libSegmentBy: String
+        get() = prefs.getString("lib_segment_by", "month")!!
+        set(v) = prefs.edit().putString("lib_segment_by", v).apply()
+
     /** La libreria scelta l'ultima volta. */
     var library: String
         get() = prefs.getString("library", "")!!
