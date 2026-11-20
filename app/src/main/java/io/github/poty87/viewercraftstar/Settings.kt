@@ -30,12 +30,12 @@ class Settings(context: Context) {
 
     /** La cartella sincronizzata con il NAS da Synology Drive. */
     var phoneFolder: String
-        get() = prefs.getString("phone_folder", "Pictures/RICOH_DNG/")!!
+        get() = prefs.getString("phone_folder", DEFAULT_SYNC)!!
         set(v) = prefs.edit().putString("phone_folder", normalizeFolder(v)).apply()
 
     /** La cartella di lavoro dell'app: qui arrivano i DNG nuovi, NON sincronizzata. "Spedisci al NAS" li sposta. */
     var workFolder: String
-        get() = prefs.getString("work_folder", "Pictures/ViewerCraftStar/")!!
+        get() = prefs.getString("work_folder", DEFAULT_WORK)!!
         set(v) = prefs.edit().putString("work_folder", normalizeFolder(v)).apply()
 
     var defaultCreator: String
@@ -63,6 +63,14 @@ class Settings(context: Context) {
     var compactTips: Boolean
         get() = prefs.getBoolean("compact_tips", false)
         set(v) = prefs.edit().putBoolean("compact_tips", v).apply()
+
+    /**
+     * Fotocamera, cosa si scarica: "dng" solo i DNG, "jpg" solo i JPEG, "both" il DNG e il suo JPEG gemello.
+     * I JPEG vanno sempre nella galleria del telefono (DCIM/Camera), i DNG nella cartella delle foto nuove.
+     */
+    var cameraFormat: String
+        get() = prefs.getString("camera_format", "both")!!
+        set(v) = prefs.edit().putString("camera_format", v).apply()
 
     /** Galleria della Libreria: "justified" (righe con le proporzioni delle foto) o "square" (celle quadrate). */
     var libGrid: String
@@ -127,6 +135,9 @@ class Settings(context: Context) {
         }
 
         private const val KEY = "viewercraftstar-nas"
+        /** Le due cartelle del telefono di un'installazione nuova, create dall'app dentro Pictures. */
+        const val DEFAULT_WORK = "Pictures/VCS_Import_Photo/"
+        const val DEFAULT_SYNC = "Pictures/VCS_Dng_Sync/"
 
         private fun key(): SecretKey {
             val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

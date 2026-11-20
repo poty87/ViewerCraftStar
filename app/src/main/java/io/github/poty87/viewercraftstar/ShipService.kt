@@ -84,7 +84,7 @@ class ShipService : Service() {
             if (!Shipper.reachable(cfg.host)) {
                 if (unreachableSince == 0L) unreachableSince = now
                 if (now - unreachableSince > UNREACHABLE_MS) return finish(L.t(
-                    "NAS non raggiungibile da 15 minuti: invio sospeso. I metadati restano in coda; tocca ▶ (Riprendi l'invio) nella sezione Spedite quando sei a casa o con la VPN.",
+                    "NAS non raggiungibile da 15 minuti: invio sospeso. I metadati restano in coda; tocca ▶ (Riprendi l'invio) nella sezione Inviate quando sei a casa o con la VPN.",
                     "NAS unreachable for 15 minutes: sending paused. The metadata stays queued; tap ▶ (Resume sending) in the Sent section at home or with the VPN."))
                 val lv = levels()
                 update(lv.count { it == Level.GREEN }, lv.count { it >= Level.BLUE }, mine.size,
@@ -107,14 +107,14 @@ class ShipService : Service() {
                 // senza seguire LightCraft (impostazione predefinita) si finisce quando foto e metadati sono sul NAS
                 if (!settings.notifyLightCraft && onNas == mine.size) return finish(
                     if (green == mine.size) L.t(
-                        "${mine.size} foto al sicuro, già in LightCraft: puoi toglierle dal telefono dalla sezione Spedite.",
+                        "${mine.size} foto al sicuro, già in LightCraft: puoi toglierle dal telefono dalla sezione Inviate.",
                         "${mine.size} photos safe, already in LightCraft: you can remove them from the phone in the Sent section.")
                     else L.t(
                         "Tutte le ${mine.size} foto sono al sicuro sul NAS con i metadati: puoi toglierle dal telefono. Entreranno in LightCraft quando il PC di casa è acceso.",
                         "All ${mine.size} photos are safe on the NAS with their metadata: you can remove them from the phone. They will enter LightCraft when the home PC is on."),
                     title = L.t("Spedizione completata", "Sending complete"))
                 if (green == mine.size) return finish(L.t(
-                    "${mine.size} foto in LightCraft con i tuoi metadati: puoi toglierle dal telefono dalla sezione Spedite.",
+                    "${mine.size} foto in LightCraft con i tuoi metadati: puoi toglierle dal telefono dalla sezione Inviate.",
                     "${mine.size} photos in LightCraft with your metadata: you can remove them from the phone in the Sent section."),
                     title = L.t("Spedizione completata", "Sending complete"))
                 if (onNas == mine.size && !nas.pcOn()) return finish(L.t(

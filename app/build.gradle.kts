@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.poty87.viewercraftstar"
         minSdk = 33 // Android 13: permesso READ_MEDIA_IMAGES
         targetSdk = 35
-        versionCode = 36
-        versionName = "0.19.0"
+        versionCode = 38
+        versionName = "0.21.0"
         // librerie native (ONNX Runtime per la ricerca IA): solo telefoni a 64 bit (tutti quelli con Android 13+)
         ndk { abiFilters += listOf("arm64-v8a") }
     }
@@ -64,6 +64,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     // SMB2/3 verso il NAS (Apache 2.0)
     implementation("com.hierynomus:smbj:0.13.0")
+    // elenco delle cartelle condivise del NAS (servizio srvsvc via SMB), per sceglierle invece di scriverle a mano
+    implementation("com.rapid7.client:dcerpc:0.12.13")
     // ricerca per soggetti: la parte "testo" del modello IA sul telefono (MIT)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     testImplementation("junit:junit:4.13.2")

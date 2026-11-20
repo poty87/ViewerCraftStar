@@ -61,6 +61,16 @@ After *Send to the NAS* the work goes on in the background, with a notification 
 closed. It stops by itself when every photo is safe on the NAS (or, if you choose so in the settings, when they are all in
 LightCraft).
 
+## Straight from a RICOH GR camera
+
+The round camera button at the bottom left of **To review** downloads the photos straight from a RICOH GR (tested with
+the GR IV), without the camera maker's app: the phone wakes the camera over Bluetooth, turns on its Wi-Fi, joins it and
+shows the photos with thumbnails, grouped by day, month or year. Downloaded DNGs land in the work folder, ready in To
+review; JPEGs go to the phone's gallery (`DCIM/Camera`). Files get the same names as with the camera maker's app
+(capture time in milliseconds + the camera's file name), and photos already on the phone or the NAS are not downloaded
+again. To pair a new camera, the app shows the steps (on the camera: Wireless Communication › Pairing › Execute
+Pairing, then press OK twice while the QR code is shown). Plain http is allowed only towards the camera (192.168.0.1).
+
 ## Library: your home LightCraft library on the phone
 
 The **Library** tab shows your LightCraft libraries — all of them, not only the photos sent from the phone — from the
@@ -209,13 +219,22 @@ telefono, inoltro della porta attraverso uno o due router).
 4. Appena ogni DNG è sul NAS l'app gli scrive accanto un piccolo `.xmp` con le tue scelte; sul PC di casa
    PresetCraftAppLicator importa le foto in LightCraft con il profilo giusto e applica stelle, bandierine, etichette,
    metadati e preset.
-5. La sezione **Spedite** mostra dove si trova ogni foto: 🔴 rossa = foto o metadati non ancora sul NAS (o cambiati dopo),
+5. La sezione **Inviate** mostra dove si trova ogni foto: 🔴 rossa = foto o metadati non ancora sul NAS (o cambiati dopo),
    🔵 blu = foto e metadati al sicuro sul NAS (entrano in LightCraft quando il PC di casa è acceso), 🟢 verde = già in
    LightCraft. Blu e verdi si tolgono dal telefono con un tocco.
 
 Dopo *Spedisci al NAS* il lavoro continua in background, con una notifica e una barra di avanzamento, anche con l'app
 chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS (o, se lo scegli nelle impostazioni, quando sono
 tutte in LightCraft).
+
+**Direttamente dalla fotocamera RICOH GR.** Il pulsante tondo con la fotocamera in basso a sinistra in **Da rivedere**
+scarica le foto direttamente da una RICOH GR (provata con la GR IV), senza l'app del produttore: il telefono sveglia la
+fotocamera via Bluetooth, ne accende il Wi-Fi, ci si collega e mostra le foto con le miniature, per giorno, mese o anno.
+I DNG scaricati vanno nella cartella di lavoro, pronti in Da rivedere; i JPEG nella galleria del telefono
+(`DCIM/Camera`). I file hanno gli stessi nomi dell'app del produttore (ora di scatto in millisecondi + il nome del file
+della fotocamera) e le foto già sul telefono o sul NAS non si riscaricano. Per associare una fotocamera nuova l'app
+mostra i passaggi (sulla fotocamera: Wireless Communication › Pairing › Execute Pairing, poi OK due volte mentre è
+visibile il QR). L'http non cifrato è permesso solo verso la fotocamera (192.168.0.1).
 
 **Libreria: la libreria LightCraft di casa sul telefono.** La scheda **Libreria** mostra le tue librerie LightCraft — tutte,
 non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.15.0 o successivo) scrive in una cartella

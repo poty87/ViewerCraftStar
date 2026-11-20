@@ -146,7 +146,7 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
             }
         }
         LazyColumn(Modifier.fillMaxSize(), state = state,
-            contentPadding = PaddingValues(start = 3.dp, end = 3.dp, bottom = if (lib.selecting) 120.dp else 16.dp),
+            contentPadding = PaddingValues(start = 3.dp, end = 3.dp, bottom = if (lib.selecting) 120.dp else 16.dp + LocalBarSpace.current),
             verticalArrangement = Arrangement.spacedBy(GAP)) {
             item(key = "header", contentType = "header") { header() }
             if (lib.configured && lib.index == null) item(key = "empty") {

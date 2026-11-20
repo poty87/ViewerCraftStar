@@ -1,6 +1,10 @@
 package io.github.poty87.viewercraftstar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -89,3 +93,53 @@ fun SettingsCard(title: String, content: @Composable androidx.compose.foundation
         content()
     }
 }
+
+/**
+ * Lo stile unico dei pulsanti dell'app: pillola arrotondata piena, senza bordo. Grigia di base, blu per l'azione
+ * principale, rossa per quelle distruttive; `container`/`content` per colori speciali (bandierine).
+ */
+@Composable
+fun PillButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, primary: Boolean = false,
+               danger: Boolean = false, container: Color? = null, content: Color? = null,
+               pad: androidx.compose.ui.unit.Dp = 18.dp,
+               body: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    // non attivo: grigio chiaro con il testo scuro, così si capisce che c'è ma non si può premere
+    val bg = if (!enabled) Color(0xFF8A8A8A) else container ?: when { primary -> C.accent; danger -> Color(0xFFDC2626); else -> C.cardHigh }
+    val fg = if (!enabled) Color(0xFF2A2A2A) else content ?: when { primary -> Color.Black; danger -> Color.White; else -> C.text }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides fg,
+        androidx.compose.material3.LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontSize = 14.sp,
+            fontWeight = if (primary) FontWeight.Bold else FontWeight.Medium)) {
+        Row(modifier.height(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = pad),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically, content = body)
+    }
+}
+
+/** Lo stile unico delle opzioni da scegliere: pillola arrotondata, blu se scelta, grigia altrimenti. */
+@Composable
+fun RoundChip(selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier,
+              leading: (@Composable () -> Unit)? = null, label: @Composable () -> Unit) {
+    val fg = if (selected) Color.Black else C.text
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides fg,
+        androidx.compose.material3.LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)) {
+        Row(modifier.height(36.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(if (selected) C.accent else C.card).clickable(onClick = onClick).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (leading != null) {
+                Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) { leading() }
+                androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
+            }
+            label()
+        }
+    }
+}
+
+/** Altezza della barra in basso: lo spazio da lasciare in fondo alle liste, che le scorrono sotto. */
+val LocalBarSpace = androidx.compose.runtime.compositionLocalOf { 0.dp }
+/** Quanto della barra in basso si vede adesso (0 quando è nascosta): i pulsanti tondi le stanno sopra. */
+val LocalBarShown = androidx.compose.runtime.compositionLocalOf { 0.dp }
+/** Il fondo delle barre in basso: leggermente traslucido, si intravede quello che c'è sotto. */
+val BarBg = Color(0xD9111111)

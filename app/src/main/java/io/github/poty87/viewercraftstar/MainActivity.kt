@@ -19,6 +19,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -91,7 +93,27 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
     // le posizioni delle gallerie vivono qui: chiudendo una foto si torna esattamente dov'eri
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val libState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // la barra in basso si nasconde scorrendo verso il basso e ricompare scorrendo verso l'alto (come YouTube)
+    var barShown by remember { mutableStateOf(true) }
+    var barH by remember { mutableStateOf(80.dp) } // altezza misurata della barra (con lo spazio dei tasti di sistema)
+    val barScroll = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            private var acc = 0f
+            // conta solo lo scorrimento avvenuto davvero: se non c'è niente da scorrere (zero foto, pagina corta) la barra resta
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset,
+                                      source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                val dy = consumed.y
+                if (dy == 0f) return androidx.compose.ui.geometry.Offset.Zero
+                // si accumula nella stessa direzione: la barra si muove solo dopo un tratto deciso, non a ogni tremolio
+                acc = if ((dy < 0) == (acc < 0)) acc + dy else dy
+                if (acc < -100f) barShown = false // per nasconderla serve un tratto un po' più lungo che per farla tornare
+                if (acc > 40f) barShown = true
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
     fun go(t: String) {
+        barShown = true
         if (tab == "settings" && t != "settings") { vm.reload(); lib.refresh() }
         tab = t
         if (t == "library") vm.inLibrary = true
@@ -104,20 +126,34 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
     when (screen) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
         "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
-        else -> Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
-            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+        "camera" -> CameraScreen(vm) { screen = "grid"; vm.reload() }
+        // la barra in basso sta sopra le pagine (traslucida): le liste le scorrono sotto, con lo spazio in fondo per l'ultima riga
+        else -> androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val selectingNow = lib.selecting && tab == "library"
+            val shown by androidx.compose.animation.core.animateDpAsState(if (barShown && !selectingNow) barH else 0.dp, label = "bar")
+            androidx.compose.runtime.CompositionLocalProvider(LocalBarSpace provides barH, LocalBarShown provides shown) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().nestedScroll(barScroll)) {
                 if (tab == "settings") SettingsScreen(vm, lib) { go("library") }
                 else if (tab == "notices") NoticesScreen()
                 else GridScreen(vm, lib, gridState, libState, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
-                    onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" })
+                    onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" },
+                    onCamera = { screen = "camera" })
             }
-            BottomBar(tab, lib.selecting && tab == "library") { go(it) }
+            }
+            androidx.compose.animation.AnimatedVisibility(barShown, Modifier.align(Alignment.BottomCenter),
+                enter = androidx.compose.animation.slideInVertically { it },
+                exit = androidx.compose.animation.slideOutVertically { it }) {
+                androidx.compose.foundation.layout.Box(Modifier.onSizeChanged { if (it.height > 0) barH = with(density) { it.height.toDp() } }) {
+                    BottomBar(tab, selectingNow) { go(it) }
+                }
+            }
         }
     }
     }
     // notifiche in sovrimpressione (sopra la barra in basso) e conferme a tutto schermo, valide in ogni pagina
     NoticeOverlay(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-        .padding(bottom = if (screen == "grid" && !(lib.selecting && tab == "library")) 80.dp else 8.dp))
+        .padding(bottom = if (screen == "grid" && barShown && !(lib.selecting && tab == "library")) 72.dp else 8.dp))
     ConfirmOverlay()
     }
 }
@@ -132,7 +168,7 @@ private fun BottomBar(tab: String, hidden: Boolean, onPick: (String) -> Unit) {
         Triple("notices", Icons.Filled.Notifications, L.t("Notifiche", "Notifications")),
         Triple("settings", Icons.Filled.Settings, L.t("Impostazioni", "Settings")),
     )
-    NavigationBar(containerColor = androidx.compose.ui.graphics.Color(0xFF111111),
+    NavigationBar(containerColor = BarBg,
         tonalElevation = 0.dp) {
         for ((key, icon, label) in items) {
             NavigationBarItem(selected = tab == key, onClick = { onPick(key) },
@@ -158,6 +194,6 @@ private fun PermissionScreen(onAsk: () -> Unit) {
         Text(L.t("Per mostrare i DNG della cartella serve il permesso di accedere a foto e video. Scegli «Consenti tutto»: con l'accesso solo ad alcune foto le altre non compaiono.",
             "To show the DNG files of the folder the app needs access to photos and videos. Choose “Allow all”: with access to only some photos, the others won't appear."),
             color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp))
-        Button(onClick = onAsk) { Text(L.t("Consenti l'accesso", "Allow access")) }
+        PillButton(onClick = onAsk, primary = true) { Text(L.t("Consenti l'accesso", "Allow access")) }
     }
 }

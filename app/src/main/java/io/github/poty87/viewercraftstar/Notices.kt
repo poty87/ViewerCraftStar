@@ -191,7 +191,7 @@ fun NoticesScreen() {
             }
         }
         else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 10.dp + LocalBarSpace.current),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(Notices.history, key = { it.id }) { n ->
                 val (bg, accent) = noticeColors(n.level)
@@ -247,14 +247,9 @@ fun DialogButtons(vararg secondary: Pair<String, () -> Unit>, main: Pair<String,
                   enabled: Boolean = true) {
     androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for ((label, action) in secondary) Text(label, color = C.text, fontSize = 15.sp, maxLines = 1,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { action() }.padding(horizontal = 14.dp, vertical = 10.dp))
+        for ((label, action) in secondary) PillButton(onClick = action) { Text(label, maxLines = 1) }
         main?.let { (label, action) ->
-            Text(label, color = if (!enabled) C.muted else if (danger) Color.White else Color.Black, fontSize = 15.sp,
-                fontWeight = FontWeight.Bold, maxLines = 1,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                    .background(if (!enabled) C.card else if (danger) Color(0xFFDC2626) else C.accent)
-                    .clickable(enabled = enabled) { action() }.padding(horizontal = 16.dp, vertical = 10.dp))
+            PillButton(onClick = action, enabled = enabled, primary = !danger, danger = danger) { Text(label, maxLines = 1) }
         }
     }
 }

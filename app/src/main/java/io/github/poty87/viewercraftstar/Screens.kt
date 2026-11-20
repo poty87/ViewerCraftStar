@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -35,6 +38,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -95,6 +101,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ---------------------------------------------------------------- pezzi comuni
@@ -150,7 +157,7 @@ private fun FlagBadge(flag: Flag, size: Dp) {
 @Composable
 fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
                libState: androidx.compose.foundation.lazy.LazyListState,
-               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit) {
+               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit, onCamera: () -> Unit = {}) {
     var options by remember { mutableStateOf(false) }
     if (options) GalleryOptionsSheet(lib) { options = false }
     vm.vpnAsk?.let { names ->
@@ -164,18 +171,17 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
     }
     val list = if (vm.inLibrary) emptyList() else vm.visible
     val header: @Composable () -> Unit = {
-        Column {
-            Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    TitleText(if (vm.inLibrary) L.t("Librerie", "Libraries") else L.t("Importa", "Import"))
-                    if (!vm.inLibrary) Text("${sectionFolder(vm)} · ${vm.countIn(vm.section)} DNG", color = C.muted,
-                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                // opzioni della galleria (Libreria) o invio al NAS (Importa)
-                if (vm.inLibrary) IconButton(onClick = { options = true }) {
-                    Icon(Icons.Filled.MoreVert, L.t("Opzioni di visualizzazione", "View options"), tint = C.text)
-                }
-                else Box {
+        if (vm.inLibrary) Column {
+            // Librerie: il titolo è la libreria aperta (l'icona in basso dice già in che pagina sei)
+            LibraryTitle(lib) { options = true }
+            ConnRow(vm)
+            LibraryHeader(lib)
+        }
+        else Column {
+            // Importa: in testa solo il collegamento al NAS e l'invio (cartelle e conteggi stanno in Impostazioni e nelle schede)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { ConnRow(vm) }
+                Box {
                     IconButton(onClick = { vm.sync() }, enabled = !vm.syncing) {
                         if (vm.syncing) CircularProgressIndicator(Modifier.size(20.dp), color = C.accent, strokeWidth = 2.dp)
                         else Icon(Icons.Filled.Refresh, L.t("Invia al NAS", "Send to NAS"), tint = C.text)
@@ -185,10 +191,8 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                             .background(C.star).padding(horizontal = 5.dp))
                 }
             }
-            ConnRow(vm)
-            if (!vm.inLibrary) SectionTabs(vm)
-            if (vm.inLibrary) LibraryHeader(lib)
-            else {
+            SectionTabs(vm)
+            run {
                 if (vm.section == Section.REVIEW) ReviewHeader(vm) else SentHeader(vm)
                 ImportFilters(vm)
             }
@@ -198,7 +202,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         if (vm.inLibrary) LibraryGallery(lib, libState, header, onOpenLib, Modifier.statusBarsPadding())
         else LazyVerticalGrid(GridCells.Adaptive(118.dp),
             Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 6.dp), state = gridState,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp + LocalBarSpace.current),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
@@ -225,27 +229,129 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             }
         }
         if (vm.inLibrary && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
+        // Importa: associare la fotocamera e scaricarne le foto (RICOH GR, al posto di GR World), tondo in basso a sinistra
+        // solo in «Da rivedere»: dalla fotocamera arrivano foto nuove, in «Spedite» non serve
+        if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom()).size(58.dp)
+            .clip(CircleShape).background(C.cardHigh).clickable { onCamera() }, contentAlignment = Alignment.Center) {
+            CameraPlusIcon(Modifier.size(32.dp), C.text)
+        }
+        // «Spedisci al NAS»: tondo blu in basso a destra, allo stesso livello della fotocamera, con il numero di foto
+        if (!vm.inLibrary && vm.section == Section.REVIEW) {
+            val ship = rememberShip(vm)
+            val toSend = vm.countIn(Section.REVIEW) - vm.photos.count { it.inWork && vm.meta(it.name).flag == Flag.REJECT }
+            val on = vm.countIn(Section.REVIEW) > 0 && !vm.moving
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = fabBottom())) {
+                Box(Modifier.size(58.dp).clip(CircleShape).background(if (on) C.accent else Color(0xFF8A8A8A))
+                    .clickable(enabled = on) { ship() }, contentAlignment = Alignment.Center) {
+                    if (vm.moving) CircularProgressIndicator(Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
+                    else UploadNasIcon(Modifier.size(30.dp), if (on) Color.Black else Color(0xFF2A2A2A))
+                }
+                // tondino bianco sempre della stessa misura (oltre 99 «99+», come il contatore delle Notifiche),
+                // sul bordo in alto a destra del pulsante
+                if (on && toSend > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(24.dp)
+                    .clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Text(if (toSend > 99) "99+" else "$toSend", color = Color.Black, fontWeight = FontWeight.Bold, maxLines = 1,
+                        fontSize = if (toSend > 99) 8.sp else 10.sp, letterSpacing = if (toSend > 99) (-0.3).sp else 0.sp)
+                }
+            }
+        }
+        // «Spedite»: le foto già al sicuro a casa si tolgono dal telefono con il tondo rosso in basso a destra, come
+        // «Spedisci al NAS» in «Da rivedere» (stesso posto, stessa misura, stesso tondino bianco con il numero)
+        if (!vm.inLibrary && vm.section == Section.SENT) {
+            val trash = rememberTrash(vm)
+            val safe = vm.visible.filter { vm.isSafe(it) }
+            val on = safe.isNotEmpty()
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = fabBottom())) {
+                Box(Modifier.size(58.dp).clip(CircleShape).background(if (on) Color(0xFFF87171) else Color(0xFF8A8A8A))
+                    .clickable(enabled = on) {
+                        Confirm.show(L.t("Spostare ${safe.size} foto nel cestino del telefono?", "Move ${safe.size} photos to the phone's bin?"),
+                            L.t("Sono foto già al sicuro a casa (sul NAS o già in LightCraft), quindi sul telefono non servono più. Prima ricontrollo sul NAS che lo siano davvero, poi Android ti chiede la conferma. Il cestino del telefono le tiene 30 giorni: fino ad allora le puoi recuperare dalla Galleria. Sul NAS e in LightCraft non cambia niente.",
+                                "These photos are already safe at home (on the NAS or already in LightCraft), so the phone no longer needs them. I first check again on the NAS that they really are, then Android asks you to confirm. The phone's bin keeps them for 30 days: until then you can recover them from the Gallery. Nothing changes on the NAS or in LightCraft."),
+                            L.t("Sposta nel cestino", "Move to bin")) { trash(safe.map { it.name }) }
+                    }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Delete, L.t("Sposta nel cestino del telefono le foto al sicuro", "Move the safe photos to the phone's bin"),
+                        tint = if (on) Color.Black else Color(0xFF2A2A2A), modifier = Modifier.size(30.dp))
+                }
+                if (on) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(24.dp)
+                    .clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Text(if (safe.size > 99) "99+" else "${safe.size}", color = Color.Black, fontWeight = FontWeight.Bold, maxLines = 1,
+                        fontSize = if (safe.size > 99) 8.sp else 10.sp, letterSpacing = if (safe.size > 99) (-0.3).sp else 0.sp)
+                }
+            }
+        }
         if (!vm.inLibrary && !vm.loading && list.isEmpty()) Text(
             if (vm.countIn(vm.section) == 0) L.t("Nessun DNG in ${sectionFolder(vm)}", "No DNG files in ${sectionFolder(vm)}")
             else L.t("Nessuna foto con questi filtri", "No photos match these filters"),
             color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp))
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).padding(bottom = LocalBarShown.current))
+    }
+}
+
+/**
+ * La forma di una scheda di Chrome: angoli in alto arrotondati e, in basso, due raccordi curvi verso l'esterno che la
+ * fondono con la linea sotto. `flare` è la larghezza dei raccordi (compresa nella larghezza della scheda).
+ */
+private class ChromeTabShape(private val radius: androidx.compose.ui.unit.Dp, private val flare: androidx.compose.ui.unit.Dp) :
+    androidx.compose.ui.graphics.Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                               density: androidx.compose.ui.unit.Density): androidx.compose.ui.graphics.Outline {
+        val r = with(density) { radius.toPx() }
+        val f = with(density) { flare.toPx() }
+        val w = size.width
+        val h = size.height
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, h)
+            quadraticTo(f, h, f, h - f)            // raccordo in basso a sinistra (verso l'esterno)
+            lineTo(f, r)
+            quadraticTo(f, 0f, f + r, 0f)          // angolo in alto a sinistra
+            lineTo(w - f - r, 0f)
+            quadraticTo(w - f, 0f, w - f, r)       // angolo in alto a destra
+            lineTo(w - f, h - f)
+            quadraticTo(w - f, h, w, h)            // raccordo in basso a destra
+            close()
+        }
+        return androidx.compose.ui.graphics.Outline.Generic(path)
     }
 }
 
 @Composable
 private fun SectionTabs(vm: AppViewModel) {
-    // come le schede di un browser: quella aperta in blu, attaccata alla linea sotto; l'altra in grigio
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            for ((sec, label) in listOf(Section.REVIEW to L.t("Da rivedere", "To review"), Section.SENT to L.t("Spedite", "Sent"))) {
+    // come le schede di Chrome: stessa forma e grandezza, accostate; quella aperta in blu davanti e fusa con la linea
+    // sotto, l'altra grigia dietro. Ognuna si allarga di metà raccordo verso l'altra, così i raccordi si sovrappongono.
+    val flare = 10.dp
+    // di quanto ogni scheda si allarga verso l'altra: la davanti copre l'angolo di quella dietro
+    val overlap = 16.dp
+    val tabs = listOf(Section.REVIEW to L.t("Da rivedere", "To review"), Section.SENT to L.t("Inviate", "Sent"))
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
+            tabs.forEachIndexed { i, (sec, label) ->
                 val on = vm.section == sec
-                Box(Modifier.weight(1f).clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                Box(Modifier.weight(1f).zIndex(if (on) 1f else 0f)
+                    .layout { m, c ->
+                        val extra = overlap.roundToPx()
+                        val w = c.maxWidth + extra
+                        val placeable = m.measure(c.copy(minWidth = w, maxWidth = w))
+                        layout(c.maxWidth, placeable.height) { placeable.place(if (i == 0) 0 else -extra, 0) }
+                    }
+                    .height(42.dp)
+                    // quella davanti proietta un'ombra sul bordo di quella dietro: sembra appoggiata sopra
+                    .then(if (on) Modifier.shadow(10.dp, ChromeTabShape(10.dp, flare), clip = false,
+                        ambientColor = Color.Black, spotColor = Color.Black) else Modifier)
+                    .clip(ChromeTabShape(10.dp, flare))
                     .background(if (on) C.accent else Color(0xFF2B2B2B))
-                    .clickable { vm.section = sec; vm.inLibrary = false }.padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center) {
-                    Text("$label  ${vm.countIn(sec)}", color = if (on) Color.Black else C.muted, fontSize = 14.sp,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                    .clickable { vm.section = sec; vm.inLibrary = false }
+                    // il lato di quella dietro coperto da quella davanti: il testo si sposta per non finirci sotto
+                    .padding(start = flare + 12.dp + if (!on && i == 1) overlap else 0.dp,
+                        end = flare + 10.dp + if (!on && i == 0) overlap else 0.dp),
+                    contentAlignment = Alignment.CenterStart) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, color = if (on) Color.Black else C.muted, fontSize = 14.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.weight(1f))
+                        Text("${vm.countIn(sec)}", color = if (on) Color.Black else C.muted, fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(50))
+                                .background(if (on) Color(0x33000000) else Color(0xFF3A3A3A)).padding(horizontal = 8.dp, vertical = 1.dp))
+                    }
                 }
             }
         }
@@ -261,12 +367,9 @@ private fun ImportFilters(vm: AppViewModel) {
         selectedContainerColor = C.accent, selectedLabelColor = Color.Black, selectedLeadingIconColor = Color.Black)
     Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        FilterChip(vm.filters.isEmpty(), { vm.filters = emptySet() }, colors = chipColors,
-            label = { Text(L.t("Tutte", "All") + "  ${vm.count(Filter.ALL)}", fontSize = 13.sp) })
+        RoundChip(vm.filters.isEmpty(), { vm.filters = emptySet() }) { Text(L.t("Tutte", "All") + "  ${vm.count(Filter.ALL)}", fontSize = 13.sp) }
         Box {
-            FilterChip(vm.filters.isNotEmpty(), { open = true }, colors = chipColors,
-                leadingIcon = { Icon(Icons.Filled.Menu, null, modifier = Modifier.size(16.dp)) },
-                label = { Text(L.t("Filtri", "Filters") + if (vm.filters.isNotEmpty()) " · ${vm.filters.size}" else "", fontSize = 13.sp) })
+            RoundChip(vm.filters.isNotEmpty(), { open = true }, leading = { Icon(Icons.Filled.Menu, null, modifier = Modifier.size(16.dp)) }) { Text(L.t("Filtri", "Filters") + if (vm.filters.isNotEmpty()) " · ${vm.filters.size}" else "", fontSize = 13.sp) }
             DropdownMenu(open, { open = false }) {
                 for ((f, label) in listOf(Filter.UNRATED to L.t("Da valutare", "Unrated"), Filter.PICKED to L.t("Scelte", "Picked"),
                         Filter.REJECTED to L.t("Scartate", "Rejected"), Filter.STARRED to L.t("Con stelle", "Starred"),
@@ -298,7 +401,7 @@ private fun ConnRow(vm: AppViewModel) {
         Text(text, color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp).weight(1f),
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (vm.conn == Conn.AWAY || vm.conn == Conn.VPN_NO_NAS)
-            androidx.compose.material3.TextButton(onClick = { vm.openVpn() }) { Text(L.t("Apri VPN", "Open VPN"), fontSize = 13.sp) }
+            PillButton(onClick = { vm.openVpn() }) { Text(L.t("Apri VPN", "Open VPN"), fontSize = 13.sp) }
     }
 }
 
@@ -308,6 +411,21 @@ private fun sectionFolder(vm: AppViewModel) =
 /** Sezione "Da rivedere": la cartella di lavoro, e il bottone che spedisce tutto nella cartella sincronizzata. */
 @Composable
 private fun ReviewHeader(vm: AppViewModel) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        vm.workProblem?.let { Banner("error", it) }
+        if (!Tips.compact) Text(L.t("Qui arrivano le foto nuove (cartella non sincronizzata). Quando hai finito, spediscile con il tondo blu in basso a destra: passano in ${vm.settings.phoneFolder} e Synology Drive le carica sul NAS.",
+            "New photos land here (not synced). When you're done, send them with the blue round button at the bottom right: they move to ${vm.settings.phoneFolder} and Synology Drive uploads them to the NAS."),
+            color = C.muted, fontSize = 12.sp)
+        val rejected = vm.photos.count { it.inWork && vm.meta(it.name).flag == Flag.REJECT }
+        if (rejected > 0) Text(if (Tips.compact) L.t("$rejected scartate → cestino del telefono", "$rejected rejected → phone's bin") else L.t("Le $rejected scartate non vengono spedite: finiscono nel cestino del telefono (recuperabili per 30 giorni).",
+            "The $rejected rejected photos aren't sent: they go to the phone's bin (recoverable for 30 days)."),
+            color = C.muted, fontSize = 12.sp)
+    }
+}
+
+/** «Spedisci al NAS»: chiede il permesso delle notifiche (la prima volta) e la conferma di Android, poi spedisce. */
+@Composable
+private fun rememberShip(vm: AppViewModel): () -> Unit {
     val context = LocalContext.current
     var plan by remember { mutableStateOf<AppViewModel.Shipment?>(null) }
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -327,24 +445,10 @@ private fun ReviewHeader(vm: AppViewModel) {
     }
     val notifAsk = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { proceed() }
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        vm.workProblem?.let { Banner("error", it) }
-        if (!Tips.compact) Text(L.t("Qui arrivano le foto nuove (cartella non sincronizzata). Quando hai finito, spediscile: passano in ${vm.settings.phoneFolder} e Synology Drive le carica sul NAS.",
-            "New photos land here (not synced). When you're done, send them: they move to ${vm.settings.phoneFolder} and Synology Drive uploads them to the NAS."),
-            color = C.muted, fontSize = 12.sp)
-        val n = vm.countIn(Section.REVIEW)
-        val rejected = vm.photos.count { it.inWork && vm.meta(it.name).flag == Flag.REJECT }
-        if (n > 0) Button(enabled = !vm.moving, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth(), onClick = {
-            if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                android.content.pm.PackageManager.PERMISSION_GRANTED) notifAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            else proceed()
-        }) {
-            if (vm.moving) CircularProgressIndicator(Modifier.size(18.dp), color = C.text, strokeWidth = 2.dp)
-            else Text(L.t("Spedisci al NAS (${n - rejected})", "Send to the NAS (${n - rejected})"))
-        }
-        if (rejected > 0) Text(if (Tips.compact) L.t("$rejected scartate → cestino del telefono", "$rejected rejected → phone's bin") else L.t("Le $rejected scartate non vengono spedite: finiscono nel cestino del telefono (recuperabili per 30 giorni).",
-            "The $rejected rejected photos aren't sent: they go to the phone's bin (recoverable for 30 days)."),
-            color = C.muted, fontSize = 12.sp)
+    return {
+        if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) notifAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        else proceed()
     }
 }
 
@@ -361,15 +465,13 @@ private fun levelLabel(l: Level) = when (l) {
 private fun HouseCount(l: Level, n: Int, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Home, null, tint = levelColors.getValue(l), modifier = Modifier.size(16.dp))
-        Text(" $n $label", color = C.text, fontSize = 13.sp)
+        Text(" $n $label", color = C.text, fontSize = 13.sp, maxLines = 1, softWrap = false)
     }
 }
 
-/** Sezione "Spedite": casette rossa/blu/verde, stato del PC di casa, ripresa dell'invio e cestino. */
+/** Sezione "Inviate": casette rossa/blu/verde, stato del PC di casa, ripresa dell'invio e cestino. */
 @Composable
 private fun SentHeader(vm: AppViewModel) {
-    val trash = rememberTrash(vm)
-    val safe = vm.visible.filter { vm.isSafe(it) }
     val red = vm.countLevel(Level.RED)
     val blue = vm.countLevel(Level.BLUE)
     val nas = vm.nas
@@ -377,7 +479,7 @@ private fun SentHeader(vm: AppViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             HouseCount(Level.GREEN, vm.countLevel(Level.GREEN), L.t("in LightCraft", "in LightCraft"))
             HouseCount(Level.BLUE, blue, L.t("sul NAS", "on the NAS"))
-            HouseCount(Level.RED, red, L.t("da completare", "to complete"))
+            HouseCount(Level.RED, red, L.t("da inviare", "to send"))
         }
         if (!Tips.compact) Text(L.t("Verde: già in LightCraft. Blu: foto e metadati al sicuro sul NAS, entrano in LightCraft quando il PC di casa è acceso. Rossa: foto o metadati non ancora sul NAS, o da aggiornare. Verdi e blu si possono togliere dal telefono.",
             "Green: already in LightCraft. Blue: photo and metadata safe on the NAS, they enter LightCraft when the home PC is on. Red: photo or metadata not on the NAS yet, or to be updated. Green and blue can be removed from the phone."),
@@ -396,17 +498,6 @@ private fun SentHeader(vm: AppViewModel) {
         if (vm.shipping) CircularProgressIndicator(Modifier.padding(horizontal = 12.dp).size(18.dp), color = C.accent, strokeWidth = 2.dp)
         else if (red > 0 || (blue > 0 && nas.pcOn())) IconButton(onClick = { vm.resume() }) {
             Icon(Icons.Filled.PlayArrow, L.t("Riprendi l'invio in background", "Resume sending in the background"), tint = C.accent)
-        }
-        // le foto già al sicuro a casa: cestino rosso, con la conferma a tutto schermo
-        if (safe.isNotEmpty()) IconButton(onClick = {
-            Confirm.show(L.t("Spostare ${safe.size} foto nel cestino del telefono?", "Move ${safe.size} photos to the phone's bin?"),
-                L.t("Sono foto già al sicuro a casa (sul NAS o già in LightCraft), quindi sul telefono non servono più. Prima ricontrollo sul NAS che lo siano davvero, poi Android ti chiede la conferma. Il cestino del telefono le tiene 30 giorni: fino ad allora le puoi recuperare dalla Galleria. Sul NAS e in LightCraft non cambia niente.",
-                    "These photos are already safe at home (on the NAS or already in LightCraft), so the phone no longer needs them. I first check again on the NAS that they really are, then Android asks you to confirm. The phone's bin keeps them for 30 days: until then you can recover them from the Gallery. Nothing changes on the NAS or in LightCraft."),
-                L.t("Sposta nel cestino", "Move to bin")) { trash(safe.map { it.name }) }
-        }) {
-            androidx.compose.material3.BadgedBox(badge = {
-                androidx.compose.material3.Badge(containerColor = Color(0xFFF87171), contentColor = Color.Black) { Text("${safe.size}") }
-            }) { Icon(Icons.Filled.Delete, L.t("Sposta nel cestino del telefono le foto al sicuro", "Move the safe photos to the phone's bin"), tint = Color(0xFFF87171)) }
         }
         }
     }
@@ -507,8 +598,7 @@ fun ViewerScreen(vm: AppViewModel, list: List<PhotoItem>, start: Int, onBack: ()
                             .clickable { vm.setLabel(item.name, label) })
                     }
                 }
-                OutlinedButton(onClick = { choosing = true }, shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.fillMaxWidth()) {
+                PillButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(L.t("Preset: ", "Preset: ") + m.presetName.ifEmpty { L.t("profilo della fotocamera", "camera profile") },
                         maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (m.presetId.isEmpty()) C.text else C.accent)
                 }
@@ -516,7 +606,7 @@ fun ViewerScreen(vm: AppViewModel, list: List<PhotoItem>, start: Int, onBack: ()
                     Text(L.t("Il DNG non è sul NAS: forse non è ancora stato caricato, o è stato cancellato dal NAS.",
                         "The DNG isn't on the NAS: maybe not uploaded yet, or deleted from the NAS."),
                         color = Color(0xFFFB923C), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.TextButton(onClick = { vm.dropPending(item.name) }) {
+                    PillButton(onClick = { vm.dropPending(item.name) }) {
                         Text(L.t("Togli dalla coda", "Remove from queue"))
                     }
                 }
@@ -548,8 +638,7 @@ private fun PresetSheet(vm: AppViewModel, item: PhotoItem, close: () -> Unit) {
                 androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { uris ->
                 vm.uploadPresets(uris); close()
             }
-            OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            PillButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                 Text(L.t("Importa preset da file…", "Import presets from file…"))
             }
             PresetRow(L.t("Profilo della fotocamera (predefinito)", "Camera profile (default)"), m.presetId.isEmpty()) {
@@ -588,9 +677,7 @@ private var controlsAdvance by mutableStateOf<Int?>(null)
 private fun FlagButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean,
                        colors: Pair<Color, Color>, click: () -> Unit) {
     val (fg, bg) = colors
-    OutlinedButton(onClick = click, shape = RoundedCornerShape(6.dp),
-        colors = ButtonDefaults.outlinedButtonColors(containerColor = if (on) bg else Color.Transparent,
-            contentColor = if (on) fg else C.text)) {
+    PillButton(onClick = click, container = if (on) bg else null, content = if (on) fg else null) {
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(text)
@@ -652,14 +739,14 @@ private fun InfoSheet(vm: AppViewModel, item: PhotoItem, close: () -> Unit) {
             Field("Copyright", copyright) { copyright = it }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = close) { Text(L.t("Annulla", "Cancel")) }
-                Button(onClick = {
+                PillButton(onClick = close) { Text(L.t("Annulla", "Cancel")) }
+                PillButton(onClick = {
                     vm.update(item.name) {
                         it.copy(title = title.trim(), caption = caption.trim(), creator = creator.trim(), copyright = copyright.trim(),
                             keywords = keywords.split(',').map(String::trim).filter(String::isNotEmpty).distinct())
                     }
                     close()
-                }) { Text(L.t("Salva", "Save")) }
+                }, primary = true) { Text(L.t("Salva", "Save")) }
             }
         }
     }
@@ -674,6 +761,18 @@ private fun Field(label: String, value: String, lines: Int = 1, password: Boolea
 }
 
 // ---------------------------------------------------------------- impostazioni
+
+/** Il percorso completo di una cartella della memoria interna ("Pictures/X/" → "/storage/emulated/0/Pictures/X"). */
+private fun fullPath(rel: String) = if (rel.isBlank()) "" else "/storage/emulated/0/" + rel.trim('/')
+
+/** Dove aprire il selettore di Android: la cartella attuale (se non c'è, Android parte dalla sua posizione). */
+private fun initialTree(rel: String): android.net.Uri? = runCatching {
+    android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:" + rel.trim('/'))
+}.getOrNull()
+
+/** Una cartella del NAS da mostrare: "Condivisione › cartella › sottocartella". */
+private fun nasPath(share: String, folder: String) =
+    if (share.isBlank()) "" else (listOf(share) + folder.split('\\', '/').filter { it.isNotEmpty() }).joinToString(" › ")
 
 @Composable
 fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit) {
@@ -696,6 +795,10 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
     var libFolder by remember { mutableStateOf(s.libFolder) }
     var notifyEnd by remember { mutableStateOf(s.notifyEnd) }
     var test by remember { mutableStateOf("" to "info") }
+    // cartelle: quale si sta scegliendo (telefono: "work"/"sync"; NAS: "photos"/"service") o scrivendo a mano
+    var picking by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf("") }
+    var nasPick by remember { mutableStateOf("") }
 
     fun config() = NasConfig(host, share, folder, sub, user, password, libShare, libFolder)
     fun save() {
@@ -707,8 +810,54 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
     // dalla barra in basso si esce senza la freccia: si salva comunque
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { save() } }
 
+    fun setPhoneFolder(which: String, rel: String) {
+        if (which == "work") { s.workFolder = rel; work = s.workFolder } else { s.phoneFolder = rel; phone = s.phoneFolder }
+        vm.ensureFolders()
+    }
+    val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val which = picking
+        picking = ""
+        if (uri == null) return@rememberLauncherForActivityResult
+        val rel = treeToRelative(uri)
+        if (rel == null) Notices.post("error", L.t("Scegli una cartella dentro Pictures o DCIM della memoria interna.",
+            "Choose a folder inside Pictures or DCIM in internal storage."))
+        else setPhoneFolder(which, rel)
+    }
+    if (editing.isNotEmpty()) PathEditDialog(
+        if (editing == "work") L.t("Cartella delle foto nuove", "New photos folder") else L.t("Cartella sincronizzata", "Synced folder"),
+        if (editing == "work") work else phone,
+        if (editing == "work") Settings.DEFAULT_WORK else Settings.DEFAULT_SYNC,
+        onDismiss = { editing = "" }) { v ->
+        val top = v.trim('/').substringBefore('/')
+        if (!top.equals("Pictures", true) && !top.equals("DCIM", true)) Notices.post("error",
+            L.t("Il percorso deve cominciare con Pictures/ o DCIM/.", "The path must start with Pictures/ or DCIM/."))
+        else { setPhoneFolder(editing, v); editing = "" }
+    }
+    if (nasPick.isNotEmpty()) NasFolderDialog(
+        if (nasPick == "photos") L.t("Cartella delle foto sul NAS", "Photos folder on the NAS") else L.t("Cartella di servizio", "Service folder"),
+        config(), if (nasPick == "photos") share to folder else libShare.ifEmpty { share } to libFolder,
+        onDismiss = { nasPick = "" }) { sh, path ->
+        if (nasPick == "photos") { share = sh; folder = path }
+        else {
+            if (path.isEmpty()) Notices.post("warn", L.t("Hai scelto la cartella condivisa intera: di solito la cartella di servizio è una sua sottocartella (es. ViewerCraftStar).",
+                "You chose the whole shared folder: the service folder is usually a subfolder of it (e.g. ViewerCraftStar)."))
+            libShare = if (sh.equals(share, ignoreCase = true)) "" else sh
+            libFolder = path
+            val cfg = config()
+            kotlinx.coroutines.MainScope().launch {
+                val ok = withContext(Dispatchers.IO) { NasBrowse.has(cfg.host, cfg.user, cfg.password, sh, path, "libraries") }
+                if (!ok) Notices.post("warn",
+                    L.t("In questa cartella non c'è «libraries»: è davvero la cartella di servizio di PresetCraftAppLicator?",
+                        "There's no “libraries” in this folder: is it really PresetCraftAppLicator's service folder?"))
+            }
+        }
+        save()
+        nasPick = ""
+    }
+
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()
-        .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
+        .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp).padding(bottom = LocalBarSpace.current),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { save(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = C.text) }
@@ -720,43 +869,50 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         SettingsCard(L.t("Interfaccia", "Interface")) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(compact, { compact = it })
-                Text(L.t("Riduci consigli interfaccia (solo testi brevi)", "Fewer interface tips (short texts only)"), color = C.text)
+                Text(L.t("Solo consigli brevi", "Short tips only"), color = C.text)
             }
         }
         SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
-            Field(L.t("Cartella di lavoro (dove arrivano le foto nuove, NON sincronizzata)", "Work folder (where new photos land, NOT synced)"), work) { work = it }
-            Field(L.t("Cartella sincronizzata con il NAS da Synology Drive", "Folder synced to the NAS by Synology Drive"), phone) { phone = it }
-            if (!Tips.compact) Text(L.t("Percorsi nella memoria interna. Se la cartella di lavoro manca, l'app la crea; se c'è già non la tocca.",
-                "Paths in internal storage. If the work folder is missing the app creates it; if it exists it's left as is."),
+            PathRow(L.t("Cartella delle foto nuove (non sincronizzata)", "New photos folder (not synced)"), fullPath(work),
+                onBrowse = { picking = "work"; treePicker.launch(initialTree(work)) }, onEdit = { editing = "work" })
+            PathRow(L.t("Cartella sincronizzata con Synology Drive", "Folder synced by Synology Drive"), fullPath(phone),
+                onBrowse = { picking = "sync"; treePicker.launch(initialTree(phone)) }, onEdit = { editing = "sync" })
+            if (!Tips.compact) Text(L.t("Nella memoria interna, dentro Pictures o DCIM. Se una cartella manca, l'app la crea.",
+                "In internal storage, inside Pictures or DCIM. If a folder is missing the app creates it."),
                 color = C.muted, fontSize = 12.sp)
         }
+        // le cartelle del NAS si scelgono sfogliando, dopo una connessione riuscita (o se il NAS è già raggiungibile)
+        val unlocked = vm.nasShares != null || ((vm.conn == Conn.HOME || vm.conn == Conn.VPN) && host == nas.host &&
+            user == nas.user && password == nas.password)
+        val lockMsg = if (unlocked) null else L.t("Prova la connessione per scegliere la cartella.", "Test the connection to choose the folder.")
         SettingsCard("NAS") {
             if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati da Synology Drive. Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
                 "The .xmp files are written next to the DNG files Synology Drive has already uploaded. On the NAS the app only writes .xmp files: it never deletes or changes photos."),
                 color = C.muted, fontSize = 12.sp)
             Field(L.t("Indirizzo IP del NAS (es. 192.168.1.10)", "NAS IP address (e.g. 192.168.1.10)"), host) { host = it }
-            Field(L.t("Cartella condivisa (es. Foto)", "Shared folder (e.g. Photos)"), share) { share = it }
-            Field(L.t("Cartella dentro la condivisione (es. Catalogo)", "Folder inside the share (e.g. Catalog)"), folder) { folder = it }
+            Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
+            Field(L.t("Password", "Password"), password, password = true) { password = it }
+            PillButton(onClick = {
+                save(); test = L.t("Provo la connessione…", "Testing the connection…") to "info"
+                vm.testNas(config()) { msg, ok -> test = msg to if (ok) "ok" else "error" }
+            }, primary = !unlocked, enabled = host.isNotBlank() && user.isNotBlank() && password.isNotEmpty()) {
+                Text(L.t("Prova connessione", "Test connection"))
+            }
+            androidx.compose.runtime.LaunchedEffect(test) { Notices.post(test.second, test.first) }
+            PathRow(L.t("Cartella delle foto sul NAS", "Photos folder on the NAS"), nasPath(share, folder),
+                onBrowse = { nasPick = "photos" }, onEdit = null, locked = lockMsg)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(sub, { sub = it })
                 Text(L.t("Cerca i DNG anche nelle sottocartelle", "Also look for DNG files in subfolders"), color = C.text)
             }
-            Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
-            Field(L.t("Password", "Password"), password, password = true) { password = it }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = {
-                    save(); test = L.t("Provo la connessione…", "Testing the connection…") to "info"
-                    vm.testNas(config()) { msg, ok -> test = msg to if (ok) "ok" else "error" }
-                }) { Text(L.t("Prova connessione", "Test connection")) }
-            }
-            androidx.compose.runtime.LaunchedEffect(test) { Notices.post(test.second, test.first) }
         }
-        SettingsCard(L.t("Libreria di casa", "Home library")) {
-            if (!Tips.compact) Text(L.t("La cartella del NAS in cui PresetCraftAppLicator scrive le librerie da consultare sul telefono (Importazione automatica › Librerie da consultare sul telefono). Usa lo stesso NAS, utente e password di sopra.",
-                "The NAS folder where PresetCraftAppLicator writes the libraries to browse on the phone (Automatic import › Libraries to browse on the phone). Same NAS, user and password as above."),
+        SettingsCard(L.t("Cartella di servizio", "Service folder")) {
+            // sempre visibile (anche con i consigli ridotti): senza, non si capisce cosa sia
+            Text(L.t("Sul NAS, la cartella dove PresetCraftAppLicator tiene librerie, anteprime e impostazioni per il telefono.",
+                "On the NAS, the folder where PresetCraftAppLicator keeps libraries, previews and settings for the phone."),
                 color = C.muted, fontSize = 12.sp)
-            Field(L.t("Cartella condivisa (vuota = la stessa di sopra)", "Shared folder (empty = the same as above)"), libShare) { libShare = it }
-            Field(L.t("Cartella delle librerie dentro la condivisione (es. ViewerCraftStar)", "Libraries folder inside the share (e.g. ViewerCraftStar)"), libFolder) { libFolder = it }
+            PathRow(L.t("Cartella di servizio", "Service folder"), if (libFolder.isEmpty()) "" else nasPath(libShare.ifEmpty { share }, libFolder),
+                onBrowse = { nasPick = "service" }, onEdit = null, locked = lockMsg)
         }
         SettingsCard(L.t("Ricerca per soggetti (IA)", "Search by subject (AI)")) {
             if (!Tips.compact) Text(L.t("Nella Libreria, «Cerca» trova le foto per quello che contengono («gatti», «auto d'epoca») se la libreria è stata analizzata con il motore IA di PresetCraftAppLicator. Il modello si scarica una volta dal NAS alla prima ricerca.",
@@ -765,7 +921,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (aiBytes > 0) L.t("Modello sul telefono: ${aiBytes / 1_000_000} MB", "Model on the phone: ${aiBytes / 1_000_000} MB")
                 else L.t("Modello non ancora scaricato", "Model not downloaded yet"), color = C.text, modifier = Modifier.weight(1f))
-                if (aiBytes > 0) OutlinedButton(onClick = { libVm.deleteAiModel(); aiBytes = AiStore.modelsSize(context) }) {
+                if (aiBytes > 0) PillButton(onClick = { libVm.deleteAiModel(); aiBytes = AiStore.modelsSize(context) }) {
                     Text(L.t("Elimina", "Delete"))
                 }
             }
@@ -797,4 +953,33 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         Text("ViewerCraftStar ${BuildConfigInfo.version}", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
         Spacer(Modifier.height(24.dp))
     }
+}
+
+/** Icona «spedisci al NAS»: una freccia in su che entra nel NAS (un box con due cassetti). */
+@Composable
+fun UploadNasIcon(modifier: Modifier, color: Color) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val t = w * 0.08f
+        // il NAS: box con due cassetti e i loro led
+        drawRoundRect(color, topLeft = androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.52f),
+            size = androidx.compose.ui.geometry.Size(w * 0.64f, h * 0.40f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.07f), style = androidx.compose.ui.graphics.drawscope.Stroke(t))
+        drawLine(color, androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.72f), androidx.compose.ui.geometry.Offset(w * 0.82f, h * 0.72f), strokeWidth = t * 0.8f)
+        drawCircle(color, radius = w * 0.04f, center = androidx.compose.ui.geometry.Offset(w * 0.70f, h * 0.62f))
+        drawCircle(color, radius = w * 0.04f, center = androidx.compose.ui.geometry.Offset(w * 0.70f, h * 0.82f))
+        // la freccia in su, sopra il NAS
+        val x = w * 0.5f
+        drawLine(color, androidx.compose.ui.geometry.Offset(x, h * 0.44f), androidx.compose.ui.geometry.Offset(x, h * 0.06f), strokeWidth = t)
+        drawLine(color, androidx.compose.ui.geometry.Offset(x - w * 0.16f, h * 0.20f), androidx.compose.ui.geometry.Offset(x, h * 0.05f), strokeWidth = t)
+        drawLine(color, androidx.compose.ui.geometry.Offset(x + w * 0.16f, h * 0.20f), androidx.compose.ui.geometry.Offset(x, h * 0.05f), strokeWidth = t)
+    }
+}
+
+/** Dove stanno i pulsanti tondi: sopra la barra in basso quando si vede, sopra i tasti di sistema quando è nascosta. */
+@Composable
+private fun fabBottom(): androidx.compose.ui.unit.Dp {
+    val nav = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    return maxOf(LocalBarShown.current, nav) + 16.dp
 }

@@ -170,7 +170,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun reload() {
         viewModelScope.launch {
             loading = true
-            val (problem, created) = withContext(Dispatchers.IO) { ensureWorkFolder() }
+            val (problem, created) = withContext(Dispatchers.IO) { ensureSyncFolder(); ensureWorkFolder() }
             workProblem = problem
             if (created) setStatus("ok", L.t("Creata la cartella di lavoro ${settings.workFolder}: fai arrivare lì i DNG nuovi.",
                 "Created the work folder ${settings.workFolder}: have new DNG files arrive there."))
@@ -202,6 +202,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "A file has the same name as the work folder: $work") to false
         return if (dir.mkdirs()) null to true
         else L.t("Non riesco a creare la cartella di lavoro $work", "Can't create the work folder $work") to false
+    }
+
+    /** La cartella sincronizzata con Synology Drive: se manca la crea (con Pictures, se non c'è). Non si tocca altro. */
+    private fun ensureSyncFolder() {
+        val sync = settings.phoneFolder.trimEnd('/')
+        if (sync.isEmpty()) return
+        val dir = java.io.File(android.os.Environment.getExternalStorageDirectory(), sync)
+        if (!dir.exists()) dir.mkdirs()
+    }
+
+    /** Le due cartelle del telefono, create subito (anche appena cambiate nelle Impostazioni). */
+    fun ensureFolders() {
+        viewModelScope.launch(Dispatchers.IO) { ensureSyncFolder(); ensureWorkFolder() }
     }
 
     // ---------------------------------------------------------------- metadati
@@ -443,8 +456,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Le cartelle condivise viste dall'ultima prova riuscita (null = connessione non ancora provata in questa sessione). */
+    var nasShares by mutableStateOf<List<String>?>(null); private set
+
     fun testNas(cfg: NasConfig, done: (String, Boolean) -> Unit) {
         viewModelScope.launch {
+            val login = withContext(Dispatchers.IO) { runCatching { NasBrowse.shares(cfg.host, cfg.user, cfg.password) } }
+            login.onFailure {
+                nasShares = null
+                return@launch done(L.t("Connessione non riuscita: ", "Connection failed: ") + (it.message ?: it.javaClass.simpleName), false)
+            }
+            nasShares = login.getOrNull()
+            if (cfg.share.isBlank()) return@launch done(L.t("Connessione riuscita: ora scegli la cartella delle foto.",
+                "Connected: now choose the photos folder."), true)
             val r = withContext(Dispatchers.IO) { runCatching { NasSync.test(cfg) } }
             r.onSuccess { (dng, catalog) ->
                 gotCatalog(catalog)
