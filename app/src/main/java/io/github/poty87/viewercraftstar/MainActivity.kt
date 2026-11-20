@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -56,6 +59,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BuildConfigInfo.version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
         granted = hasPermission()
+        Notices.init(applicationContext)
         Tips.compact = vm.settings.compactTips
         setContent {
             AppTheme {
@@ -93,18 +97,28 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
         if (t == "library") vm.inLibrary = true
         if (t == "import") vm.inLibrary = false
     }
-    BackHandler(enabled = screen != "grid" || tab == "settings") { if (screen != "grid") screen = "grid" else go("library") }
+    BackHandler(enabled = screen != "grid" || tab == "settings" || tab == "notices") { if (screen != "grid") screen = "grid" else go("library") }
+    val blur = Confirm.ask != null || Blur.depth > 0
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().then(if (blur) Modifier.blur(14.dp) else Modifier)) {
     when (screen) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
         "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
         else -> Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
             androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                 if (tab == "settings") SettingsScreen(vm, lib) { go("library") }
+                else if (tab == "notices") NoticesScreen()
                 else GridScreen(vm, lib, gridState, libState, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
                     onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" })
             }
             BottomBar(tab, lib.selecting && tab == "library") { go(it) }
         }
+    }
+    }
+    // notifiche in sovrimpressione (sopra la barra in basso) e conferme a tutto schermo, valide in ogni pagina
+    NoticeOverlay(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+        .padding(bottom = if (screen == "grid" && !(lib.selecting && tab == "library")) 80.dp else 8.dp))
+    ConfirmOverlay()
     }
 }
 
@@ -115,13 +129,20 @@ private fun BottomBar(tab: String, hidden: Boolean, onPick: (String) -> Unit) {
     val items: List<Triple<String, androidx.compose.ui.graphics.vector.ImageVector, String>> = listOf(
         Triple("library", Icons.Filled.Home, L.t("Librerie", "Libraries")),
         Triple("import", Icons.AutoMirrored.Filled.Send, L.t("Importa", "Import")),
+        Triple("notices", Icons.Filled.Notifications, L.t("Notifiche", "Notifications")),
         Triple("settings", Icons.Filled.Settings, L.t("Impostazioni", "Settings")),
     )
     NavigationBar(containerColor = androidx.compose.ui.graphics.Color(0xFF111111),
         tonalElevation = 0.dp) {
         for ((key, icon, label) in items) {
             NavigationBarItem(selected = tab == key, onClick = { onPick(key) },
-                icon = { Icon(icon, null) }, label = { Text(label, fontSize = 12.sp) },
+                icon = {
+                    androidx.compose.material3.BadgedBox(badge = {
+                        if (key == "notices" && Notices.unread > 0 && tab != "notices")
+                            androidx.compose.material3.Badge(containerColor = C.accent, contentColor = androidx.compose.ui.graphics.Color.Black) {
+                                Text(if (Notices.unread > 99) "99+" else "${Notices.unread}") }
+                    }) { Icon(icon, null) }
+                }, label = { Text(label, fontSize = 12.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = C.accent, selectedTextColor = C.accent, indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                     unselectedIconColor = C.muted, unselectedTextColor = C.muted))

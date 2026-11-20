@@ -111,9 +111,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun resume() {
         val names = photos.filter { !it.inWork && level(it) != Level.GREEN }.map { it.name }
         val cfg = settings.nas
-        if (names.isEmpty() || !cfg.complete) return
+        if (names.isEmpty()) return setStatus("ok", L.t("Niente da riprendere: le foto spedite sono già tutte in LightCraft.",
+            "Nothing to resume: all the sent photos are already in LightCraft."))
+        if (!cfg.complete) return setStatus("warn", L.t("Imposta il NAS nelle Impostazioni per inviare i metadati.",
+            "Set up the NAS in Settings to send the metadata."))
         viewModelScope.launch {
-            if (withContext(Dispatchers.IO) { Shipper.reachable(cfg.host) }) Shipper.startBackground(getApplication(), names)
+            if (withContext(Dispatchers.IO) { Shipper.reachable(cfg.host) }) {
+                Shipper.startBackground(getApplication(), names)
+                setStatus("info", L.t("Invio ripreso in background per ${names.size} foto: controllo che foto e metadati siano sul NAS e mando quello che manca. Puoi chiudere l'app.",
+                    "Sending resumed in the background for ${names.size} photos: I check that photos and metadata are on the NAS and send what's missing. You can close the app."))
+            }
             else vpnAsk = names
         }
     }
@@ -453,5 +460,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun setStatus(level: String, text: String) {
         statusLevel = level
         status = text
+        Notices.post(level, text)
     }
 }

@@ -84,8 +84,8 @@ class ShipService : Service() {
             if (!Shipper.reachable(cfg.host)) {
                 if (unreachableSince == 0L) unreachableSince = now
                 if (now - unreachableSince > UNREACHABLE_MS) return finish(L.t(
-                    "NAS non raggiungibile da 15 minuti: invio sospeso. I metadati restano in coda; usa «Riprendi l'invio» nella sezione Spedite quando sei a casa o con la VPN.",
-                    "NAS unreachable for 15 minutes: sending paused. The metadata stays queued; use “Resume sending” in the Sent section at home or with the VPN."))
+                    "NAS non raggiungibile da 15 minuti: invio sospeso. I metadati restano in coda; tocca ▶ (Riprendi l'invio) nella sezione Spedite quando sei a casa o con la VPN.",
+                    "NAS unreachable for 15 minutes: sending paused. The metadata stays queued; tap ▶ (Resume sending) in the Sent section at home or with the VPN."))
                 val lv = levels()
                 update(lv.count { it == Level.GREEN }, lv.count { it >= Level.BLUE }, mine.size,
                     L.t("NAS non raggiungibile: se sei fuori casa, attiva la VPN.", "NAS not reachable: if you're away from home, turn on the VPN."),

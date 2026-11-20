@@ -539,6 +539,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun say(level: String, text: String) {
         messageLevel = level
         message = text
+        Notices.post(level, text)
     }
 
     // ---------------------------------------------------------------- celle della griglia

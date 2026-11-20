@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -153,15 +154,13 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
     var options by remember { mutableStateOf(false) }
     if (options) GalleryOptionsSheet(lib) { options = false }
     vm.vpnAsk?.let { names ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { vm.answerVpn(false) },
-            title = { Text(L.t("NAS non raggiungibile", "NAS not reachable")) },
-            text = { Text(tip(L.t("${names.size} foto spedite: Synology Drive le caricherà appena può. Per inviare i metadati e sapere quando sono al sicuro a casa serve il NAS: se sei fuori casa, accendi la VPN. L'invio continua in background, anche con l'app chiusa.",
+        BlurDialog({ vm.answerVpn(false) }) {
+            DialogTitle(L.t("NAS non raggiungibile", "NAS not reachable"))
+            DialogText(tip(L.t("${names.size} foto spedite: Synology Drive le caricherà appena può. Per inviare i metadati e sapere quando sono al sicuro a casa serve il NAS: se sei fuori casa, accendi la VPN. L'invio continua in background, anche con l'app chiusa.",
                 "${names.size} photos sent: Synology Drive will upload them when it can. Sending the metadata and confirming they're safe at home needs the NAS: if you're away, turn on the VPN. Sending continues in the background, even with the app closed."),
-                L.t("Per inviare i metadati serve il NAS: fuori casa accendi la VPN.", "Sending the metadata needs the NAS: away from home, turn on the VPN.")) ?: "") },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { vm.answerVpn(true) }) { Text(L.t("Apri VPN", "Open VPN")) } },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { vm.answerVpn(false) }) { Text(L.t("Più tardi", "Later")) } },
-        )
+                L.t("Per inviare i metadati serve il NAS: fuori casa accendi la VPN.", "Sending the metadata needs the NAS: away from home, turn on the VPN.")) ?: "")
+            DialogButtons(L.t("Più tardi", "Later") to { vm.answerVpn(false) }, main = L.t("Apri VPN", "Open VPN") to { vm.answerVpn(true) })
+        }
     }
     val list = if (vm.inLibrary) emptyList() else vm.visible
     val header: @Composable () -> Unit = {
@@ -187,7 +186,6 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                 }
             }
             ConnRow(vm)
-            Banner(vm.statusLevel, vm.status, Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
             if (!vm.inLibrary) SectionTabs(vm)
             if (vm.inLibrary) LibraryHeader(lib)
             else {
@@ -385,6 +383,7 @@ private fun SentHeader(vm: AppViewModel) {
             "Green: already in LightCraft. Blue: photo and metadata safe on the NAS, they enter LightCraft when the home PC is on. Red: photo or metadata not on the NAS yet, or to be updated. Green and blue can be removed from the phone."),
             color = C.muted, fontSize = 12.sp)
         val fmt = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.ITALY)
+        Row(verticalAlignment = Alignment.CenterVertically) {
         Text(when {
             nas.pcTs == 0L -> L.t("PC di casa: nessun segnale ancora (serve PresetCraftAppLicator 1.7.0 o successivo).",
                 "Home PC: no signal yet (needs PresetCraftAppLicator 1.7.0 or later).")
@@ -392,17 +391,23 @@ private fun SentHeader(vm: AppViewModel) {
                 "Home PC on, but LightCraft is open: photos enter the library when you close it.")
             nas.pcOn() -> L.t("PC di casa acceso (ultimo segnale ", "Home PC on (last signal ") + fmt.format(java.util.Date(nas.pcTs)) + ")."
             else -> L.t("PC di casa spento o non attivo (ultimo segnale ", "Home PC off or idle (last signal ") + fmt.format(java.util.Date(nas.pcTs)) + ")."
-        }, color = C.muted, fontSize = 11.sp)
-        if (vm.shipping) Text(L.t("Invio in background in corso (vedi la notifica): puoi chiudere l'app.",
-            "Sending in the background (see the notification): you can close the app."), color = C.accent, fontSize = 12.sp)
-        else if (red > 0 || (blue > 0 && nas.pcOn())) OutlinedButton(onClick = { vm.resume() }, shape = RoundedCornerShape(6.dp),
-            modifier = Modifier.fillMaxWidth()) {
-            Text(L.t("Riprendi l'invio in background", "Resume sending in the background"))
+        }, color = C.muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        // invio in background: in corso (rotellina) o da riprendere (icona); il risultato arriva come notifica
+        if (vm.shipping) CircularProgressIndicator(Modifier.padding(horizontal = 12.dp).size(18.dp), color = C.accent, strokeWidth = 2.dp)
+        else if (red > 0 || (blue > 0 && nas.pcOn())) IconButton(onClick = { vm.resume() }) {
+            Icon(Icons.Filled.PlayArrow, L.t("Riprendi l'invio in background", "Resume sending in the background"), tint = C.accent)
         }
-        if (safe.isNotEmpty()) Button(onClick = { trash(safe.map { it.name }) }, shape = RoundedCornerShape(6.dp),
-            modifier = Modifier.fillMaxWidth()) {
-            Text(L.t("Sposta nel cestino del telefono le foto al sicuro (${safe.size})",
-                "Move the safe photos to the phone's bin (${safe.size})"))
+        // le foto già al sicuro a casa: cestino rosso, con la conferma a tutto schermo
+        if (safe.isNotEmpty()) IconButton(onClick = {
+            Confirm.show(L.t("Spostare ${safe.size} foto nel cestino del telefono?", "Move ${safe.size} photos to the phone's bin?"),
+                L.t("Sono foto già al sicuro a casa (sul NAS o già in LightCraft), quindi sul telefono non servono più. Prima ricontrollo sul NAS che lo siano davvero, poi Android ti chiede la conferma. Il cestino del telefono le tiene 30 giorni: fino ad allora le puoi recuperare dalla Galleria. Sul NAS e in LightCraft non cambia niente.",
+                    "These photos are already safe at home (on the NAS or already in LightCraft), so the phone no longer needs them. I first check again on the NAS that they really are, then Android asks you to confirm. The phone's bin keeps them for 30 days: until then you can recover them from the Gallery. Nothing changes on the NAS or in LightCraft."),
+                L.t("Sposta nel cestino", "Move to bin")) { trash(safe.map { it.name }) }
+        }) {
+            androidx.compose.material3.BadgedBox(badge = {
+                androidx.compose.material3.Badge(containerColor = Color(0xFFF87171), contentColor = Color.Black) { Text("${safe.size}") }
+            }) { Icon(Icons.Filled.Delete, L.t("Sposta nel cestino del telefono le foto al sicuro", "Move the safe photos to the phone's bin"), tint = Color(0xFFF87171)) }
+        }
         }
     }
 }
@@ -744,7 +749,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
                     vm.testNas(config()) { msg, ok -> test = msg to if (ok) "ok" else "error" }
                 }) { Text(L.t("Prova connessione", "Test connection")) }
             }
-            Banner(test.second, test.first)
+            androidx.compose.runtime.LaunchedEffect(test) { Notices.post(test.second, test.first) }
         }
         SettingsCard(L.t("Libreria di casa", "Home library")) {
             if (!Tips.compact) Text(L.t("La cartella del NAS in cui PresetCraftAppLicator scrive le librerie da consultare sul telefono (Importazione automatica › Librerie da consultare sul telefono). Usa lo stesso NAS, utente e password di sopra.",

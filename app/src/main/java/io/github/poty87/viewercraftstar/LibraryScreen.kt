@@ -45,7 +45,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -141,34 +140,54 @@ private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, mo
     }
 }
 
-/** Stelle, bandierina ed etichetta per una o più foto: ogni tocco si applica subito. */
+/** Un'opzione a pillola: accesa in blu (o nei colori della bandierina), un tocco la sceglie. */
+@Composable
+fun Pill(text: String, on: Boolean, colors: Pair<Color, Color>? = null, onClick: () -> Unit) {
+    val (fg, bg) = if (on) colors ?: (Color.Black to C.accent) else (C.text to C.card)
+    Text(text, color = fg, fontSize = 13.sp, maxLines = 1, softWrap = false,
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp))
+}
+
+/**
+ * Stelle, bandierina ed etichetta per una o più foto: ogni tocco si applica subito e si vede subito. Con più foto è
+ * acceso il valore che hanno tutte in comune (nessuno se sono diverse).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            for ((f, label) in listOf("pick" to L.t("Scelta", "Pick"), "reject" to L.t("Scartata", "Reject"))) {
-                val on = current?.flag == f
-                val (fg, bg) = if (f == "pick") C.pick else C.reject
-                Box(Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) bg else C.card)
-                    .clickable { lib.setFlag(ids, if (on) "none" else f) }.padding(horizontal = 14.dp, vertical = 7.dp)) {
-                    Text((if (f == "pick") "✓ " else "✕ ") + label, color = if (on) fg else C.text, fontSize = 13.sp)
-                }
-            }
-            if (current == null) TextButton(onClick = { lib.setFlag(ids, "none") }) { Text(L.t("Nessuna", "None")) }
+    val photos = ids.mapNotNull { lib.index?.byId?.get(it) }.map { lib.effective(it) }.ifEmpty { listOfNotNull(current) }
+    fun <T> common(f: (LibPhoto) -> T): T? = photos.map(f).distinct().singleOrNull()
+    val flag = common { it.flag.ifEmpty { "none" } }
+    val rating = common { it.rating }
+    val label = common { it.label.lowercase() }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(L.t("Bandierina", "Flag"))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("✓ " + L.t("Scelta", "Pick"), flag == "pick", C.pick) { lib.setFlag(ids, if (flag == "pick") "none" else "pick") }
+            Pill("✕ " + L.t("Scartata", "Reject"), flag == "reject", C.reject) { lib.setFlag(ids, if (flag == "reject") "none" else "reject") }
+            Pill(L.t("Nessuna", "None"), flag == "none") { lib.setFlag(ids, "none") }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StarsRow(current?.rating ?: 0, 28.dp) { s -> lib.setRating(ids, if (current?.rating == s) 0 else s) }
-            if (current == null) TextButton(onClick = { lib.setRating(ids, 0) }) { Text(L.t("Nessuna", "None")) }
+        SectionLabel(L.t("Stelle", "Stars"), Modifier.padding(top = 6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StarsRow(rating ?: 0, 28.dp) { st -> lib.setRating(ids, if (rating == st) 0 else st) }
+            Pill(L.t("Nessuna", "None"), rating == 0) { lib.setRating(ids, 0) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        SectionLabel(L.t("Etichetta", "Label"), Modifier.padding(top = 6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             labelColors.forEach { (key, color) ->
-                val on = current?.label.equals(key, ignoreCase = true)
+                val on = label == key
                 Box(Modifier.size(28.dp).clip(CircleShape).background(color)
                     .then(if (on) Modifier.border(3.dp, Color.White, CircleShape) else Modifier)
                     .clickable { lib.setLabel(ids, if (on) "" else key) })
             }
-            TextButton(onClick = { lib.setLabel(ids, "") }) { Text(L.t("Nessuna", "None")) }
+            Pill(L.t("Nessuna", "None"), label == "") { lib.setLabel(ids, "") }
         }
+        if (photos.size > 1 && (flag == null || rating == null || label == null)) Text(
+            L.t("Dove nessuna opzione è accesa, le foto hanno valori diversi: un tocco li rende uguali per tutte.",
+                "Where nothing is lit, the photos differ: one tap makes them the same for all."),
+            color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -178,17 +197,16 @@ fun TextsDialog(p: LibPhoto, onDismiss: () -> Unit, onSave: (String, String, Lis
     var title by remember { mutableStateOf(p.title) }
     var caption by remember { mutableStateOf(p.caption) }
     var keywords by remember { mutableStateOf(p.keywords.joinToString(", ")) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(p.name) }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(title, { title = it }, label = { Text(L.t("Titolo", "Title")) }, singleLine = true)
-            OutlinedTextField(caption, { caption = it }, label = { Text(L.t("Didascalia", "Caption")) })
-            OutlinedTextField(keywords, { keywords = it }, label = { Text(L.t("Parole chiave (separate da virgole)", "Keywords (comma-separated)")) })
-        }
-    }, confirmButton = {
-        TextButton(onClick = { onSave(title.trim(), caption.trim(), keywords.split(',').map { it.trim() }.filter { it.isNotEmpty() }) }) {
-            Text(L.t("Salva", "Save"))
-        }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) } })
+    BlurDialog(onDismiss) {
+        DialogTitle(p.name)
+        OutlinedTextField(title, { title = it }, label = { Text(L.t("Titolo", "Title")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(caption, { caption = it }, label = { Text(L.t("Didascalia", "Caption")) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(keywords, { keywords = it }, label = { Text(L.t("Parole chiave (separate da virgole)", "Keywords (comma-separated)")) },
+            modifier = Modifier.fillMaxWidth())
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, main = L.t("Salva", "Save") to {
+            onSave(title.trim(), caption.trim(), keywords.split(',').map { it.trim() }.filter { it.isNotEmpty() })
+        })
+    }
 }
 
 /** Nome di un volto: scritto o scelto tra le persone già nella libreria. */
@@ -199,37 +217,29 @@ fun FaceNameDialog(face: LibFace, known: List<String>, onDismiss: () -> Unit, on
     val guess = face.suggest.takeIf { face.name.isEmpty() && it.isNotEmpty() } ?: face.name.takeIf { face.auto }
     var name by remember { mutableStateOf(face.name.ifEmpty { guess ?: "" }) }
     val hits = known.filter { name.isBlank() || it.contains(name.trim(), ignoreCase = true) }.sorted().take(12)
-    AlertDialog(onDismissRequest = onDismiss, title = {
-        Text(when {
+    BlurDialog(onDismiss) {
+        DialogTitle(when {
             face.auto -> L.t("È davvero $guess?", "Is it really $guess?")
             guess != null -> L.t("Forse è $guess?", "Is it $guess?")
             else -> L.t("Chi è?", "Who is it?")
         })
-    }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, label = { Text(L.t("Nome", "Name")) }, singleLine = true)
-            if (hits.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                hits.forEach { n ->
-                    Box(Modifier.clip(RoundedCornerShape(14.dp)).background(C.card).clickable { name = n }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)) { Text(n, color = C.text, fontSize = 13.sp) }
-                }
-            }
-            Text(tip(L.t("Il nome va in LightCraft quando il PC di casa applica le modifiche: lì LightCraft lo usa per riconoscere la persona nelle altre foto (se hai attivato i volti).",
-                "The name goes to LightCraft when the home PC applies the changes: there LightCraft uses it to recognise the person in other photos (if faces are turned on)."),
-                L.t("Arriva in LightCraft dal PC di casa.", "Reaches LightCraft through the home PC.")) ?: "",
-                color = C.muted, fontSize = 12.sp)
+        OutlinedTextField(name, { name = it }, label = { Text(L.t("Nome", "Name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (hits.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            hits.forEach { n -> Pill(n, n == name.trim()) { name = n } }
         }
-    }, confirmButton = {
-        TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) {
-            Text(if (guess != null && name.trim() == guess) L.t("Sì, è $guess", "Yes, it's $guess") else L.t("Salva", "Save"))
+        tip(L.t("Il nome va in LightCraft quando il PC di casa applica le modifiche: lì LightCraft lo usa per riconoscere la persona nelle altre foto (se hai attivato i volti).",
+            "The name goes to LightCraft when the home PC applies the changes: there LightCraft uses it to recognise the person in other photos (if faces are turned on)."),
+            L.t("Arriva in LightCraft dal PC di casa.", "Reaches LightCraft through the home PC."))?.let { Text(it, color = C.muted, fontSize = 12.sp) }
+        val secondary = buildList {
+            if (face.name.isNotEmpty()) add(L.t("Togli il nome", "Remove name") to { onSave("") })
+            add(L.t("Annulla", "Cancel") to onDismiss)
         }
-    }, dismissButton = {
-        Row {
-            if (face.name.isNotEmpty()) TextButton(onClick = { onSave("") }) { Text(L.t("Togli il nome", "Remove name")) }
-            TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) }
-        }
-    })
+        DialogButtons(*secondary.toTypedArray(),
+            main = (if (guess != null && name.trim() == guess) L.t("Sì, è $guess", "Yes, it's $guess") else L.t("Salva", "Save")) to {
+                if (name.isNotBlank()) onSave(name.trim())
+            }, enabled = name.isNotBlank())
+    }
 }
 
 /** I riquadri dei volti sopra la foto (mostrata intera, al centro): un tocco per dare o cambiare il nome. */
@@ -271,25 +281,27 @@ private fun FaceOverlay(photo: LibPhoto, onTap: (LibFace) -> Unit) {
 /** Scelta di cosa scaricare: l'originale o il JPEG della fotocamera. */
 @Composable
 fun DownloadDialog(count: Int, onDismiss: () -> Unit, onPick: (Boolean) -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(L.t("Scarica $count foto sul telefono", "Download $count photos to the phone")) },
-        text = { Text(tip(L.t("Originale: il file così com'è sul NAS (DNG, CR2, JPG…). JPEG: l'anteprima della fotocamera, leggera e pronta da condividere (per i TIF è solo una miniatura). Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
+    BlurDialog(onDismiss) {
+        DialogTitle(L.t("Scarica $count foto sul telefono", "Download $count photos to the phone"))
+        DialogText(tip(L.t("Originale: il file così com'è sul NAS (DNG, CR2, JPG…). JPEG: l'anteprima della fotocamera, leggera e pronta da condividere (per i TIF è solo una miniatura). Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
             "Original: the file as it is on the NAS (DNG, CR2, JPG…). JPEG: the camera's preview, light and ready to share (for TIFFs only a thumbnail). They go to ${DownloadService.FOLDER.trimEnd('/')}."),
-            L.t("In ${DownloadService.FOLDER.trimEnd('/')}.", "To ${DownloadService.FOLDER.trimEnd('/')}.")) ?: "") },
-        confirmButton = { TextButton(onClick = { onPick(false) }) { Text(L.t("Originale", "Original")) } },
-        dismissButton = { TextButton(onClick = { onPick(true) }) { Text("JPEG") } })
+            L.t("In ${DownloadService.FOLDER.trimEnd('/')}.", "To ${DownloadService.FOLDER.trimEnd('/')}.")) ?: "")
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, "JPEG" to { onPick(true) },
+            main = L.t("Originale", "Original") to { onPick(false) })
+    }
 }
 
 /** Nel cestino di LightCraft: conferma, con la spiegazione di cosa succede ai file. */
 @Composable
 fun TrashDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(L.t("Spostare $count foto nel cestino di LightCraft?", "Move $count photos to LightCraft's trash?")) },
-        text = { Text(tip(L.t("Finiscono in «Eliminate di recente» quando il PC di casa applica la richiesta. I file restano sul NAS: al PC puoi ricontrollarle in LightCraft o cancellarle definitivamente con CleanCraftNas.",
+    BlurDialog(onDismiss) {
+        DangerIcon()
+        DialogTitle(L.t("Spostare $count foto nel cestino di LightCraft?", "Move $count photos to LightCraft's trash?"))
+        DialogText(tip(L.t("Finiscono in «Eliminate di recente» quando il PC di casa applica la richiesta. I file restano sul NAS: al PC puoi ricontrollarle in LightCraft o cancellarle definitivamente con CleanCraftNas.",
             "They go to “Recently Deleted” when the home PC applies the request. The files stay on the NAS: at the PC you can check them in LightCraft or delete them for good with CleanCraftNas."),
-            L.t("I file restano sul NAS finché non usi CleanCraftNas.", "The files stay on the NAS until you use CleanCraftNas.")) ?: "") },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(L.t("Nel cestino", "Move to trash")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L.t("Annulla", "Cancel")) } })
+            L.t("I file restano sul NAS finché non usi CleanCraftNas.", "The files stay on the NAS until you use CleanCraftNas.")) ?: "")
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, main = L.t("Nel cestino", "Move to trash") to onConfirm, danger = true)
+    }
 }
 
 /** Intestazione della scheda Libreria: libreria, aggiornamento, filtri, conteggio (scorre via con la griglia). */
@@ -333,7 +345,6 @@ fun LibraryHeader(lib: LibraryViewModel) {
                 else Icon(Icons.Filled.Refresh, L.t("Aggiorna", "Refresh"), tint = C.text)
             }
         }
-        if (lib.message.isNotEmpty()) Banner(lib.messageLevel, lib.message, Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
         Filters(lib)
         val idx = lib.index
         if (idx != null) Text(if (lib.filtering) L.t("${lib.cells().size} foto con questi filtri", "${lib.cells().size} photos match")
@@ -420,10 +431,11 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
     var trashing by remember { mutableStateOf(false) }
     if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(lib.selected, jpeg) }
     if (trashing) TrashDialog(lib.selected.size, onDismiss = { trashing = false }) { trashing = false; lib.trash(lib.selected) }
-    if (editing) AlertDialog(onDismissRequest = { editing = false },
-        title = { Text(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos")) },
-        text = { EditControls(lib, lib.selected, null) },
-        confirmButton = { TextButton(onClick = { editing = false }) { Text(L.t("Fine", "Done")) } })
+    if (editing) BlurDialog({ editing = false }) {
+        DialogTitle(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos"))
+        EditControls(lib, lib.selected, null)
+        DialogButtons(main = L.t("Fine", "Done") to { editing = false })
+    }
     Column(modifier.fillMaxWidth().background(Color(0xF2111111)).navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { lib.clearSelection() }) { Icon(Icons.Filled.Close, L.t("Annulla", "Cancel"), tint = C.text) }
