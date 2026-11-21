@@ -17,7 +17,11 @@ import kotlinx.coroutines.withContext
 enum class Filter { ALL, UNRATED, PICKED, REJECTED, STARRED, PENDING }
 
 /** Lo stato della connessione al NAS. */
-enum class Conn { UNKNOWN, CHECKING, NO_CONFIG, HOME, VPN, VPN_NO_NAS, AWAY }
+/**
+ * Dove si trova il NAS. VPN / VPN_NO_NAS: la VPN di casa (quella dell'app) è accesa; OTHER_VPN: è accesa un'altra VPN
+ * (AdGuard…), che non porta a casa e occupa il posto di quella che serve.
+ */
+enum class Conn { UNKNOWN, CHECKING, NO_CONFIG, HOME, VPN, VPN_NO_NAS, OTHER_VPN, AWAY }
 
 /** Le sezioni: cartella di lavoro (da rivedere), cartella sincronizzata (spedite: in viaggio o al sicuro a casa). */
 enum class Section { REVIEW, SENT }
@@ -87,6 +91,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         connJob = viewModelScope.launch { delay(1500); checkConnection() }
     }
 
+    private var recheck = 0
+
     /** A casa (NAS raggiungibile senza VPN), via VPN, o fuori casa (NAS non raggiungibile). */
     fun checkConnection() {
         val cfg = settings.nas
@@ -94,18 +100,70 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (conn == Conn.UNKNOWN) conn = Conn.CHECKING
             val (vpn, ok) = withContext(Dispatchers.IO) { Shipper.vpnOn(getApplication()) to Shipper.reachable(cfg.host) }
+            val ours = Vpn.state == Vpn.State.ON || Vpn.state == Vpn.State.CONNECTING || Vpn.starting
             conn = when {
-                ok && vpn -> Conn.VPN
+                // la VPN accesa è la nostra? (con un'altra, come AdGuard, il NAS si raggiunge solo dalla rete di casa)
+                ok && vpn && ours -> Conn.VPN
                 ok -> Conn.HOME
-                vpn -> Conn.VPN_NO_NAS
+                vpn && ours -> Conn.VPN_NO_NAS
+                vpn -> Conn.OTHER_VPN
                 else -> Conn.AWAY
+            }
+            // la VPN di casa è accesa (o sta salendo) ma Android non la mostra ancora, o le sue rotte non sono pronte:
+            // si ricontrolla da soli (1, 2, 4, 8, 16 s) finché la riga dice «via VPN»
+            if (conn != Conn.VPN && conn != Conn.HOME && ours && recheck < 5) {
+                val wait = 1000L shl recheck
+                recheck++
+                connJob?.cancel()
+                connJob = viewModelScope.launch { delay(wait); checkConnection() }
+            } else if (conn == Conn.VPN || conn == Conn.HOME || !ours) recheck = 0
+            autoVpn(conn)
+        }
+    }
+
+    // ---------------------------------------------------------------- VPN automatica
+
+    // il tentativo automatico è uno solo per tutta l'app (in Vpn), non uno per schermata
+    private var autoTried: Boolean
+        get() = Vpn.autoTried
+        set(v) { Vpn.autoTried = v }
+
+    /** All'apertura dell'app si riprova da capo: fuori casa la VPN si riaccende anche se era stata spenta a mano. */
+    fun resetAutoVpn() { autoTried = false }
+
+    /**
+     * Modalità «All'avvio» e «Automatica»: fuori casa (NAS non raggiungibile) accende la VPN, una volta per apertura
+     * dell'app (con un'altra VPN accesa, nella modalità «All'avvio» compare il riquadro che invita a spegnerla).
+     * Solo «Automatica» (sperimentale): con la VPN accesa, se il NAS risponde passando dal Wi-Fi si è a casa e la spegne.
+     */
+    private fun autoVpn(c: Conn) {
+        val ctx = getApplication<Application>()
+        val mode = settings.vpnMode
+        // solo con l'app aperta: in background (dopo lo spegnimento all'uscita) non si riaccende niente
+        if (!Vpn.foreground || mode == "manual" || !Vpn.configured(ctx, settings)) return
+        when (c) {
+            Conn.HOME -> autoTried = false
+            // NAS non raggiungibile senza VPN, o con una VPN che non porta a casa (per esempio AdGuard): si accende
+            Conn.AWAY, Conn.VPN_NO_NAS, Conn.OTHER_VPN -> if (!autoTried && Vpn.state != Vpn.State.ON) {
+                autoTried = true
+                Vpn.request++
+            }
+            else -> Unit
+        }
+        if (mode == "auto" && (c == Conn.VPN || c == Conn.VPN_NO_NAS)) {
+            if (Vpn.state == Vpn.State.ON) viewModelScope.launch {
+                if (withContext(Dispatchers.IO) { Shipper.reachableOnWifi(ctx, settings.nas.host) }) {
+                    Vpn.disconnect(ctx)
+                    setStatus("info", L.t("Sei sulla rete di casa: VPN spenta.", "You're on the home network: VPN turned off."))
+                    delay(2500)
+                    checkConnection()
+                }
             }
         }
     }
 
-    fun openVpn() {
-        if (!Shipper.openVpn(getApplication())) setStatus("warn", L.t("OpenVPN Connect non è installata.", "OpenVPN Connect isn't installed."))
-    }
+    /** Accende la VPN di ViewerCraftStar (la esegue la barra in basso, che ha i consensi e le Impostazioni a portata). */
+    fun openVpn() { Vpn.request++ }
 
     /** Fa ripartire l'invio in background per le foto spedite non ancora in LightCraft (dopo una sospensione). */
     fun resume() {

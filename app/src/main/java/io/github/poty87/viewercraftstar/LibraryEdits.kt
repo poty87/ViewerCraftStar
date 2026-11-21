@@ -43,7 +43,9 @@ data class LibEdit(
     }
 
     /** La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. */
-    fun settledIn(p: LibPhoto, home: LibStack?) = trash != true && (stack == null || home?.photos?.contains(stack) == true) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
+    fun settledIn(p: LibPhoto, home: LibStack?) = trash != true &&
+        // pila: la copertina indicata è nella pila di casa; se indica se stessa («Rendi copertina») deve esserne la prima
+        (stack == null || (home?.photos?.contains(stack) == true && (stack != p.id || home.photos.first() == p.id))) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
         (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords) &&
         (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n && !it.auto } ?: true })

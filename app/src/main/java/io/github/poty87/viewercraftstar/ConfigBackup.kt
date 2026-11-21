@@ -30,7 +30,7 @@ import java.util.zip.ZipOutputStream
 object ConfigBackup {
     const val DIR = "backups\\ViewerCraftStar"
     private const val KEEP = 20 // i backup più vecchi oltre questi si cancellano
-    private val SKIP = setOf("nas_password")
+    private val SKIP = setOf("nas_password", "vpn_user", "vpn_password", "adguard_password", "adguard_paused_by_us", "nas_guid") // credenziali: si riscrivono
 
     data class Entry(val name: String, val size: Long, val time: Long)
 
@@ -41,6 +41,40 @@ object ConfigBackup {
     }
 
     fun ready(s: Settings) = s.nas.complete && s.libFolder.isNotEmpty()
+
+    // ---------------------------------------------------------------- profilo VPN nella cartella di servizio
+
+    private fun vpnWhere(s: Settings): Pair<String, String> {
+        val share = s.libShare.ifEmpty { s.nas.share }
+        val dir = if (s.libFolder.isEmpty()) "vpn" else "${s.libFolder}\\vpn"
+        return share to dir
+    }
+
+    /** Copia lo zip del profilo VPN nella cartella di servizio (`<cartella di servizio>\vpn\openvpn.zip`). */
+    suspend fun putVpn(s: Settings, bytes: ByteArray) {
+        val (share, dir) = vpnWhere(s)
+        Remote.use(s.nas, share) { sh ->
+            var d = ""
+            for (part in dir.split('\\').filter { it.isNotEmpty() }) {
+                d = if (d.isEmpty()) part else "$d\\$part"
+                if (!sh.folderExists(d)) sh.mkdir(d)
+            }
+            sh.openFile("$dir\\.openvpn.zip.tmp", EnumSet.of(AccessMask.GENERIC_WRITE, AccessMask.DELETE), null, SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OVERWRITE_IF, null).use { f ->
+                f.outputStream.use { it.write(bytes) }
+                f.rename("$dir\\openvpn.zip", true)
+            }
+        }
+    }
+
+    /** Lo zip del profilo VPN dalla cartella di servizio (null se non c'è). */
+    suspend fun getVpn(s: Settings): ByteArray? {
+        val (share, dir) = vpnWhere(s)
+        return Remote.use(s.nas, share) { sh ->
+            if (!sh.fileExists("$dir\\openvpn.zip")) null
+            else Remote.open(sh, "$dir\\openvpn.zip").use { it.read(0, it.size.toInt()) }
+        }
+    }
 
     /** Lo zip, costruito in memoria (pochi KB). */
     fun build(context: Context): ByteArray {
@@ -58,6 +92,7 @@ object ConfigBackup {
             File(context.filesDir, "libraries").listFiles()?.forEach { d ->
                 File(d, "edits.json").takeIf { it.isFile }?.let { put("libraries/${d.name}/edits.json", it.readBytes()) }
             }
+            Vpn.zipFile(context).takeIf { it.isFile }?.let { put("vpn/openvpn.zip", it.readBytes()) }
             put("info.json", JSONObject().put("app", "ViewerCraftStar").put("version", BuildConfigInfo.version)
                 .put("created", System.currentTimeMillis()).put("device", android.os.Build.MODEL).toString(1).toByteArray())
         }
@@ -134,6 +169,7 @@ object ConfigBackup {
         if (keepPassword != null) ed.putString("nas_password", keepPassword)
         ed.commit()
         files["metadata.json"]?.let { File(context.filesDir, "metadata.json").writeBytes(it) }
+        files["vpn/openvpn.zip"]?.let { z -> Vpn.zipFile(context).let { it.parentFile?.mkdirs(); it.writeBytes(z) } }
         for ((n, b) in files) {
             if (!n.startsWith("libraries/") || !n.endsWith("/edits.json") || ".." in n) continue
             val f = File(context.filesDir, n)

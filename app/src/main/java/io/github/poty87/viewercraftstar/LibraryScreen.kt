@@ -1,5 +1,11 @@
 package io.github.poty87.viewercraftstar
 
+import androidx.compose.foundation.layout.wrapContentHeight
+
+import androidx.compose.ui.semantics.contentDescription
+
+import androidx.compose.ui.semantics.semantics
+
 import android.graphics.Bitmap
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -190,6 +196,43 @@ fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?
             L.t("Dove nessuna opzione è accesa, le foto hanno valori diversi: un tocco li rende uguali per tutte.",
                 "Where nothing is lit, the photos differ: one tap makes them the same for all."),
             color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/**
+ * Titolo, didascalia e parole chiave per più foto: si vedono i valori comuni; titolo e didascalia si cambiano per tutte
+ * solo se li tocchi; le parole chiave aggiunte o tolte valgono per tutte, le altre di ogni foto restano.
+ */
+@Composable
+fun GroupTextsDialog(lib: LibraryViewModel, ids: Collection<Int>, onDismiss: () -> Unit) {
+    val photos = ids.mapNotNull { lib.index?.byId?.get(it) }.map { lib.effective(it) }
+    val commonTitle = photos.map { it.title }.distinct().singleOrNull()
+    val commonCaption = photos.map { it.caption }.distinct().singleOrNull()
+    val commonKw = photos.map { p -> p.keywords.map { it.lowercase() }.toSet() }.reduceOrNull { a, b -> a intersect b }.orEmpty()
+    val startKw = photos.firstOrNull()?.keywords?.filter { it.lowercase() in commonKw }.orEmpty()
+    var title by remember { mutableStateOf(commonTitle ?: "") }
+    var caption by remember { mutableStateOf(commonCaption ?: "") }
+    var keywords by remember { mutableStateOf(startKw.joinToString(", ")) }
+    val differ = L.t("valori diversi: scrivi per cambiarli tutti", "different values: type to change them all")
+    BlurDialog(onDismiss) {
+        DialogTitle(L.t("Testi di ${photos.size} foto", "Texts of ${photos.size} photos"))
+        OutlinedTextField(title, { title = it }, label = { Text(L.t("Titolo", "Title")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            placeholder = if (commonTitle == null) ({ Text(differ, fontSize = 13.sp) }) else null)
+        OutlinedTextField(caption, { caption = it }, label = { Text(L.t("Didascalia", "Caption")) }, modifier = Modifier.fillMaxWidth(),
+            placeholder = if (commonCaption == null) ({ Text(differ, fontSize = 13.sp) }) else null)
+        OutlinedTextField(keywords, { keywords = it }, label = { Text(L.t("Parole chiave in comune (separate da virgole)", "Shared keywords (comma-separated)")) },
+            modifier = Modifier.fillMaxWidth())
+        Text(L.t("Le parole chiave che aggiungi o togli valgono per tutte; le altre di ogni foto restano.",
+            "Keywords you add or remove apply to all; each photo keeps its others."), color = C.muted, fontSize = 12.sp)
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, main = L.t("Salva", "Save") to {
+            val now = keywords.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            val add = now.filter { n -> startKw.none { it.equals(n, ignoreCase = true) } }
+            val remove = startKw.filter { s -> now.none { it.equals(s, ignoreCase = true) } }
+            lib.setTextsGroup(ids,
+                title.trim().takeIf { it != (commonTitle ?: "") },
+                caption.trim().takeIf { it != (commonCaption ?: "") }, add, remove)
+            onDismiss()
+        })
     }
 }
 
@@ -433,6 +476,12 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
             repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
         }
+        // JPEG: una scritta piccola in nero trasparente, come le stelle (sopra le stelle se ci sono). Non sulla copertina
+        // di una pila chiusa (lì la pila conta come un tutto); a pila aperta sì, anche sulla prima
+        if (LibraryViewModel.fileTypeOf(p.name) == "jpeg" && !(c.cover && c.stack != null && !c.open))
+            Text("JPEG", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 4.dp, bottom = if (p.rating > 0) 20.dp else 4.dp)
+                    .clip(RoundedCornerShape(3.dp)).background(Color(0x99000000)).padding(horizontal = 4.dp, vertical = 1.dp))
     }
 }
 
@@ -442,12 +491,15 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
     var asking by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var trashing by remember { mutableStateOf(false) }
+    var groupTexts by remember { mutableStateOf(false) }
+    if (groupTexts) GroupTextsDialog(lib, lib.selected) { groupTexts = false }
     if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(lib.selected, jpeg) }
     if (trashing) TrashDialog(lib.selected.size, onDismiss = { trashing = false }) { trashing = false; lib.trash(lib.selected) }
     if (editing) BlurDialog({ editing = false }) {
         DialogTitle(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos"))
         EditControls(lib, lib.selected, null)
-        DialogButtons(main = L.t("Fine", "Done") to { editing = false })
+        DialogButtons(L.t("Titolo e parole chiave…", "Title and keywords…") to { editing = false; groupTexts = true },
+            main = L.t("Fine", "Done") to { editing = false })
     }
     Column(modifier.fillMaxWidth().background(BarBg).navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -460,7 +512,13 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
             val w = Modifier.weight(1f)
             PillButton(onClick = { editing = true }, modifier = w, pad = 6.dp) { Text(L.t("Modifica", "Edit"), maxLines = 1) }
             PillButton(onClick = { asking = true }, modifier = w, pad = 6.dp) { Text(L.t("Scarica", "Download"), maxLines = 1) }
-            PillButton(onClick = { lib.stack(lib.selected) }, modifier = w, pad = 6.dp, enabled = lib.selected.size >= 2) { Text(L.t("Pila", "Stack"), maxLines = 1) }
+            // pila, contestuale: più copertine di pile → «Unisci»; una foto dentro una pila → «Copertina»; altrimenti «Pila»
+            val sel = lib.selected
+            when {
+                lib.canMerge(sel) -> PillButton(onClick = { lib.mergeStacks(sel) }, modifier = w, pad = 6.dp) { Text(L.t("Unisci", "Merge"), maxLines = 1) }
+                lib.canMakeCover(sel) -> PillButton(onClick = { lib.makeCover(sel.first()) }, modifier = w, pad = 6.dp) { Text(L.t("Copertina", "Cover"), maxLines = 1) }
+                else -> PillButton(onClick = { lib.stack(sel) }, modifier = w, pad = 6.dp, enabled = sel.size >= 2) { Text(L.t("Pila", "Stack"), maxLines = 1) }
+            }
             PillButton(onClick = { trashing = true }, modifier = w, pad = 6.dp, content = Color(0xFFF87171)) { Text(L.t("Cestino", "Trash"), maxLines = 1) }
         }
     }
@@ -787,33 +845,33 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
             }
         }
         if (controls) {
-            // intestazione compatta: posizione nella pila (o nell'elenco) e data; nome e ora sono nelle informazioni
-            val small = Modifier.size(40.dp)
-            Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).statusBarsPadding().padding(horizontal = 2.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, modifier = small) {
+            // intestazione: indietro, posizione e data; a destra i pulsanti, tutti tondi della stessa misura e allineati
+            // (volti, modificata/originale, cestino in rosso come nel resto dell'app, scarica, informazioni)
+            Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).statusBarsPadding()
+                .padding(start = 4.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, L.t("Indietro", "Back"), tint = C.text)
                 }
                 Text("${pager.currentPage + 1}/${list.size}  ·  ${dateText(p.captured).substringBefore(' ')}", color = C.text,
                     fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                // volti trovati da LightCraft: mostra i riquadri per dare un nome
-                if (p.faces.isNotEmpty()) IconButton(onClick = { faceMode = !faceMode }, modifier = small) {
-                    Icon(Icons.Filled.Face, L.t("Volti", "Faces"), tint = if (faceMode) C.accent else C.text)
-                }
                 // ritoccata in LightCraft: com'è adesso (sviluppata dal PC) o com'era allo scatto
-                if (p.id in lib.developed && !faceMode) PillButton(onClick = { lib.showOriginal = !lib.showOriginal }) {
-                    Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
-                        color = if (lib.showOriginal) C.muted else C.accent, fontSize = 13.sp)
+                if (p.id in lib.developed && !faceMode) Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
+                    color = if (lib.showOriginal) C.text else C.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(Color(0x33FFFFFF))
+                        .clickable { lib.showOriginal = !lib.showOriginal }.padding(horizontal = 12.dp).wrapContentHeight())
+                // volti trovati da LightCraft: mostra i riquadri per dare un nome
+                if (p.faces.isNotEmpty()) ViewerAction(L.t("Volti", "Faces"), on = faceMode, onClick = { faceMode = !faceMode }) {
+                    Icon(Icons.Filled.Face, null, tint = if (faceMode) Color.Black else C.text, modifier = Modifier.size(20.dp))
                 }
-                IconButton(onClick = { trashing = true }, enabled = !inTrash, modifier = small) {
-                    Icon(Icons.Filled.Delete, L.t("Nel cestino di LightCraft", "Move to LightCraft's trash"),
-                        tint = if (inTrash) C.muted else C.text)
+                ViewerAction(L.t("Nel cestino di LightCraft", "Move to LightCraft's trash"), enabled = !inTrash, onClick = { trashing = true }) {
+                    Icon(Icons.Filled.Delete, null, tint = if (inTrash) C.muted else Color(0xFFF87171), modifier = Modifier.size(20.dp))
                 }
-                IconButton(onClick = { asking = true }, modifier = small) {
-                    Icon(Icons.Filled.KeyboardArrowDown, L.t("Scarica sul telefono", "Download to the phone"), tint = C.text)
+                ViewerAction(L.t("Scarica sul telefono", "Download to the phone"), onClick = { asking = true }) {
+                    DownloadIcon(Modifier.size(20.dp), C.text)
                 }
-                IconButton(onClick = { info = !info }, modifier = small) {
-                    Icon(Icons.Filled.Info, L.t("Informazioni", "Info"), tint = if (info) C.accent else C.text)
+                ViewerAction(L.t("Informazioni", "Info"), on = info, onClick = { info = !info }) {
+                    Icon(Icons.Filled.Info, null, tint = if (info) Color.Black else C.text, modifier = Modifier.size(20.dp))
                 }
             }
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -870,5 +928,31 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
             }
             }
         }
+    }
+}
+
+/** Pulsante tondo della barra della foto: stessa misura per tutti, acceso (blu) quando la sua funzione è attiva. */
+@Composable
+private fun ViewerAction(description: String, on: Boolean = false, enabled: Boolean = true, onClick: () -> Unit,
+                         icon: @Composable () -> Unit) {
+    Box(Modifier.size(36.dp).clip(CircleShape).background(if (on) C.accent else Color(0x33FFFFFF))
+        .clickable(enabled = enabled, onClickLabel = description) { onClick() }
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) { icon() }
+}
+
+/** Icona «scarica»: una freccia in giù che entra in un vassoio. */
+@Composable
+fun DownloadIcon(modifier: Modifier, color: Color) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width; val h = size.height; val t = w * 0.11f
+        val cap = androidx.compose.ui.graphics.StrokeCap.Round
+        drawLine(color, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.08f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.62f), t, cap)
+        drawLine(color, androidx.compose.ui.geometry.Offset(w * 0.26f, h * 0.40f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.64f), t, cap)
+        drawLine(color, androidx.compose.ui.geometry.Offset(w * 0.74f, h * 0.40f), androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.64f), t, cap)
+        val tray = androidx.compose.ui.graphics.Path().apply {
+            moveTo(w * 0.12f, h * 0.66f); lineTo(w * 0.12f, h * 0.90f); lineTo(w * 0.88f, h * 0.90f); lineTo(w * 0.88f, h * 0.66f)
+        }
+        drawPath(tray, color, style = androidx.compose.ui.graphics.drawscope.Stroke(t, cap = cap,
+            join = androidx.compose.ui.graphics.StrokeJoin.Round))
     }
 }

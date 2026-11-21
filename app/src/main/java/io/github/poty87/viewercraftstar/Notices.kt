@@ -67,6 +67,9 @@ import kotlin.math.abs
  * consultabili nella pagina Notifiche finché non le svuoti.
  */
 object Notices {
+    /** La parte tra parentesi su una riga sua: l'avviso si legge in un colpo d'occhio. */
+    fun wrap(text: String): String = text.replace(Regex(" \\(([^)]{12,})\\)"), "\n($1)")
+
     data class Notice(val id: Long, val level: String, val text: String, val time: Long)
 
     private const val KEEP = 100
@@ -156,7 +159,7 @@ private fun NoticeBubble(n: Notices.Notice) {
             .clip(RoundedCornerShape(14.dp)).background(bg),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(4.dp).height(40.dp).background(accent))
-            Text(n.text, color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp, top = 10.dp, bottom = 10.dp))
+            Text(Notices.wrap(n.text), color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp, top = 10.dp, bottom = 10.dp))
             IconButton(onClick = { Notices.dismiss(n) }, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Filled.Close, L.t("Chiudi", "Close"), tint = C.muted, modifier = Modifier.size(18.dp))
             }
@@ -197,7 +200,7 @@ fun NoticesScreen() {
                     Box(Modifier.width(4.dp).height(56.dp).background(accent))
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(fmt.format(java.util.Date(n.time)), color = C.muted, fontSize = 11.sp)
-                        Text(n.text, color = C.text, fontSize = 13.sp)
+                        Text(Notices.wrap(n.text), color = C.text, fontSize = 13.sp)
                     }
                 }
             }

@@ -35,7 +35,7 @@ Each one works on its own; together they cover the whole path.
 5. **CleanCraftNas**: deletes those photos from the NAS too.
 
 **Away from home** the phone reaches the NAS through a VPN to your home network: see the
-[remote access guide](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md) (Synology *VPN Server* with OpenVPN on the NAS, *OpenVPN Connect* on the phone, port
+[remote access guide](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md) (Synology *VPN Server* with OpenVPN on the NAS, the VPN built into the app on the phone, port
 forwarding through one or two routers).
 
 ## How it works
@@ -112,9 +112,16 @@ reached.
 ## Away from home
 
 The app talks to the NAS over SMB on your home network. Away from home it needs a VPN to your home network — for example
-the free **VPN Server** package of Synology DSM with OpenVPN. The top of the screen always shows whether the NAS can be
-reached (home network, via VPN, or not reachable) with a button to open OpenVPN Connect. If the NAS can't be reached when
-you send the photos, the app asks whether to open the VPN or try later; nothing runs in the background meanwhile.
+the free **VPN Server** package of Synology DSM with OpenVPN. The VPN is built into the app: the **shield in the bottom
+bar** turns it on and off (red dot off, yellow connecting, green on), and while it's on an Android notification offers
+"Turn off". The engine is the free **OpenVPN for Android** app (installed from the Play Store, never opened): the app
+passes it the whole configuration at each start through its public API, so the password stays only in ViewerCraftStar,
+encrypted. In **Settings › VPN** you import the zip exported by Synology VPN Server (also kept in the service folder and
+in the settings backup), set the external server and port, user and password, and choose how it turns on: **manual**
+(default), **when the app opens** away from home, or **fully automatic** (experimental: also turns off on the home
+Wi-Fi, recognised by your NAS's identity, and pauses AdGuard). Android keeps one VPN at a time: if another one (such as
+AdGuard) is on, the shield explains it and opens that app. The top of the screen always shows whether the NAS can be
+reached (home network, via VPN, another VPN in the way, or not reachable).
 
 Synology Drive uploads the photos on its own, with its own settings (for example only on Wi-Fi), wherever you are.
 
@@ -174,7 +181,10 @@ keyPassword=…
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Uses [smbj](https://github.com/hierynomus/smbj) (Apache 2.0), Jetpack Compose (Apache 2.0)
-and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT) for search by subject.
+and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT) for search by subject. The files in
+`app/src/main/aidl/de/blinkt/openvpn/api` and `app/src/main/java/de/blinkt/openvpn/api` are the public API of
+[OpenVPN for Android](https://github.com/schwabe/ics-openvpn) by Arne Schwabe (Apache 2.0, exempted from that app's GPL);
+OpenVPN for Android itself is a separate app, not included.
 
 ---
 
@@ -209,7 +219,7 @@ importi con i colori giusti e tieni pulito il NAS. Ognuno funziona anche da solo
 5. **CleanCraftNas**: cancella quelle foto anche dal NAS.
 
 **Fuori casa** il telefono raggiunge il NAS con una VPN verso la rete di casa: vedi la
-[guida all'accesso da fuori casa](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md#-italiano) (*VPN Server* di Synology con OpenVPN sul NAS, *OpenVPN Connect* sul
+[guida all'accesso da fuori casa](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md#-italiano) (*VPN Server* di Synology con OpenVPN sul NAS, la VPN dentro l'app sul
 telefono, inoltro della porta attraverso uno o due router).
 
 **Come funziona**
@@ -278,8 +288,16 @@ di servizio sul NAS (*Importazione automatica › Librerie da consultare sul tel
 L'indice resta sul telefono: la libreria si sfoglia (e si modifica — le modifiche aspettano) anche senza NAS.
 
 **Fuori casa** serve una VPN verso la rete di casa, per esempio il pacchetto gratuito **VPN Server** di Synology con
-OpenVPN. In alto l'app mostra sempre se il NAS è raggiungibile (rete di casa, via VPN, non raggiungibile) con un bottone
-per aprire OpenVPN Connect. Synology Drive carica le foto per conto suo, con le sue impostazioni, ovunque tu sia.
+OpenVPN. La VPN è dentro l'app: lo **scudo nella barra in basso** la accende e la spegne (pallino rosso spenta, giallo
+in collegamento, verde accesa) e, mentre è accesa, una notifica di Android offre «Spegni». Il motore è l'app gratuita
+**OpenVPN for Android** (dal Play Store, mai da aprire): a ogni accensione l'app le passa la configurazione completa con
+la sua API pubblica, quindi la password resta solo in ViewerCraftStar, cifrata. In **Impostazioni › VPN** importi lo
+zip esportato da Synology VPN Server (tenuto anche nella cartella di servizio e nel backup), imposti server e porta
+esterni, utente e password, e scegli come si accende: **manuale** (di partenza), **all'avvio dell'app** fuori casa, o
+**completamente automatica** (sperimentale: si spegne anche sul Wi-Fi di casa, riconosciuto dall'identità del NAS, e
+mette in pausa AdGuard). Android tiene una VPN alla volta: se ce n'è un'altra accesa (come AdGuard) lo scudo lo spiega e
+apre quell'app. In alto l'app mostra sempre se il NAS è raggiungibile (rete di casa, via VPN, un'altra VPN in mezzo, non
+raggiungibile). Synology Drive carica le foto per conto suo, con le sue impostazioni, ovunque tu sia.
 La configurazione passo per passo — DDNS, inoltro della porta attraverso uno o due router, VPN Server, il profilo `.ovpn`
 (compresa la correzione per le scritture che vanno in timeout sui dati mobili) e il telefono — è nella
 **[guida all'accesso da fuori casa](docs/remote-access.md#-italiano)**.
@@ -308,4 +326,6 @@ automatica* sulla stessa cartella del NAS, sul PC con la libreria LightCraft.
 solo file `.xmp` (e i preset che scegli di importare) e non modifica né cancella mai le foto; niente account, statistiche o
 servizi su internet: l'app parla solo con il tuo NAS.
 
-**Licenza**: MIT — vedi [LICENSE](LICENSE).
+**Licenza**: MIT — vedi [LICENSE](LICENSE). I file in `de/blinkt/openvpn/api` sono l'API pubblica di
+[OpenVPN for Android](https://github.com/schwabe/ics-openvpn) di Arne Schwabe (Apache 2.0); l'app OpenVPN for Android
+è separata e non inclusa.

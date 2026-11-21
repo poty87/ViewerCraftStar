@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.poty87.viewercraftstar"
         minSdk = 33 // Android 13: permesso READ_MEDIA_IMAGES
         targetSdk = 35
-        versionCode = 40
-        versionName = "0.22.0"
+        versionCode = 41
+        versionName = "0.23.0"
         // librerie native (ONNX Runtime per la ricerca IA): solo telefoni a 64 bit (tutti quelli con Android 13+)
         ndk { abiFilters += listOf("arm64-v8a") }
     }
@@ -45,7 +45,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; aidl = true }
     packaging {
         // librerie native compresse nell'APK: il download è molto più piccolo (si estraggono all'installazione)
         jniLibs { useLegacyPackaging = true }

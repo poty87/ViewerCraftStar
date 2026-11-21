@@ -96,6 +96,42 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("notify_end", true)
         set(v) = prefs.edit().putBoolean("notify_end", v).apply()
 
+    /** VPN verso casa (con OpenVPN for Android): server e porta esterni, MTU ridotto, utente e password (cifrata). */
+    var vpnHost: String
+        get() = prefs.getString("vpn_host", "")!!
+        set(v) = prefs.edit().putString("vpn_host", v.trim()).apply()
+
+    var vpnPort: Int
+        get() = prefs.getInt("vpn_port", 0)
+        set(v) = prefs.edit().putInt("vpn_port", v.coerceIn(0, 65535)).apply()
+
+    /** Pacchetti più piccoli (tun-mtu 1340, mssfix 1300): sulla rete mobile quelli grandi si perdono nel tunnel. */
+    var vpnSmallMtu: Boolean
+        get() = prefs.getBoolean("vpn_small_mtu", true)
+        set(v) = prefs.edit().putBoolean("vpn_small_mtu", v).apply()
+
+    /**
+     * Come si comporta la VPN: "manual" (di partenza: la accendi e la spegni tu con lo scudo), "start" (si accende da
+     * sola aprendo l'app fuori casa, si spegne solo a mano) o "auto" (sperimentale: si accende aprendo l'app fuori casa,
+     * si spegne a casa e un po' dopo l'uscita dall'app, mette in pausa AdGuard e lo riaccende).
+     */
+    var vpnMode: String
+        get() = prefs.getString("vpn_mode", "manual")!!
+        set(v) = prefs.edit().putString("vpn_mode", v).apply()
+
+    /** La password di automazione di AdGuard (cifrata). */
+    var adguardPassword: String
+        get() = prefs.getString("adguard_password", null)?.let(::decrypt) ?: ""
+        set(v) = prefs.edit().putString("adguard_password", if (v.isEmpty()) null else encrypt(v)).apply()
+
+    var vpnUser: String
+        get() = prefs.getString("vpn_user", "")!!
+        set(v) = prefs.edit().putString("vpn_user", v.trim()).apply()
+
+    var vpnPassword: String
+        get() = prefs.getString("vpn_password", null)?.let(::decrypt) ?: ""
+        set(v) = prefs.edit().putString("vpn_password", if (v.isEmpty()) null else encrypt(v)).apply()
+
     var nas: NasConfig
         get() = NasConfig(
             host = prefs.getString("nas_host", "")!!,

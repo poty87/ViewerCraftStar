@@ -167,7 +167,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             DialogText(tip(L.t("${names.size} foto spedite: Synology Drive le caricherà appena può. Per inviare i metadati e sapere quando sono al sicuro a casa serve il NAS: se sei fuori casa, accendi la VPN. L'invio continua in background, anche con l'app chiusa.",
                 "${names.size} photos sent: Synology Drive will upload them when it can. Sending the metadata and confirming they're safe at home needs the NAS: if you're away, turn on the VPN. Sending continues in the background, even with the app closed."),
                 L.t("Per inviare i metadati serve il NAS: fuori casa accendi la VPN.", "Sending the metadata needs the NAS: away from home, turn on the VPN.")) ?: "")
-            DialogButtons(L.t("Più tardi", "Later") to { vm.answerVpn(false) }, main = L.t("Apri VPN", "Open VPN") to { vm.answerVpn(true) })
+            DialogButtons(L.t("Più tardi", "Later") to { vm.answerVpn(false) }, main = L.t("Accendi VPN", "Turn on VPN") to { vm.answerVpn(true) })
         }
     }
     val list = if (vm.inLibrary) emptyList() else vm.visible
@@ -424,16 +424,18 @@ private fun ConnRow(vm: AppViewModel) {
         Conn.NO_CONFIG -> C.muted to L.t("NAS non impostato (Impostazioni)", "NAS not set up (Settings)")
         Conn.HOME -> Color(0xFF4ADE80) to L.t("NAS raggiungibile · rete di casa", "NAS reachable · home network")
         Conn.VPN -> Color(0xFF4ADE80) to L.t("NAS raggiungibile · via VPN", "NAS reachable · via VPN")
-        Conn.VPN_NO_NAS -> Color(0xFFFB923C) to L.t("VPN accesa ma NAS non raggiungibile", "VPN on but NAS not reachable")
+        Conn.VPN_NO_NAS -> Color(0xFFFB923C) to L.t("VPN di casa accesa ma NAS non raggiungibile", "Home VPN on but NAS not reachable")
+        // un'altra VPN (AdGuard…) è accesa: il NAS non si vede e quella di casa non può partire finché non la spegni
+        Conn.OTHER_VPN -> Color(0xFFFB923C) to (if (Adguard.installed(LocalContext.current))
+            L.t("NAS non raggiungibile: AdGuard occupa il posto della VPN di casa", "NAS not reachable: AdGuard takes the home VPN's slot")
+            else L.t("NAS non raggiungibile: un'altra VPN occupa il posto di quella di casa", "NAS not reachable: another VPN takes the home VPN's slot"))
         Conn.AWAY -> Color(0xFFFB923C) to L.t("NAS non raggiungibile: fuori casa serve la VPN", "NAS not reachable: away from home you need the VPN")
     }
-    Row(Modifier.fillMaxWidth().clickable { vm.checkConnection() }.padding(start = 16.dp, end = 8.dp, top = 4.dp),
+    Row(Modifier.fillMaxWidth().clickable { if (vm.conn == Conn.OTHER_VPN) Vpn.otherAsk = true else vm.checkConnection() }.padding(start = 16.dp, end = 8.dp, top = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
         Text(text, color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp).weight(1f),
             maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (vm.conn == Conn.AWAY || vm.conn == Conn.VPN_NO_NAS)
-            PillButton(onClick = { vm.openVpn() }) { Text(L.t("Apri VPN", "Open VPN"), fontSize = 13.sp) }
     }
 }
 
@@ -938,6 +940,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             PathRow(L.t("Cartella di servizio", "Service folder"), if (libFolder.isEmpty()) "" else nasPath(libShare.ifEmpty { share }, libFolder),
                 onBrowse = { nasPick = "service" }, onEdit = null, locked = lockMsg)
         }
+        SettingsCard("VPN") { VpnCard(vm, nasReachable = vm.conn == Conn.HOME || vm.conn == Conn.VPN) }
         SettingsCard(L.t("Backup delle impostazioni", "Settings backup")) {
             BackupCard(vm, ready = unlocked && libFolder.isNotEmpty(), beforeSave = { save() })
         }

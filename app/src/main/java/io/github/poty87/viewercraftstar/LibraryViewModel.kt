@@ -332,8 +332,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun trash(ids: Collection<Int>) {
         edit(ids) { it.copy(trash = true) }
         clearSelection()
-        say("info", L.t("${ids.size} foto nel cestino di LightCraft (Eliminate di recente) appena il PC di casa applica la richiesta. I file restano sul NAS: li cancelli con CleanCraftNas.",
-            "${ids.size} photos go to LightCraft's trash (Recently Deleted) once the home PC applies the request. The files stay on the NAS: delete them with CleanCraftNas."))
+        say("info", L.t("${ids.size} foto nel cestino di LightCraft.\nLe toglie il PC di casa; i file restano sul NAS.",
+            "${ids.size} photos to LightCraft's trash.\nThe home PC removes them; the files stay on the NAS."))
     }
 
     /** Ripensamento: se la richiesta non è ancora partita si toglie, altrimenti si chiede di ripristinare. */
@@ -349,14 +349,51 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         edit(ids) { it.copy(stack = top) }
         clearSelection()
         expanded = expanded + (-top)
-        say("info", L.t("Pila di ${ids.size} foto: entra in LightCraft quando il PC di casa applica la richiesta.",
-            "Stack of ${ids.size} photos: it enters LightCraft when the home PC applies the request."))
+        say("info", L.t("Pila di ${ids.size} foto creata.\nIn LightCraft quando il PC di casa la applica.",
+            "Stack of ${ids.size} photos created.\nIn LightCraft once the home PC applies it."))
+    }
+
+    /** Le foto selezionate sono tutte copertine di pile (almeno due): si possono unire. */
+    fun canMerge(ids: Collection<Int>): Boolean {
+        if (ids.size < 2) return false
+        cells()
+        return ids.all { id -> stacksNow[id]?.photos?.first() == id }
+    }
+
+    /** Unisce le pile selezionate (dalle loro copertine): copertina quella della pila più grande. */
+    fun mergeStacks(ids: Collection<Int>) {
+        if (!canMerge(ids)) return
+        val top = ids.maxBy { stacksNow[it]?.photos?.size ?: 0 }
+        val total = ids.sumOf { stacksNow[it]?.photos?.size ?: 1 }
+        edit(ids) { it.copy(stack = top) }
+        clearSelection()
+        say("info", L.t("${ids.size} pile unite: $total foto.\nIn LightCraft quando il PC di casa le applica.",
+            "${ids.size} stacks merged: $total photos.\nIn LightCraft once the home PC applies it."))
+    }
+
+    /** La foto è in una pila ma non ne è la copertina: può diventarlo. */
+    fun canMakeCover(ids: Collection<Int>): Boolean {
+        val id = ids.singleOrNull() ?: return false
+        cells()
+        val s = stacksNow[id] ?: return false
+        return s.photos.first() != id
+    }
+
+    /** «Rendi copertina»: la foto diventa la prima della sua pila (la pila resta aperta). */
+    fun makeCover(id: Int) {
+        if (!canMakeCover(listOf(id))) return
+        edit(listOf(id)) { it.copy(stack = id) }
+        clearSelection()
+        expanded = expanded + (-id)
+        say("info", L.t("Nuova copertina della pila.\nIn LightCraft quando il PC di casa la applica.",
+            "New stack cover.\nIn LightCraft once the home PC applies it."))
     }
 
     /** Le pile come le vede il telefono: quelle di casa più quelle create qui e non ancora in LightCraft. */
     private fun stackMap(idx: LibIndex): Map<Int, LibStack> {
         val groups = edits.entries.filter { it.value.stack != null && it.key in idx.byId }.groupBy({ it.value.stack!! }, { it.key })
-        if (groups.isEmpty()) return idx.stackOf
+        val trashed = edits.entries.filter { it.value.trash == true }.map { it.key }.toSet()
+        if (groups.isEmpty() && trashed.isEmpty()) return idx.stackOf
         val out = idx.stackOf.toMutableMap()
         for ((top, members) in groups) {
             if (top !in idx.byId) continue
@@ -365,6 +402,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             if (photos.size < 2) continue
             val s = LibStack(-top, photos.toList(), collapsed = true)
             photos.forEach { out[it] = s }
+        }
+        // foto nel cestino in attesa del PC: escono dalla pila subito, come farà LightCraft. Se era la copertina, la
+        // copertina diventa la foto successiva; con meno di due foto rimaste la pila non c'è più
+        if (trashed.isNotEmpty()) for (s in out.values.filter { st -> st.photos.any { it in trashed } }.distinct()) {
+            val left = s.photos.filter { it !in trashed }
+            s.photos.forEach { out.remove(it) }
+            if (left.size >= 2) LibStack(s.id, left, s.collapsed).let { ns -> left.forEach { out[it] = ns } }
         }
         return out
     }
@@ -381,6 +425,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun setTexts(id: Int, title: String, caption: String, keywords: List<String>) =
         edit(listOf(id)) { it.copy(title = title, caption = caption, keywords = keywords) }
 
+    /**
+     * Titolo, didascalia e parole chiave per un gruppo di foto: titolo e didascalia (null = non toccati) uguali per
+     * tutte; le parole chiave aggiunte o tolte per tutte, lasciando le altre di ogni foto.
+     */
+    fun setTextsGroup(ids: Collection<Int>, title: String?, caption: String?, add: List<String>, remove: List<String>) {
+        val idx = index ?: return
+        for (id in ids) {
+            val p = idx.byId[id]?.let { effective(it) } ?: continue
+            val kw = (p.keywords.filterNot { k -> remove.any { it.equals(k, ignoreCase = true) } } +
+                add.filterNot { a -> p.keywords.any { it.equals(a, ignoreCase = true) } }).distinct()
+            edit(listOf(id)) { e ->
+                e.copy(title = title ?: e.title, caption = caption ?: e.caption,
+                    keywords = if (add.isEmpty() && remove.isEmpty()) e.keywords else kw)
+            }
+        }
+    }
+
     /** Lascia sul NAS le modifiche non ancora inviate. */
     fun sendPending() {
         val idx = index ?: return
@@ -393,8 +454,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val now = System.currentTimeMillis()
                 edits = edits.mapValues { (id, e) -> if (id in unsent && e.at == unsent.getValue(id).at) e.copy(sent = now) else e }
                 LibraryEdits.save(getApplication(), idx.library, edits)
-                say("ok", L.t("Modifiche inviate: entrano in LightCraft quando PresetCraftAppLicator le applica (PC acceso, LightCraft chiuso).",
-                    "Changes sent: they enter LightCraft when PresetCraftAppLicator applies them (PC on, LightCraft closed)."))
+                say("ok", L.t("Modifiche inviate.\nIn LightCraft quando il PC di casa le applica.",
+            "Changes sent.\nIn LightCraft once the home PC applies them."))
             }.onFailure {
                 say("warn", L.t("Modifiche salvate sul telefono: partono appena il NAS è raggiungibile.",
                     "Changes kept on the phone: they will be sent as soon as the NAS can be reached."))
@@ -424,8 +485,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun download(ids: Collection<Int>, jpeg: Boolean) {
         val lib = index?.library ?: return
         DownloadService.start(getApplication(), lib, ids, jpeg)
-        say("info", L.t("Download di ${ids.size} foto avviato: segui la notifica. Finiscono in ${DownloadService.FOLDER.trimEnd('/')}.",
-            "Downloading ${ids.size} photos: see the notification. They go to ${DownloadService.FOLDER.trimEnd('/')}."))
+        say("info", L.t("Download di ${ids.size} foto avviato.\nIn ${DownloadService.FOLDER.trimEnd('/')}.",
+            "Downloading ${ids.size} photos.\nTo ${DownloadService.FOLDER.trimEnd('/')}."))
         clearSelection()
     }
 

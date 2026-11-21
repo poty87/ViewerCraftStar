@@ -41,6 +41,7 @@ class ShipService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        NasId.init(this)
         channel()
         intent?.getStringArrayListExtra(NAMES)?.let { targets.addAll(it) }
         startForeground(ID_RUN, note(L.t("Spedizione al NAS", "Sending to the NAS"),
@@ -140,6 +141,7 @@ class ShipService : Service() {
     private fun finish(text: String, title: String = L.t("Spedizione al NAS", "Sending to the NAS")) {
         if (Settings(this).notifyEnd) getSystemService(NotificationManager::class.java).notify(ID_END, note(title, text, ongoing = false))
         Shipper.running.value = false
+        Vpn.scheduleStop(this) // con l'app chiusa la VPN non serve più
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         scope.cancel()
@@ -164,9 +166,12 @@ class ShipService : Service() {
             .setAutoCancel(!ongoing)
             .setOnlyAlertOnce(true)
         progress?.let { (done, max) -> if (max > 0) b.setProgress(max, done.coerceIn(0, max), false) }
-        if (vpnAction) packageManager.getLaunchIntentForPackage("net.openvpn.openvpn")?.let { vpn ->
-            val pi = PendingIntent.getActivity(this, 1, vpn, PendingIntent.FLAG_IMMUTABLE)
-            b.addAction(Notification.Action.Builder(null, L.t("Apri VPN", "Open VPN"), pi).build())
+        if (vpnAction) {
+            // apre l'app e accende la sua VPN
+            val vpn = Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_VPN, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val pi = PendingIntent.getActivity(this, 1, vpn, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            b.addAction(Notification.Action.Builder(null, L.t("Accendi VPN", "Turn on VPN"), pi).build())
         }
         return b.build()
     }

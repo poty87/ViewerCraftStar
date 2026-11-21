@@ -42,6 +42,7 @@ object Remote {
                 val (domain, user) = if ('\\' in cfg.user) cfg.user.substringBefore('\\') to cfg.user.substringAfter('\\')
                 else "" to cfg.user
                 session = connection.authenticate(AuthenticationContext(user, cfg.password.toCharArray(), domain))
+                NasId.learn(connection)
             }
             shares[name]?.let { if (it.isConnected) return it }
             return (session!!.connectShare(name) as DiskShare).also { shares[name] = it }

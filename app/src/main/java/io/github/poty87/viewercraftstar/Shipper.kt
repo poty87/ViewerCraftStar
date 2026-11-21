@@ -62,11 +62,25 @@ object Shipper {
         return cm.allNetworks.any { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
     }
 
-    /** Apre OpenVPN Connect (false se non è installata). */
-    fun openVpn(context: Context): Boolean {
-        val i = context.packageManager.getLaunchIntentForPackage("net.openvpn.openvpn") ?: return false
-        context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return true
+    /**
+     * Sul Wi-Fi, scavalcando la VPN, risponde proprio il NAS di casa (stessa identità imparata con utente e password,
+     * vedi [NasId]; nessuna password viene mandata): vuol dire che il Wi-Fi è quello di casa e la VPN non serve.
+     * Funziona perché la VPN dell'app parte con il permesso di essere scavalcata (ALLOW_VPN_BYPASS).
+     */
+    @Suppress("DEPRECATION")
+    fun reachableOnWifi(context: Context, host: String): Boolean {
+        if (host.isBlank()) return false
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val wifi = cm.allNetworks.firstOrNull { n -> cm.getNetworkCapabilities(n)?.let {
+            it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN) } == true } ?: return false
+        val known = NasId.guid ?: return false
+        return runCatching {
+            val cfg = com.hierynomus.smbj.SmbConfig.builder().withSocketFactory(wifi.socketFactory)
+                .withTimeout(5, java.util.concurrent.TimeUnit.SECONDS).withSoTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
+            com.hierynomus.smbj.SMBClient(cfg).use { c ->
+                c.connect(host).use { it.connectionContext.serverGuid?.toString() == known }
+            }
+        }.getOrDefault(false)
     }
 
     /**

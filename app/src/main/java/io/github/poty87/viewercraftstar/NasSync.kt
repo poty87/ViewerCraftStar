@@ -45,6 +45,7 @@ object NasSync {
                 val (domain, user) = if ('\\' in cfg.user) cfg.user.substringBefore('\\') to cfg.user.substringAfter('\\')
                 else "" to cfg.user
                 val session = conn.authenticate(AuthenticationContext(user, cfg.password.toCharArray(), domain))
+                NasId.learn(conn)
                 (session.connectShare(cfg.share) as DiskShare).use { share ->
                     val libShare = cfg.libShare.ifEmpty { cfg.share }
                     if (cfg.libFolder.isEmpty()) return work(share, null)

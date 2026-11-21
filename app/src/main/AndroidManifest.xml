@@ -22,6 +22,12 @@
     <uses-permission android:name="android.permission.MANAGE_MEDIA" />
     <!-- insieme alla gestione dei media, fa saltare anche la conferma di Android per spostare le foto (Spedisci al NAS) -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+    <!-- la VPN: «OpenVPN for Android» comandata con la sua API (serve poterla vedere per sapere se è installata) -->
+    <queries>
+        <package android:name="de.blinkt.openvpn" />
+        <!-- AdGuard: si mette in pausa mentre la VPN di casa è accesa (Android ne tiene una sola) -->
+        <package android:name="com.adguard.android" />
+    </queries>
 
     <!-- per aprire OpenVPN Connect dall'app -->
     <queries>
@@ -36,9 +42,12 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.ViewerCraftStar">
+        <!-- «Spegni» nella notifica della VPN -->
+        <receiver android:name=".VpnOffReceiver" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

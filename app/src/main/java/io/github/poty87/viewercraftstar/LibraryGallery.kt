@@ -120,7 +120,12 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
         val bySegment = lib.segment && !lib.aiActive
         val segments = remember(cells, width, lib.gridMode, lib.gridSize, bySegment, lib.segmentBy) {
             val indexed = cells.mapIndexed { i, c -> i to c }
-            val groups = if (bySegment) indexed.groupBy { segmentKey(it.second.photo.captured, lib.segmentBy) }.toList()
+            // una pila aperta resta tutta nel periodo della sua copertina, anche le foto scattate in un altro mese
+            // (la serata di Capodanno è a cavallo tra dicembre e gennaio: senza, metà pila finiva in un'altra sezione)
+            val coverDate = cells.filter { it.cover && it.stack != null }.associate { it.stack!!.id to it.photo.captured }
+            fun dateOf(c: LibraryViewModel.Cell) =
+                if (c.open && !c.cover && c.stack != null) coverDate[c.stack.id] ?: c.photo.captured else c.photo.captured
+            val groups = if (bySegment) indexed.groupBy { segmentKey(dateOf(it.second), lib.segmentBy) }.toList()
             else listOf("" to indexed)
             groups.map { (key, list) ->
                 val rows = if (lib.gridMode == "square") squareRows(list, width, 8 - lib.gridSize)

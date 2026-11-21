@@ -54,6 +54,7 @@ class DownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        NasId.init(this)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, L.t("Download dalla libreria", "Library downloads"), NotificationManager.IMPORTANCE_LOW))
         val lib = intent?.getStringExtra("library")
@@ -86,6 +87,7 @@ class DownloadService : Service() {
             done++
         }
         progress.value = null
+        Vpn.scheduleStop(this) // con l'app chiusa la VPN non serve più
         val text = if (failed == 0) L.t("$done foto scaricate in ${FOLDER.trimEnd('/')}.", "$done photos downloaded to ${FOLDER.trimEnd('/')}.")
         else L.t("${done - failed} foto scaricate, $failed non riuscite (NAS non raggiungibile o file mancante).",
             "${done - failed} photos downloaded, $failed failed (NAS not reachable or file missing).")

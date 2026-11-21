@@ -7,7 +7,8 @@ from the internet — and it should not be: opening SMB to the internet is unsaf
 through a **VPN**. This is the setup used while building the suite; it needs no paid service and no third-party account.
 
 - **On the NAS**: Synology **VPN Server** package (free, in Package Center), protocol **OpenVPN**.
-- **On the phone**: **OpenVPN Connect** (free, Google Play).
+- **On the phone**: the VPN built into ViewerCraftStar, with the free **OpenVPN for Android** app (Google Play) as its
+  engine, never opened.
 - **Synology Drive** does not need the VPN: it reaches the NAS on its own. The VPN is only for ViewerCraftStar (sending the
   metadata, knowing which photos are safe, importing presets).
 
@@ -87,23 +88,25 @@ Open the exported `.ovpn` in a text editor:
    On mobile data, packets bigger than about 1330 bytes inside the tunnel can be dropped silently: reading from the NAS
    works, but **writing files times out**. These two lines keep the packets small enough.
 
-Copy the `.ovpn` to the phone (USB, e-mail to yourself, a cloud folder…).
+With ViewerCraftStar you don't need to edit the `.ovpn`: the external server and port and the smaller packets are
+settings of the app. Just copy the exported **zip** to the phone (USB, e-mail to yourself, a cloud folder…).
 
 ## 6. The phone
 
-1. Install **OpenVPN Connect** from Google Play.
-2. *Import profile* › *File* › choose the `.ovpn`; enter the **DSM user name** (and, if you want, save the password).
-3. When it says the profile has **no client certificate**, continue: Synology's VPN Server signs in with user name and
-   password.
-4. Connect, then open ViewerCraftStar: the top line should say **"NAS reachable · via VPN"**. *Settings › Test connection*
-   should list your photos and presets.
+1. Install **OpenVPN for Android** from Google Play (ViewerCraftStar › Settings › VPN has the link). You never open it.
+2. In **ViewerCraftStar › Settings › VPN**: *Import zip…*, then the external **server** (your DDNS name) and **port**
+   (the one forwarded by the router), *Smaller packets* on, the **DSM user name and password**. The zip is also copied
+   to the service folder and goes into the settings backup; user and password stay only on the phone.
+3. Tap the **shield** in the bottom bar. The first time OpenVPN for Android asks to let ViewerCraftStar control it:
+   allow. The dot turns green and the top line should say **"NAS reachable · via VPN"**.
 
 ## Everyday use
 
 - **At home: VPN off.** The app reaches the NAS directly on the Wi-Fi.
-- **Away: VPN on** when you want to send the metadata or check what is safe. ViewerCraftStar shows whether the NAS is
-  reachable and has an *Open VPN* button; if you send photos while the NAS can't be reached, it asks whether to open the
-  VPN or try later.
+- **Away: VPN on** with the shield (or automatically when the app opens, if you choose so in Settings › VPN). It stays
+  on until you turn it off, from the shield or the notification "ViewerCraftStar VPN on".
+- **Another VPN** (for example AdGuard) takes the only VPN slot Android has: the shield tells you and opens that app to
+  turn it off.
 - Synology Drive keeps uploading the photos with its own settings (for example only on Wi-Fi), VPN or not.
 
 ---
@@ -117,7 +120,8 @@ internet — ed è giusto così: aprire SMB su internet non è sicuro. Il telefo
 **VPN**. Questa è la configurazione usata mentre la suite veniva costruita: niente servizi a pagamento né account di terzi.
 
 - **Sul NAS**: il pacchetto **VPN Server** di Synology (gratuito, nel Centro pacchetti), protocollo **OpenVPN**.
-- **Sul telefono**: **OpenVPN Connect** (gratuita, Google Play).
+- **Sul telefono**: la VPN dentro ViewerCraftStar, con l'app gratuita **OpenVPN for Android** (Google Play) come
+  motore, mai da aprire.
 - **Synology Drive** non ha bisogno della VPN: raggiunge il NAS per conto suo. La VPN serve solo a ViewerCraftStar (invio dei
   metadati, sapere quali foto sono al sicuro, importare preset).
 
@@ -199,21 +203,26 @@ Apri il `.ovpn` esportato con un editor di testo:
    Sui dati mobili i pacchetti più grandi di circa 1330 byte dentro il tunnel possono sparire senza errori: la lettura dal
    NAS funziona, ma **la scrittura dei file va in timeout**. Queste due righe tengono i pacchetti abbastanza piccoli.
 
-Copia il `.ovpn` sul telefono (cavo USB, e-mail a te stesso, una cartella cloud…).
+Con ViewerCraftStar non serve modificare il `.ovpn`: server e porta esterni e i pacchetti più piccoli sono
+impostazioni dell'app. Basta copiare lo **zip** esportato sul telefono (cavo USB, e-mail a te stesso, una cartella
+cloud…).
 
 ## 6. Il telefono
 
-1. Installa **OpenVPN Connect** da Google Play.
-2. *Importa profilo* › *File* › scegli il `.ovpn`; inserisci il **nome utente DSM** (e, se vuoi, salva la password).
-3. Quando dice che il profilo è **senza certificato client**, continua: il VPN Server di Synology accede con nome utente e
-   password.
-4. Collegati e apri ViewerCraftStar: in alto deve comparire **«NAS raggiungibile · via VPN»**. *Impostazioni › Prova
-   connessione* deve trovare le tue foto e i preset.
+1. Installa **OpenVPN for Android** da Google Play (in ViewerCraftStar › Impostazioni › VPN c'è il link). Non serve mai
+   aprirla.
+2. In **ViewerCraftStar › Impostazioni › VPN**: *Importa zip…*, poi il **server** esterno (il tuo nome DDNS) e la
+   **porta** (quella inoltrata dal router), *Pacchetti più piccoli* attivo, **nome utente e password DSM**. Lo zip viene
+   copiato anche nella cartella di servizio e va nel backup delle impostazioni; utente e password restano solo sul
+   telefono.
+3. Tocca lo **scudo** nella barra in basso. La prima volta OpenVPN for Android chiede di lasciarsi comandare da
+   ViewerCraftStar: consenti. Il pallino diventa verde e in alto deve comparire **«NAS raggiungibile · via VPN»**.
 
 ## Nell'uso di tutti i giorni
 
 - **A casa: VPN spenta.** L'app raggiunge il NAS direttamente sul Wi-Fi.
-- **Fuori casa: VPN accesa** quando vuoi inviare i metadati o vedere cosa è al sicuro. ViewerCraftStar mostra se il NAS è
-  raggiungibile e ha un bottone *Apri VPN*; se spedisci foto con il NAS irraggiungibile ti chiede se aprire la VPN o
-  riprovare più tardi.
+- **Fuori casa: VPN accesa** con lo scudo (o da sola all'apertura dell'app, se lo scegli in Impostazioni › VPN). Resta
+  accesa finché non la spegni, dallo scudo o dalla notifica «VPN di ViewerCraftStar accesa».
+- **Un'altra VPN** (per esempio AdGuard) occupa l'unico posto VPN di Android: lo scudo te lo dice e apre quell'app per
+  spegnerla.
 - Synology Drive continua a caricare le foto con le sue impostazioni (per esempio solo in Wi-Fi), con o senza VPN.
