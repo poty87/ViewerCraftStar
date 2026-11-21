@@ -28,7 +28,7 @@ class ShipService : Service() {
         private const val CHANNEL = "ship"
         private const val ID_RUN = 1
         private const val ID_END = 2
-        private const val ROUND_MS = 30_000L
+        private const val ROUND_MS = 10_000L // un giro ogni 10 s: le casette cambiano colore quasi subito
         private const val UNREACHABLE_MS = 15 * 60_000L
         private const val TOTAL_MS = 3 * 60 * 60_000L
     }
@@ -104,22 +104,14 @@ class ShipService : Service() {
                 val lv = levels()
                 val green = lv.count { it == Level.GREEN }
                 val onNas = lv.count { it >= Level.BLUE }
-                // senza seguire LightCraft (impostazione predefinita) si finisce quando foto e metadati sono sul NAS
-                if (!settings.notifyLightCraft && onNas == mine.size) return finish(
+                // si finisce quando foto e metadati sono sul NAS: in LightCraft le porta il PC di casa quando è acceso
+                if (onNas == mine.size) return finish(
                     if (green == mine.size) L.t(
                         "${mine.size} foto al sicuro, già in LightCraft: puoi toglierle dal telefono dalla sezione Inviate.",
                         "${mine.size} photos safe, already in LightCraft: you can remove them from the phone in the Sent section.")
                     else L.t(
                         "Tutte le ${mine.size} foto sono al sicuro sul NAS con i metadati: puoi toglierle dal telefono. Entreranno in LightCraft quando il PC di casa è acceso.",
                         "All ${mine.size} photos are safe on the NAS with their metadata: you can remove them from the phone. They will enter LightCraft when the home PC is on."),
-                    title = L.t("Spedizione completata", "Sending complete"))
-                if (green == mine.size) return finish(L.t(
-                    "${mine.size} foto in LightCraft con i tuoi metadati: puoi toglierle dal telefono dalla sezione Inviate.",
-                    "${mine.size} photos in LightCraft with your metadata: you can remove them from the phone in the Sent section."),
-                    title = L.t("Spedizione completata", "Sending complete"))
-                if (onNas == mine.size && !nas.pcOn()) return finish(L.t(
-                    "Tutte le ${mine.size} foto sono al sicuro sul NAS con i metadati: puoi toglierle dal telefono. Il PC di casa sembra spento: entreranno in LightCraft alla sua accensione.",
-                    "All ${mine.size} photos are safe on the NAS with their metadata: you can remove them from the phone. The home PC seems off: they will enter LightCraft when it starts."),
                     title = L.t("Spedizione completata", "Sending complete"))
                 val missing = outcome.getOrNull()?.let { there -> mine.count { it.name.lowercase() !in there } } ?: 0
                 val detail = when {
@@ -139,13 +131,10 @@ class ShipService : Service() {
     }
 
     private fun update(green: Int, onNas: Int, total: Int, detail: String, vpnAction: Boolean = false) {
-        val follow = Settings(this).notifyLightCraft
-        // barra: foto arrivate sul NAS con i metadati; seguendo LightCraft ogni foto conta due passi
-        val title = if (follow) L.t("Spedizione: $onNas di $total sul NAS · $green in LightCraft",
-            "Sending: $onNas of $total on the NAS · $green in LightCraft")
-        else L.t("Spedizione: $onNas di $total sul NAS", "Sending: $onNas of $total on the NAS")
+        // barra: foto arrivate sul NAS con i metadati
+        val title = L.t("Spedizione: $onNas di $total sul NAS", "Sending: $onNas of $total on the NAS")
         getSystemService(NotificationManager::class.java).notify(ID_RUN, note(title, detail, ongoing = true,
-            vpnAction = vpnAction, progress = if (follow) (onNas + green) to 2 * total else onNas to total))
+            vpnAction = vpnAction, progress = onNas to total))
     }
 
     private fun finish(text: String, title: String = L.t("Spedizione al NAS", "Sending to the NAS")) {

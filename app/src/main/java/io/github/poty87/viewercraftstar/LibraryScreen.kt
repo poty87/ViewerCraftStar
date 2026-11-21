@@ -321,13 +321,8 @@ fun LibraryHeader(lib: LibraryViewModel) {
             }
         }
     }
-    if (!lib.configured) {
-        Text(tip(L.t("Imposta nelle Impostazioni la cartella del NAS con le librerie (la stessa scelta in PresetCraftAppLicator › Importazione automatica › Librerie da consultare sul telefono).",
-            "In Settings, set the NAS folder with the libraries (the one chosen in PresetCraftAppLicator › Automatic import › Libraries to browse on the phone)."),
-            L.t("Imposta la cartella delle librerie nelle Impostazioni.", "Set the libraries folder in Settings.")) ?: "",
-            color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
-        return
-    }
+    // senza cartella delle librerie la pagina vuota (in LibraryGallery) dice cosa fare
+    if (!lib.configured) return
     Column {
         SearchRow(lib)
         ActiveFilters(lib)

@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.verticalScroll
 
 /** Un percorso lungo accorciato nel mezzo con i puntini, così si vedono l'inizio e la cartella finale. */
 private fun middleEllipsis(text: String, max: Int): String {
@@ -173,4 +175,74 @@ fun treeToRelative(uri: android.net.Uri): String? {
     val top = rel.substringBefore('/')
     if (!top.equals("Pictures", ignoreCase = true) && !top.equals("DCIM", ignoreCase = true)) return null
     return "$rel/"
+}
+
+/**
+ * Backup delle impostazioni: «Salva backup» scrive uno zip nella cartella di servizio (backups\ViewerCraftStar);
+ * «Ripristina…» elenca quelli sul NAS, chiede conferma, ripristina e riavvia l'app.
+ */
+@androidx.compose.runtime.Composable
+fun BackupCard(vm: AppViewModel, ready: Boolean, beforeSave: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var list by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<ConfigBackup.Entry>?>(null) }
+    var chosen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val s = vm.settings
+    val fmt = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALY)
+    androidx.compose.material3.Text(L.t("Uno zip nella cartella di servizio (backups › ViewerCraftStar) con impostazioni, stelle e metadati delle foto del telefono e modifiche alle librerie non ancora applicate. La password del NAS non c'è: dopo un ripristino su un telefono nuovo va riscritta. Restano gli ultimi 20.",
+        "A zip in the service folder (backups › ViewerCraftStar) with settings, stars and metadata of the phone's photos and library edits not applied yet. The NAS password isn't in it: after restoring on a new phone, type it again. The last 20 are kept."),
+        color = C.muted, fontSize = 12.sp)
+    if (!ready) androidx.compose.material3.Text(L.t("Serve la cartella di servizio e il NAS raggiungibile (prova la connessione).",
+        "Needs the service folder and the NAS reachable (test the connection)."), color = C.muted, fontSize = 12.sp)
+    androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        PillButton(onClick = {
+            beforeSave(); busy = true
+            scope.launch {
+                runCatching { ConfigBackup.save(context, s) }
+                    .onSuccess { Notices.post("ok", L.t("Backup salvato: $it", "Backup saved: $it")) }
+                    .onFailure { Notices.post("error", L.t("Backup non riuscito: ", "Backup failed: ") + (it.message ?: it.javaClass.simpleName)) }
+                busy = false
+            }
+        }, primary = true, enabled = ready && !busy) { androidx.compose.material3.Text(L.t("Salva backup", "Save backup")) }
+        PillButton(onClick = {
+            busy = true
+            scope.launch {
+                runCatching { ConfigBackup.list(s) }
+                    .onSuccess { l -> if (l.isEmpty()) Notices.post("info", L.t("Nessun backup sul NAS.", "No backups on the NAS.")) else { list = l; chosen = l.first().name } }
+                    .onFailure { Notices.post("error", L.t("Non riesco a leggere i backup: ", "Can't read the backups: ") + (it.message ?: it.javaClass.simpleName)) }
+                busy = false
+            }
+        }, enabled = ready && !busy) { androidx.compose.material3.Text(L.t("Ripristina…", "Restore…")) }
+        if (busy) androidx.compose.material3.CircularProgressIndicator(androidx.compose.ui.Modifier.size(18.dp), color = C.accent, strokeWidth = 2.dp)
+    }
+    val l = list
+    if (l != null) BlurDialog(onDismiss = { list = null }) {
+        TitleText(L.t("Ripristina un backup", "Restore a backup"))
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.heightIn(max = 360.dp)
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            for (e in l) androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.fillMaxWidth().clickable { chosen = e.name },
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                androidx.compose.material3.RadioButton(chosen == e.name, { chosen = e.name },
+                    colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = C.accent))
+                androidx.compose.material3.Text(fmt.format(java.util.Date(e.time)) + "  ·  ${(e.size + 1023) / 1024} KB", color = C.text)
+            }
+        }
+        DialogButtons(L.t("Annulla", "Cancel") to { list = null }, main = L.t("Ripristina", "Restore") to {
+            val name = chosen
+            list = null
+            Confirm.show(L.t("Ripristinare questo backup?", "Restore this backup?"),
+                L.t("Impostazioni, metadati delle foto del telefono e modifiche alle librerie in attesa tornano come nel backup: quelli di adesso vengono sostituiti. La password del NAS resta quella di adesso. Poi l'app si riavvia.",
+                    "Settings, metadata of the phone's photos and pending library edits go back to the backup: the current ones are replaced. The NAS password stays the current one. Then the app restarts."),
+                L.t("Ripristina", "Restore"), danger = false) {
+                busy = true
+                scope.launch {
+                    runCatching { ConfigBackup.restore(context, s, name) }
+                        .onSuccess { ConfigBackup.restart(context) }
+                        .onFailure { Notices.post("error", L.t("Ripristino non riuscito: ", "Restore failed: ") + (it.message ?: it.javaClass.simpleName)); busy = false }
+                }
+            }
+        })
+    }
 }

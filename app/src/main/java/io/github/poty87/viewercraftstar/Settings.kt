@@ -59,11 +59,6 @@ class Settings(context: Context) {
         get() = prefs.getString("lib_folder", "")!!
         set(v) = prefs.edit().putString("lib_folder", v.trim().replace('/', '\\').trim('\\')).apply()
 
-    /** Riduci consigli interfaccia: solo testi brevi. */
-    var compactTips: Boolean
-        get() = prefs.getBoolean("compact_tips", false)
-        set(v) = prefs.edit().putBoolean("compact_tips", v).apply()
-
     /**
      * Fotocamera, cosa si scarica: "dng" solo i DNG, "jpg" solo i JPEG, "both" il DNG e il suo JPEG gemello.
      * I JPEG vanno sempre nella galleria del telefono (DCIM/Camera), i DNG nella cartella delle foto nuove.
@@ -95,11 +90,6 @@ class Settings(context: Context) {
     var library: String
         get() = prefs.getString("library", "")!!
         set(v) = prefs.edit().putString("library", v).apply()
-
-    /** Notifica di spedizione: seguire anche l'ingresso in LightCraft (serve il PC di casa acceso). */
-    var notifyLightCraft: Boolean
-        get() = prefs.getBoolean("notify_lightcraft", false)
-        set(v) = prefs.edit().putBoolean("notify_lightcraft", v).apply()
 
     /** Avviso a spedizione finita (o sospesa). */
     var notifyEnd: Boolean

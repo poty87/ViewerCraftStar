@@ -184,11 +184,9 @@ fun NoticesScreen() {
             }
         }
         if (Notices.history.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Notifications, null, tint = C.muted, modifier = Modifier.size(40.dp))
-                Spacer(Modifier.height(8.dp))
-                Text(L.t("Nessuna notifica", "No notifications"), color = C.muted, fontSize = 14.sp)
-            }
+            EmptyState(EmptyGlyph.BELL, L.t("Nessuna notifica", "No notifications"),
+                L.t("Qui restano gli avvisi dell'app, anche dopo che spariscono dallo schermo.",
+                    "The app's notices stay here, even after they leave the screen."))
         }
         else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp, bottom = 10.dp + LocalBarSpace.current),

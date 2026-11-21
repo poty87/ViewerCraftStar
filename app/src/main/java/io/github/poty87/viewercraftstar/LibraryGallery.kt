@@ -149,11 +149,25 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
             contentPadding = PaddingValues(start = 3.dp, end = 3.dp, bottom = if (lib.selecting) 120.dp else 16.dp + LocalBarSpace.current),
             verticalArrangement = Arrangement.spacedBy(GAP)) {
             item(key = "header", contentType = "header") { header() }
-            if (lib.configured && lib.index == null) item(key = "empty") {
-                Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                    if (lib.loading) CircularProgressIndicator(color = C.accent)
-                    else Text(L.t("Nessuna libreria scaricata.", "No library downloaded yet."), color = C.muted)
+            // pagine vuote: disegno grande in grigio tenue con una frase che dice perché e cosa fare
+            if (!lib.configured) item(key = "empty") {
+                EmptyStateFill(EmptyGlyph.LIBRARY, L.t("Nessuna libreria collegata", "No library connected"),
+                    L.t("Scegli in Impostazioni la cartella di servizio sul NAS: lì PresetCraftAppLicator mette le librerie.",
+                        "In Settings, choose the service folder on the NAS: PresetCraftAppLicator puts the libraries there."))
+            }
+            else if (lib.index == null) item(key = "empty") {
+                if (lib.loading) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = C.accent)
                 }
+                else EmptyStateFill(EmptyGlyph.LIBRARY, L.t("Nessuna libreria scaricata", "No library downloaded yet"),
+                    L.t("Arriva dal NAS appena è raggiungibile: da casa o con la VPN.",
+                        "It comes from the NAS as soon as it can be reached: at home or over the VPN."))
+            }
+            else if (cells.isEmpty()) item(key = "empty") {
+                if (lib.filtering || lib.aiActive) EmptyStateFill(EmptyGlyph.SEARCH, L.t("Nessuna foto trovata", "No photos found"),
+                    L.t("Prova a togliere qualche filtro o a dirlo in un altro modo.", "Try removing a filter or saying it another way."))
+                else EmptyStateFill(EmptyGlyph.PHOTOS, L.t("Non hai ancora foto", "No photos yet"),
+                    L.t("Le foto importate in questa libreria compaiono qui.", "Photos imported into this library show up here."))
             }
             for (s in segments) {
                 if (s.title.isNotEmpty()) stickyHeader(key = "seg-" + s.key, contentType = "segment") {

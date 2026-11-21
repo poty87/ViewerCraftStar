@@ -47,10 +47,18 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
     private val lib: LibraryViewModel by viewModels()
     private var granted by mutableStateOf(false)
+    // al primo avvio, dopo i permessi normali, una volta sola: la «gestione dei media» (si attiva nelle impostazioni di Android)
+    private var mediaStep by mutableStateOf(false)
+    private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+    private val media = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { mediaStep = false; Perms.tick++ }
 
     private val ask = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         granted = hasPermission()
-        if (granted) vm.reload()
+        Perms.tick++
+        if (granted) {
+            vm.reload()
+            mediaStep = !Perms.canManageMedia(this) && !prefs.getBoolean("media_asked", false)
+        }
     }
 
     private fun hasPermission() =
@@ -62,10 +70,13 @@ class MainActivity : ComponentActivity() {
         BuildConfigInfo.version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
         granted = hasPermission()
         Notices.init(applicationContext)
-        Tips.compact = vm.settings.compactTips
         setContent {
             AppTheme {
-                if (!granted) PermissionScreen { ask.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES)) }
+                // tutti i permessi normali in una volta sola (foto, notifiche, dispositivi nelle vicinanze per la fotocamera)
+                if (!granted) PermissionScreen { ask.launch(Perms.missing(this).ifEmpty { listOf(Manifest.permission.READ_MEDIA_IMAGES) }.toTypedArray()) }
+                else if (mediaStep) MediaStepScreen(
+                    onOpen = { prefs.edit().putBoolean("media_asked", true).apply(); media.launch(Perms.manageMediaIntent(this)) },
+                    onLater = { prefs.edit().putBoolean("media_asked", true).apply(); mediaStep = false })
                 else App(vm, lib)
             }
         }
@@ -73,6 +84,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Perms.tick++
         granted = hasPermission()
         if (granted) {
             vm.reload()
@@ -194,6 +206,24 @@ private fun PermissionScreen(onAsk: () -> Unit) {
         Text(L.t("Per mostrare i DNG della cartella serve il permesso di accedere a foto e video. Scegli «Consenti tutto»: con l'accesso solo ad alcune foto le altre non compaiono.",
             "To show the DNG files of the folder the app needs access to photos and videos. Choose “Allow all”: with access to only some photos, the others won't appear."),
             color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp))
+        Text(L.t("Insieme chiedo anche le notifiche (per seguire le spedizioni) e i dispositivi nelle vicinanze (per la fotocamera): così non te li chiedo più dopo.",
+            "Together I also ask for notifications (to follow sending) and nearby devices (for the camera), so I won't ask again later."),
+            color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 16.dp))
         PillButton(onClick = onAsk, primary = true) { Text(L.t("Consenti l'accesso", "Allow access")) }
+    }
+}
+
+/** Secondo passo del primo avvio: la gestione dei media, che Android concede solo dalle sue impostazioni. */
+@androidx.compose.runtime.Composable
+private fun MediaStepScreen(onOpen: () -> Unit, onLater: () -> Unit) {
+    Column(Modifier.fillMaxSize().background(C.bg).padding(32.dp), verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        TitleText(L.t("Un ultimo permesso", "One last permission"))
+        Text(L.t("Con la «gestione dei media» l'app sposta nel cestino le foto già al sicuro a casa senza che Android chieda conferma ogni volta. Si attiva una volta sola, nella pagina di Android che si apre ora: accendi l'interruttore e torna indietro.",
+            "With “media management” the app moves the photos already safe at home to the bin without Android asking every time. You turn it on once, in the Android page that opens now: flip the switch and come back."),
+            color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp))
+        PillButton(onClick = onOpen, primary = true) { Text(L.t("Apri le impostazioni", "Open settings")) }
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(6.dp))
+        PillButton(onClick = onLater) { Text(L.t("Più tardi (da Impostazioni › Permessi)", "Later (from Settings › Permissions)")) }
     }
 }

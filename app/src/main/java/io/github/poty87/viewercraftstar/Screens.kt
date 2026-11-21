@@ -75,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -179,17 +180,9 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         }
         else Column {
             // Importa: in testa solo il collegamento al NAS e l'invio (cartelle e conteggi stanno in Impostazioni e nelle schede)
+            // l'aggiornamento è il tondo verde in basso a sinistra in «Inviate» (e parte da solo)
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { ConnRow(vm) }
-                Box {
-                    IconButton(onClick = { vm.sync() }, enabled = !vm.syncing) {
-                        if (vm.syncing) CircularProgressIndicator(Modifier.size(20.dp), color = C.accent, strokeWidth = 2.dp)
-                        else Icon(Icons.Filled.Refresh, L.t("Invia al NAS", "Send to NAS"), tint = C.text)
-                    }
-                    if (vm.pending > 0) Text("${vm.pending}", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp).clip(CircleShape)
-                            .background(C.star).padding(horizontal = 5.dp))
-                }
             }
             SectionTabs(vm)
             run {
@@ -208,6 +201,19 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
             if (vm.loading) item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = C.accent) }
+            }
+            // pagina vuota al centro, al posto delle foto
+            else if (list.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                when {
+                    vm.countIn(vm.section) > 0 -> EmptyStateFill(EmptyGlyph.SEARCH, L.t("Nessuna foto con questi filtri", "No photos match these filters"),
+                        L.t("Prova a toglierne qualcuno.", "Try removing some."))
+                    vm.section == Section.REVIEW -> EmptyStateFill(EmptyGlyph.DONE, L.t("Tutto fatto", "All done"),
+                        L.t("Nessuna foto da rivedere. Scarica le nuove dalla fotocamera con il tondo in basso a sinistra.",
+                            "No photos to review. Download new ones from the camera with the round button at the bottom left."))
+                    else -> EmptyStateFill(EmptyGlyph.SENT, L.t("Niente in viaggio", "Nothing on its way"),
+                        L.t("Le foto spedite al NAS restano qui finché non le togli dal telefono.",
+                            "Photos sent to the NAS stay here until you remove them from the phone."))
+                }
             }
             else itemsIndexed(list, key = { _, p -> p.id }) { i, p ->
                 val m = vm.meta(p.name)
@@ -255,6 +261,37 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                 }
             }
         }
+        // «Inviate»: aggiorna (rilegge dal NAS lo stato di ogni foto e invia i metadati in coda) con il tondo verde in basso
+        // a sinistra, di fronte al cestino; con il numerino bianco dei metadati ancora da inviare
+        if (!vm.inLibrary && vm.section == Section.SENT) {
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom())) {
+                Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFF4ADE80))
+                    .clickable(enabled = !vm.syncing) { vm.sync() }, contentAlignment = Alignment.Center) {
+                    if (vm.syncing) CircularProgressIndicator(Modifier.size(26.dp), color = Color.Black, strokeWidth = 2.5.dp)
+                    else Icon(Icons.Filled.Refresh, L.t("Aggiorna lo stato dal NAS", "Refresh the status from the NAS"),
+                        tint = Color.Black, modifier = Modifier.size(32.dp))
+                }
+                if (vm.pending > 0) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).size(24.dp)
+                    .clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Text(if (vm.pending > 99) "99+" else "${vm.pending}", color = Color.Black, fontWeight = FontWeight.Bold, maxLines = 1,
+                        fontSize = if (vm.pending > 99) 8.sp else 10.sp, letterSpacing = if (vm.pending > 99) (-0.3).sp else 0.sp)
+                }
+            }
+            // aggiornamento automatico: con «Inviate» aperta e l'app in primo piano, ogni 10 s finché c'è una foto non
+            // ancora verde (in LightCraft le porta il PC di casa: appena lo fa, la casetta cambia senza toccare niente)
+            val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            LaunchedEffect(owner) {
+                owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                    while (true) {
+                        val notGreen = vm.countIn(Section.SENT) - vm.countLevel(Level.GREEN)
+                        // solo con il NAS raggiungibile (a casa o con la VPN): fuori casa non si insiste
+                        val reach = vm.conn == Conn.HOME || vm.conn == Conn.VPN
+                        if (notGreen > 0 && reach && !vm.syncing && !vm.shipping) vm.sync(quiet = true)
+                        kotlinx.coroutines.delay(10_000)
+                    }
+                }
+            }
+        }
         // «Spedite»: le foto già al sicuro a casa si tolgono dal telefono con il tondo rosso in basso a destra, come
         // «Spedisci al NAS» in «Da rivedere» (stesso posto, stessa misura, stesso tondino bianco con il numero)
         if (!vm.inLibrary && vm.section == Section.SENT) {
@@ -279,11 +316,6 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                 }
             }
         }
-        if (!vm.inLibrary && !vm.loading && list.isEmpty()) Text(
-            if (vm.countIn(vm.section) == 0) L.t("Nessun DNG in ${sectionFolder(vm)}", "No DNG files in ${sectionFolder(vm)}")
-            else L.t("Nessuna foto con questi filtri", "No photos match these filters"),
-            color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).padding(bottom = LocalBarShown.current))
     }
 }
 
@@ -789,8 +821,6 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
     var creator by remember { mutableStateOf(s.defaultCreator) }
     var copyright by remember { mutableStateOf(s.defaultCopyright) }
     var advance by remember { mutableStateOf(s.advance) }
-    var compact by remember { mutableStateOf(s.compactTips) }
-    var notifyLc by remember { mutableStateOf(s.notifyLightCraft) }
     var libShare by remember { mutableStateOf(s.libShare) }
     var libFolder by remember { mutableStateOf(s.libFolder) }
     var notifyEnd by remember { mutableStateOf(s.notifyEnd) }
@@ -803,8 +833,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
     fun config() = NasConfig(host, share, folder, sub, user, password, libShare, libFolder)
     fun save() {
         s.nas = config(); s.phoneFolder = phone; s.workFolder = work; s.defaultCreator = creator; s.defaultCopyright = copyright; s.advance = advance
-        s.notifyLightCraft = notifyLc; s.notifyEnd = notifyEnd
-        s.compactTips = compact; Tips.compact = compact
+        s.notifyEnd = notifyEnd
         s.libShare = libShare; s.libFolder = libFolder
     }
     // dalla barra in basso si esce senza la freccia: si salva comunque
@@ -866,12 +895,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         // ricerca per soggetti: il modello IA scaricato occupa spazio (centinaia di MB)
         val context = androidx.compose.ui.platform.LocalContext.current
         var aiBytes by remember { mutableStateOf(AiStore.modelsSize(context)) }
-        SettingsCard(L.t("Interfaccia", "Interface")) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(compact, { compact = it })
-                Text(L.t("Solo consigli brevi", "Short tips only"), color = C.text)
-            }
-        }
+        SettingsCard(L.t("Permessi", "Permissions")) { PermissionsCard() }
         SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
             PathRow(L.t("Cartella delle foto nuove (non sincronizzata)", "New photos folder (not synced)"), fullPath(work),
                 onBrowse = { picking = "work"; treePicker.launch(initialTree(work)) }, onEdit = { editing = "work" })
@@ -914,6 +938,9 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             PathRow(L.t("Cartella di servizio", "Service folder"), if (libFolder.isEmpty()) "" else nasPath(libShare.ifEmpty { share }, libFolder),
                 onBrowse = { nasPick = "service" }, onEdit = null, locked = lockMsg)
         }
+        SettingsCard(L.t("Backup delle impostazioni", "Settings backup")) {
+            BackupCard(vm, ready = unlocked && libFolder.isNotEmpty(), beforeSave = { save() })
+        }
         SettingsCard(L.t("Ricerca per soggetti (IA)", "Search by subject (AI)")) {
             if (!Tips.compact) Text(L.t("Nella Libreria, «Cerca» trova le foto per quello che contengono («gatti», «auto d'epoca») se la libreria è stata analizzata con il motore IA di PresetCraftAppLicator. Il modello si scarica una volta dal NAS alla prima ricerca.",
                 "In the Library, “Search” finds photos by what they contain (“cats”, “vintage car”) if the library has been analyzed with PresetCraftAppLicator's AI engine. The model is downloaded once from the NAS at the first search."),
@@ -930,12 +957,6 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             if (!Tips.compact) Text(L.t("Dopo «Spedisci al NAS» una notifica mostra quante foto, con i loro metadati, sono già al sicuro sul NAS.",
                 "After “Send to the NAS” a notification shows how many photos, with their metadata, are already safe on the NAS."),
                 color = C.muted, fontSize = 12.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(notifyLc, { notifyLc = it })
-                Text(L.t("Segui anche l'ingresso in LightCraft (solo con il PC di casa acceso: la notifica resta finché non sono entrate)",
-                    "Also follow their arrival in LightCraft (only with the home PC on: the notification stays until they are in)"),
-                    color = C.text)
-            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(notifyEnd, { notifyEnd = it })
                 Text(L.t("Avvisami quando la spedizione è finita o sospesa", "Tell me when sending is finished or paused"), color = C.text)

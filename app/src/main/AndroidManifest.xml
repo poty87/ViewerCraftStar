@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- «gestione dei media»: cestino e modifiche delle foto senza la conferma di Android ogni volta (si attiva dall'utente) -->
+    <uses-permission android:name="android.permission.MANAGE_MEDIA" />
+    <!-- insieme alla gestione dei media, fa saltare anche la conferma di Android per spostare le foto (Spedisci al NAS) -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
     <!-- per aprire OpenVPN Connect dall'app -->
     <queries>

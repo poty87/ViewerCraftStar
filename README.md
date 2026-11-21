@@ -58,8 +58,8 @@ forwarding through one or two routers).
    Blue and green photos can be moved to the phone's bin with one tap.
 
 After *Send to the NAS* the work goes on in the background, with a notification and a progress bar, even with the app
-closed. It stops by itself when every photo is safe on the NAS (or, if you choose so in the settings, when they are all in
-LightCraft).
+closed. It stops by itself when every photo is safe on the NAS with its metadata: the home PC brings them into
+LightCraft when it is on.
 
 ## Straight from a RICOH GR camera
 
@@ -133,12 +133,16 @@ for file writes timing out on mobile data) and the phone: **[docs/remote-access.
 
 1. Download the `.apk` from the [latest release](https://github.com/poty87/ViewerCraftStar/releases/latest) and open it
    on the phone (Android asks to allow installing apps from your browser or file manager).
-2. Open the app and allow access to photos (*Allow all*).
+2. Open the app and allow access to photos (*Allow all*); notifications and nearby devices (for the camera) are asked
+   together. Then turn on **media management** once in the Android page the app opens: sending and moving to the bin
+   no longer ask for confirmation every time. **Settings › Permissions** shows them all and grants the missing ones.
 3. In **Settings**:
-   - **Work folder** (default `Pictures/ViewerCraftStar/`, created if missing) and **folder synced with the NAS** (the
-     one Synology Drive backs up);
+   - **Work folder** (default `Pictures/VCS_Import_Photo/`, created if missing) and **folder synced with the NAS**
+     (default `Pictures/VCS_Dng_Sync/`, the one Synology Drive backs up);
    - **NAS**: IP address, shared folder, folder inside the share, user and password — then *Test connection*;
-   - default creator and copyright, and the sending notifications.
+   - default creator and copyright, and the sending notifications;
+   - **Settings backup**: a zip in the service folder on the NAS (`backups/ViewerCraftStar`) with settings, photo
+     metadata and pending library edits — never the NAS password — and *Restore…* to bring one back.
 4. Point your camera app (or file manager rule) to put new DNG files in the work folder.
 
 ## Privacy
@@ -224,8 +228,8 @@ telefono, inoltro della porta attraverso uno o due router).
    LightCraft. Blu e verdi si tolgono dal telefono con un tocco.
 
 Dopo *Spedisci al NAS* il lavoro continua in background, con una notifica e una barra di avanzamento, anche con l'app
-chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS (o, se lo scegli nelle impostazioni, quando sono
-tutte in LightCraft).
+chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS con i metadati: in LightCraft le porta il PC di
+casa quando è acceso.
 
 **Direttamente dalla fotocamera RICOH GR.** Il pulsante tondo con la fotocamera in basso a sinistra in **Da rivedere**
 scarica le foto direttamente da una RICOH GR (provata con la GR IV), senza l'app del produttore: il telefono sveglia la
@@ -288,10 +292,16 @@ automatica* sulla stessa cartella del NAS, sul PC con la libreria LightCraft.
 
 1. Scarica l'`.apk` dall'[ultima release](https://github.com/poty87/ViewerCraftStar/releases/latest) e aprilo sul telefono
    (Android chiede di consentire l'installazione di app dal browser o dal gestore file).
-2. Apri l'app e consenti l'accesso alle foto (*Consenti tutto*).
-3. Nelle **Impostazioni**: cartella di lavoro (predefinita `Pictures/ViewerCraftStar/`, creata se manca) e cartella
-   sincronizzata con il NAS; dati del NAS (IP, cartella condivisa, cartella interna, utente e password) e *Prova
-   connessione*; autore e copyright predefiniti; notifiche della spedizione.
+2. Apri l'app e consenti l'accesso alle foto (*Consenti tutto*); insieme chiede notifiche e dispositivi nelle vicinanze
+   (per la fotocamera). Poi attiva una volta la **gestione dei media** nella pagina di Android che l'app apre: spedire e
+   spostare nel cestino non chiedono più conferma ogni volta. **Impostazioni › Permessi** li mostra tutti e concede
+   quelli che mancano.
+3. Nelle **Impostazioni**: cartella di lavoro (predefinita `Pictures/VCS_Import_Photo/`, creata se manca) e cartella
+   sincronizzata con il NAS (predefinita `Pictures/VCS_Dng_Sync/`); dati del NAS (IP, cartella condivisa, cartella
+   interna, utente e password) e *Prova connessione*; autore e copyright predefiniti; notifiche della spedizione;
+   **backup delle impostazioni**: uno zip nella cartella di servizio sul NAS (`backups/ViewerCraftStar`) con
+   impostazioni, metadati delle foto e modifiche alle librerie in attesa — mai la password del NAS — e *Ripristina…*
+   per riprenderne uno.
 4. Fai arrivare i DNG nuovi nella cartella di lavoro (app della fotocamera o regola di un gestore file).
 
 **Privacy**: la password del NAS resta sul telefono, cifrata con una chiave del Keystore di Android; sul NAS l'app scrive

@@ -268,6 +268,10 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.size(12.dp))
                 Text(step, color = C.text, fontSize = 14.sp)
             }
+            photos.orEmpty().isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(EmptyGlyph.CARD, L.t("Scheda vuota", "Empty card"),
+                    L.t("Sulla fotocamera non ci sono foto da scaricare.", "There are no photos on the camera to download."))
+            }
             else -> {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

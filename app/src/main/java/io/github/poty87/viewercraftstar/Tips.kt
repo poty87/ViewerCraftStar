@@ -6,7 +6,8 @@ import androidx.compose.runtime.setValue
 
 /** "Riduci consigli interfaccia": con l'opzione attiva le spiegazioni lunghe spariscono o diventano una riga. */
 object Tips {
-    var compact by mutableStateOf(false)
+    // sempre testi brevi: l'interfaccia attuale non ha più bisogno di quelli lunghi
+    var compact by mutableStateOf(true)
 }
 
 /** Il testo lungo, oppure quello breve se i consigli sono ridotti (null = nessun testo). */
