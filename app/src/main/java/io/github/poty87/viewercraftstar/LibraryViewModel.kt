@@ -342,6 +342,52 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (e.sent == 0L) edit(listOf(id)) { it.copy(trash = null) } else edit(listOf(id)) { it.copy(trash = false) }
     }
 
+    // ---------------------------------------------------------------- cestino di LightCraft
+
+    /** Il cestino è aperto (dal menu ⋮). */
+    var showTrash by mutableStateOf(false)
+
+    fun openTrash() { clearSelection(); showTrash = true }
+    fun closeTrash() { clearSelection(); showTrash = false }
+
+    /**
+     * Le foto del cestino: quelle eliminate in LightCraft (tranne quelle che stai ripristinando) più quelle messe nel
+     * cestino dal telefono e non ancora arrivate. Dalla più recente.
+     */
+    fun trashPhotos(): List<LibPhoto> {
+        val idx = index ?: return emptyList()
+        val home = idx.trash.filter { edits[it.id]?.trash != false }
+        val pending = idx.photos.filter { edits[it.id]?.trash == true }
+        return (home + pending).distinctBy { it.id }.sortedWith(compareByDescending<LibPhoto> { it.captured }.thenByDescending { it.id })
+    }
+
+    /** Quante foto sono nel cestino (per il pallino rosso). */
+    val trashCount: Int get() = trashPhotos().size
+
+    /** Ripristina le foto: tornano in galleria, nella loro pila e al loro posto, quando il PC di casa le applica. */
+    fun restoreFromTrash(ids: Collection<Int>) {
+        val idx = index ?: return
+        val home = ids.filter { it in idx.trashById }
+        val pending = ids.filter { it !in idx.trashById }
+        if (home.isNotEmpty()) edit(home) { it.copy(trash = false) }
+        pending.forEach { untrash(it) }
+        clearSelection()
+        say("ok", L.t("${ids.size} foto ripristinate.\nIn galleria quando il PC di casa le applica.",
+            "${ids.size} photos restored.\nIn the gallery once the home PC applies it."))
+    }
+
+    /** Le pile ricreate da un ripristino già aperte: l'etichetta «Ripristinate» non si mostra più. */
+    var seenRestored by mutableStateOf(
+        getApplication<Application>().getSharedPreferences("library_ui", android.content.Context.MODE_PRIVATE)
+            .getStringSet("seen_restored", emptySet())!!.mapNotNull { it.toIntOrNull() }.toSet())
+        private set
+
+    private fun markRestoredSeen(id: Int) {
+        seenRestored = seenRestored + id
+        getApplication<Application>().getSharedPreferences("library_ui", android.content.Context.MODE_PRIVATE).edit()
+            .putStringSet("seen_restored", seenRestored.map { it.toString() }.toSet()).apply()
+    }
+
     /** Una pila delle foto selezionate: copertina la prima selezionata; quelle già in una pila portano con sé la loro. */
     fun stack(ids: Collection<Int>) {
         if (ids.size < 2) return
@@ -567,7 +613,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
-        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id]) } ?: false }
+        // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa
+        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id]) }
+            ?: (e.trash == false && id in idx.trashById) }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
         edits = kept
         memo = null
@@ -761,6 +809,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggle(stack: LibStack) {
+        if (stack.restored && stack.id !in seenRestored) markRestoredSeen(stack.id)
         expanded = if (stack.id in expanded) expanded - stack.id else expanded + stack.id
         toggledStack = stack.id
         toggledAt = System.currentTimeMillis()

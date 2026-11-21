@@ -126,7 +126,7 @@ private fun LastViewedMark(at: Long) {
 
 /** Miniatura dal NAS (o dal telefono se già vista), con il segnaposto finché non arriva. */
 @Composable
-private fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, modifier: Modifier, crop: Boolean,
+internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, modifier: Modifier, crop: Boolean,
                         original: Boolean = false) {
     val context = LocalContext.current
     val idx = lib.index ?: return
@@ -412,7 +412,11 @@ fun LibraryTitle(lib: LibraryViewModel, onOptions: () -> Unit) {
             if (lib.loading) CircularProgressIndicator(Modifier.size(18.dp), color = C.accent, strokeWidth = 2.dp)
             else Icon(Icons.Filled.Refresh, L.t("Aggiorna", "Refresh"), tint = C.text)
         }
-        IconButton(onClick = onOptions) { Icon(Icons.Filled.MoreVert, L.t("Opzioni di visualizzazione", "View options"), tint = C.text) }
+        Box {
+            IconButton(onClick = onOptions) { Icon(Icons.Filled.MoreVert, L.t("Opzioni di visualizzazione", "View options"), tint = C.text) }
+            // ci sono foto nel cestino: si trovano nel menu ⋮
+            if (lib.trashCount > 0) TrashDot(Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
+        }
     }
 }
 
@@ -477,6 +481,10 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
         }
         // ritoccata in LightCraft (l'anteprima è quella sviluppata dal PC)
         if (p.id in lib.developed && !(c.cover && c.stack != null)) EditedMark(Modifier.align(Alignment.BottomEnd).padding(4.dp))
+        if (c.cover && c.stack != null && c.stack.restored && c.stack.id !in lib.seenRestored && !c.open)
+            Text(L.t("Ripristinate", "Restored"), color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).clip(RoundedCornerShape(8.dp))
+                    .background(C.accent).padding(horizontal = 6.dp, vertical = 2.dp))
         // modifica fatta sul telefono, non ancora in LightCraft
         if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
             .background(Color(0xFFFB923C)))

@@ -225,9 +225,16 @@ fun GalleryOptionsSheet(lib: LibraryViewModel, onClose: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = Color(0xFF1C1C1C)) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)) {
-            SheetTitle(L.t("Selezione", "Selection"))
-            SheetRow(L.t("Seleziona foto", "Select photos"), checked = lib.selectMode) {
-                lib.selectMode = !lib.selectMode; if (!lib.selectMode) lib.clearSelection(); onClose()
+            // si seleziona con la pressione lunga (e trascinando): niente voce apposta nel menu
+            // il cestino di LightCraft: con il pallino rosso se ci sono foto
+            val trashN = lib.trashCount
+            Row(Modifier.fillMaxWidth().clickable { lib.openTrash(); onClose() }.padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(L.t("Cestino", "Trash"), color = C.text, fontSize = 16.sp)
+                if (trashN > 0) { Spacer(Modifier.width(8.dp)); TrashDot() }
+                Spacer(Modifier.weight(1f))
+                Text(if (trashN > 0) L.t("$trashN foto", "$trashN photos") else L.t("vuoto", "empty"),
+                    color = if (trashN > 0) TrashRed else C.muted, fontSize = 14.sp)
             }
             SheetTitle(L.t("Visualizzazione", "View"))
             SheetRow(L.t("Griglia con celle quadrate", "Square grid"), checked = lib.gridMode == "square") { lib.setGrid("square") }

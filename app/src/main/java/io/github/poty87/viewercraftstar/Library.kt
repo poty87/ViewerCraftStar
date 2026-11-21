@@ -59,8 +59,8 @@ data class LibPhoto(
     val faces: List<LibFace> = emptyList(),
 )
 
-/** Una pila: la prima foto è la copertina. */
-data class LibStack(val id: Int, val photos: List<Int>, val collapsed: Boolean)
+/** Una pila: la prima foto è la copertina. restored: ricreata da un ripristino (il telefono la segna finché la apri). */
+data class LibStack(val id: Int, val photos: List<Int>, val collapsed: Boolean, val restored: Boolean = false)
 
 class LibIndex(
     val library: String,
@@ -69,8 +69,11 @@ class LibIndex(
     val drives: Map<String, String>,
     val photos: List<LibPhoto>,
     val stacks: List<LibStack>,
+    /** Le foto nel cestino di LightCraft (eliminate, file ancora sul NAS). */
+    val trash: List<LibPhoto> = emptyList(),
 ) {
     val byId = photos.associateBy { it.id }
+    val trashById = trash.associateBy { it.id }
     /** I nomi delle persone della libreria, dal più lungo (così «Anna Maria» vince su «Anna»). */
     val people: List<String> = photos.flatMap { it.people }.distinct().sortedByDescending { it.length }
     /** Foto → la sua pila. */
@@ -185,6 +188,7 @@ object LibraryStore {
         val drives = HashMap<String, String>()
         val photos = ArrayList<LibPhoto>()
         val stacks = ArrayList<LibStack>()
+        val trash = ArrayList<LibPhoto>()
         JsonReader(InputStreamReader(GZIPInputStream(file.inputStream().buffered()), Charsets.UTF_8)).use { r ->
             r.beginObject()
             while (r.hasNext()) when (r.nextName()) {
@@ -200,21 +204,28 @@ object LibraryStore {
                     while (r.hasNext()) photos += photo(r)
                     r.endArray()
                 }
+                "trash" -> {
+                    r.beginArray()
+                    while (r.hasNext()) trash += photo(r)
+                    r.endArray()
+                }
                 "stacks" -> {
                     r.beginArray()
                     while (r.hasNext()) {
                         var id = 0
                         val members = ArrayList<Int>()
                         var collapsed = true
+                        var restored = false
                         r.beginObject()
                         while (r.hasNext()) when (r.nextName()) {
                             "id" -> id = r.nextInt()
                             "photos" -> { r.beginArray(); while (r.hasNext()) members += r.nextInt(); r.endArray() }
                             "collapsed" -> collapsed = r.nextBoolean()
+                            "r" -> restored = r.nextInt() == 1
                             else -> r.skipValue()
                         }
                         r.endObject()
-                        stacks += LibStack(id, members, collapsed)
+                        stacks += LibStack(id, members, collapsed, restored)
                     }
                     r.endArray()
                 }
@@ -222,7 +233,7 @@ object LibraryStore {
             }
             r.endObject()
         }
-        return LibIndex(library, updated, drives, photos, stacks)
+        return LibIndex(library, updated, drives, photos, stacks, trash)
     }
 
     private fun photo(r: JsonReader): LibPhoto {

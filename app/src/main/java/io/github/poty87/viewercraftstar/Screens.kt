@@ -192,7 +192,8 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        if (vm.inLibrary) LibraryGallery(lib, libState, header, onOpenLib, Modifier.statusBarsPadding())
+        if (vm.inLibrary && lib.showTrash) LibraryTrash(lib, Modifier.statusBarsPadding())
+        else if (vm.inLibrary) LibraryGallery(lib, libState, header, onOpenLib, Modifier.statusBarsPadding())
         else LazyVerticalGrid(GridCells.Adaptive(118.dp),
             Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 6.dp), state = gridState,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp + LocalBarSpace.current),
@@ -234,7 +235,8 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                 }
             }
         }
-        if (vm.inLibrary && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
+        if (vm.inLibrary && lib.showTrash && lib.selected.isNotEmpty()) TrashSelectionBar(lib, Modifier.align(Alignment.BottomCenter))
+        else if (vm.inLibrary && !lib.showTrash && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
         // Importa: associare la fotocamera e scaricarne le foto (RICOH GR, al posto di GR World), tondo in basso a sinistra
         // solo in «Da rivedere»: dalla fotocamera arrivano foto nuove, in «Spedite» non serve
         if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom()).size(58.dp)
