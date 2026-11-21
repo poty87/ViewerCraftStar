@@ -150,7 +150,8 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
                 }
             }
         }
-        LazyColumn(Modifier.fillMaxSize(), state = state,
+        // pressione lunga e trascinamento: seleziona le foto toccate (vedi DragSelect)
+        LazyColumn(Modifier.fillMaxSize().dragSelect(lib, state), state = state,
             contentPadding = PaddingValues(start = 3.dp, end = 3.dp, bottom = if (lib.selecting) 120.dp else 16.dp + LocalBarSpace.current),
             verticalArrangement = Arrangement.spacedBy(GAP)) {
             item(key = "header", contentType = "header") { header() }

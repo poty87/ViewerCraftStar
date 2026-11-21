@@ -163,24 +163,31 @@ fun Pill(text: String, on: Boolean, colors: Pair<Color, Color>? = null, onClick:
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?) {
+fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?, showNone: Boolean = true,
+                 status: (@Composable () -> Unit)? = null, flagExtra: (@Composable () -> Unit)? = null) {
     val photos = ids.mapNotNull { lib.index?.byId?.get(it) }.map { lib.effective(it) }.ifEmpty { listOfNotNull(current) }
     fun <T> common(f: (LibPhoto) -> T): T? = photos.map(f).distinct().singleOrNull()
     val flag = common { it.flag.ifEmpty { "none" } }
     val rating = common { it.rating }
     val label = common { it.label.lowercase() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionLabel(L.t("Bandierina", "Flag"))
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // intestazione con lo stato della modifica a destra (da inviare / inviata), sulla stessa riga
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(L.t("Bandierina", "Flag"), Modifier.weight(1f))
+            status?.invoke()
+        }
+        // bandierine (un tocco su quella accesa la toglie) e, a destra, il pulsante dei testi
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill("✓ " + L.t("Scelta", "Pick"), flag == "pick", C.pick) { lib.setFlag(ids, if (flag == "pick") "none" else "pick") }
             Pill("✕ " + L.t("Scartata", "Reject"), flag == "reject", C.reject) { lib.setFlag(ids, if (flag == "reject") "none" else "reject") }
-            Pill(L.t("Nessuna", "None"), flag == "none") { lib.setFlag(ids, "none") }
+            if (showNone) Pill(L.t("Nessuna", "None"), flag == "none") { lib.setFlag(ids, "none") }
+            Spacer(Modifier.weight(1f))
+            flagExtra?.invoke()
         }
         SectionLabel(L.t("Stelle", "Stars"), Modifier.padding(top = 6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StarsRow(rating ?: 0, 28.dp) { st -> lib.setRating(ids, if (rating == st) 0 else st) }
-            Pill(L.t("Nessuna", "None"), rating == 0) { lib.setRating(ids, 0) }
+            if (showNone) Pill(L.t("Nessuna", "None"), rating == 0) { lib.setRating(ids, 0) }
         }
         SectionLabel(L.t("Etichetta", "Label"), Modifier.padding(top = 6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -190,7 +197,7 @@ fun EditControls(lib: LibraryViewModel, ids: Collection<Int>, current: LibPhoto?
                     .then(if (on) Modifier.border(3.dp, Color.White, CircleShape) else Modifier)
                     .clickable { lib.setLabel(ids, if (on) "" else key) })
             }
-            Pill(L.t("Nessuna", "None"), label == "") { lib.setLabel(ids, "") }
+            if (showNone) Pill(L.t("Nessuna", "None"), label == "") { lib.setLabel(ids, "") }
         }
         if (photos.size > 1 && (flag == null || rating == null || label == null)) Text(
             L.t("Dove nessuna opzione è accesa, le foto hanno valori diversi: un tocco li rende uguali per tutte.",
@@ -436,9 +443,10 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
     }.clip(RoundedCornerShape(2.dp))
         .then(if (chosen) Modifier.border(3.dp, Color.White, RoundedCornerShape(2.dp))
         else if (c.open) Modifier.border(2.dp, C.accent.copy(alpha = 0.7f), RoundedCornerShape(2.dp)) else Modifier)
+        .dragSelectTarget(p.id)
+        // la pressione lunga (seleziona, e trascinando seleziona anche le altre) la gestisce la galleria: DragSelect
         .combinedClickable(
-            onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells, i) },
-            onLongClick = { lib.toggleSelect(p.id) })) {
+            onClick = { if (lib.selecting) lib.toggleSelect(p.id) else onOpen(cells, i) })) {
         RemoteImage(lib, p, RemotePreview.THUMB, Modifier.fillMaxSize(), crop = true)
         if (p.id == lib.lastViewed && lib.lastViewedAt > 0) LastViewedMark(lib.lastViewedAt)
         if (p.flag == "reject") Box(Modifier.fillMaxSize().background(Color(0x99000000)))
@@ -476,10 +484,11 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
             repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
         }
-        // JPEG: una scritta piccola in nero trasparente, come le stelle (sopra le stelle se ci sono). Non sulla copertina
-        // di una pila chiusa (lì la pila conta come un tutto); a pila aperta sì, anche sulla prima
-        if (LibraryViewModel.fileTypeOf(p.name) == "jpeg" && !(c.cover && c.stack != null && !c.open))
-            Text("JPEG", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp,
+        // formato del file: una scritta piccola in nero trasparente, come le stelle (sopra le stelle se ci sono). Non sulla
+        // copertina di una pila chiusa (lì la pila conta come un tutto); a pila aperta sì, anche sulla prima
+        val format = formatBadge(p.name)
+        if (format != null && !(c.cover && c.stack != null && !c.open))
+            Text(format, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp,
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 4.dp, bottom = if (p.rating > 0) 20.dp else 4.dp)
                     .clip(RoundedCornerShape(3.dp)).background(Color(0x99000000)).padding(horizontal = 4.dp, vertical = 1.dp))
     }
@@ -506,7 +515,6 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
             IconButton(onClick = { lib.clearSelection() }) { Icon(Icons.Filled.Close, L.t("Annulla", "Cancel"), tint = C.text) }
             Text(L.t("${lib.selected.size} selezionate", "${lib.selected.size} selected"), color = C.text, fontSize = 15.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            PillButton(onClick = { lib.selectAll() }) { Text(L.t("Tutte", "All")) }
         }
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val w = Modifier.weight(1f)
@@ -722,7 +730,8 @@ private fun AdvancedSearchSheet(lib: LibraryViewModel, onClose: () -> Unit) {
                 color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
 
             Section(L.t("Stelle", "Stars"))
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StarFilter.entries.forEach { f ->
                     RoundChip(stars == f, { stars = f }) { Text(if (f == StarFilter.ANY) L.t("Tutte", "All") else starsText(f), fontSize = 13.sp) }
                 }
@@ -739,7 +748,8 @@ private fun AdvancedSearchSheet(lib: LibraryViewModel, onClose: () -> Unit) {
             }
 
             Section(L.t("Etichetta", "Label"))
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 labelColors.forEach { (key, color) ->
                     RoundChip(key in labels, { labels = if (key in labels) labels - key else labels + key }, leading = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) }) { Text(labelName(key), fontSize = 13.sp) }
                 }
@@ -761,14 +771,16 @@ private fun AdvancedSearchSheet(lib: LibraryViewModel, onClose: () -> Unit) {
             }
 
             Section(L.t("Bandierina", "Flag"))
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("", "pick", "reject", "none").forEach { f ->
                     RoundChip(flag == f, { flag = f }) { Text(flagText(f), fontSize = 13.sp) }
                 }
             }
 
             Section(L.t("Tipo di file", "File type"))
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("", "raw", "jpeg", "tiff").map { it to fileTypeName(it) }.forEach { (k, name) ->
                     RoundChip(fileType == k, { fileType = k }) { Text(name, fontSize = 13.sp) }
                 }
@@ -917,14 +929,23 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                         color = Color(0xFFF87171), fontSize = 13.sp, modifier = Modifier.weight(1f))
                     PillButton(onClick = { lib.untrash(p.id) }) { Text(L.t("Annulla", "Undo")) }
                 }
-                EditControls(lib, listOf(p.id), p)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PillButton(onClick = { texts = true }) { Text(L.t("Titolo e parole chiave…", "Title and keywords…")) }
-                    if (p.id in lib.edits) Text(if (lib.edits.getValue(p.id).sent > 0)
-                        (tip(L.t("Inviata: entra in LightCraft quando il PC di casa la applica.", "Sent: enters LightCraft when the home PC applies it."),
-                            L.t("Inviata", "Sent")) ?: "")
-                        else L.t("Da inviare", "To send"), color = Color(0xFFFB923C), fontSize = 12.sp)
-                }
+                // foto singola: niente «Nessuna» (si toglie toccando di nuovo stella, etichetta o bandierina accese);
+                // lo stato della modifica sta in alto a destra, i testi accanto alle bandierine
+                EditControls(lib, listOf(p.id), p, showNone = false,
+                    status = {
+                        val e = lib.edits[p.id]
+                        if (e != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFB923C)))
+                            Text(" " + if (e.sent > 0) L.t("Inviata, in attesa del PC", "Sent, waiting for the PC") else L.t("Da inviare", "To send"),
+                                color = Color(0xFFFB923C), fontSize = 12.sp)
+                        }
+                    },
+                    flagExtra = {
+                        PillButton(onClick = { texts = true }, pad = 10.dp) {
+                            Icon(Icons.Filled.Edit, null, modifier = Modifier.size(15.dp))
+                            Text(" " + L.t("Testi", "Texts"), fontSize = 13.sp)
+                        }
+                    })
             }
             }
         }
@@ -956,3 +977,10 @@ fun DownloadIcon(modifier: Modifier, color: Color) {
             join = androidx.compose.ui.graphics.StrokeJoin.Round))
     }
 }
+
+/** La scritta del formato: JPEG, DNG, TIFF, PNG, HEIC e i raw delle marche più comuni (CR2, NEF, ARW, ORF, RAF…). */
+private val FORMAT_NAMES = mapOf("jpg" to "JPEG", "jpeg" to "JPEG", "tif" to "TIFF", "tiff" to "TIFF") +
+    listOf("dng", "png", "heic", "heif", "webp", "psd", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "orf",
+        "rw2", "raf", "pef", "srw", "x3f", "3fr", "iiq", "rwl", "mos", "erf", "kdc", "mrw").associateWith { it.uppercase() }
+
+fun formatBadge(name: String): String? = FORMAT_NAMES[name.substringAfterLast('.', "").lowercase()]
