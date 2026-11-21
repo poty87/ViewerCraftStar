@@ -65,15 +65,30 @@ private fun justifiedRows(cells: List<Pair<Int, LibraryViewModel.Cell>>, width: 
     while (i < cells.size) {
         val row = ArrayList<Pair<Int, LibraryViewModel.Cell>>()
         var sum = 0f
+        var broke = false // la riga è finita perché piena (non perché le foto sono finite): va stirata alla larghezza
         while (i < cells.size) {
             row += cells[i]
             sum += ratioOf(cells[i].second.photo)
             i++
             val w = target.value * sum + GAP.value * (row.size - 1)
-            if (w >= width.value) break
+            if (w >= width.value) {
+                // la foto che fa sforare: si tiene solo se la riga resta più vicina all'altezza scelta (Dimensione, menu
+                // ⋮) che lasciandola alla riga dopo; senza questo ogni riga piena si rimpiccioliva sotto la misura scelta
+                // (molto visibile nelle pile aperte, tante foto verticali, accanto alla copertina chiusa a misura piena)
+                if (row.size > 1) {
+                    val r = ratioOf(cells[i - 1].second.photo)
+                    val hWith = (width.value - GAP.value * (row.size - 1)) / sum
+                    val hWithout = (width.value - GAP.value * (row.size - 2)) / (sum - r)
+                    if (kotlin.math.abs(hWithout - target.value) < kotlin.math.abs(hWith - target.value)) {
+                        row.removeAt(row.size - 1); sum -= r; i--
+                    }
+                }
+                broke = true
+                break
+            }
         }
         val gaps = GAP.value * (row.size - 1)
-        val full = target.value * sum + gaps >= width.value
+        val full = broke || target.value * sum + gaps >= width.value
         // l'ultima riga, se corta, resta all'altezza voluta (non si stira)
         val h = if (full) (width.value - gaps) / sum else target.value
         rows += GalleryRow(row, row.map { (h * ratioOf(it.second.photo)).dp }, h.dp)

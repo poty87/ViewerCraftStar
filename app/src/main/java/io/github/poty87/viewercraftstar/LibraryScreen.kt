@@ -459,11 +459,16 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(11.dp).clip(CircleShape).background(it))
         }
         // pila: copertina con il numero di foto; tocco sul numero = apri / chiudi (come in LightCraft)
-        if (c.cover && c.stack != null) Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)
-            .clip(RoundedCornerShape(4.dp)).background(if (c.open) C.accent else Color(0xCC000000))
-            .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
-            Text((if (c.open) "▾ " else "▣ ") + c.stack.photos.size, color = if (c.open) Color.Black else Color.White,
-                fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        // se la copertina è ritoccata, la matita sta accanto al numero della pila, a sinistra (non sopra)
+        // allineati in basso: la matita resta alla stessa altezza che ha sulle foto senza pila (4 dp dal bordo)
+        if (c.cover && c.stack != null) Row(Modifier.align(Alignment.BottomEnd).padding(4.dp),
+            verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (p.id in lib.developed) EditedMark()
+            Box(Modifier.clip(RoundedCornerShape(4.dp)).background(if (c.open) C.accent else Color(0xCC000000))
+                .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
+                Text((if (c.open) "▾ " else "▣ ") + c.stack.photos.size, color = if (c.open) Color.Black else Color.White,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
         if (chosen) Box(Modifier.fillMaxSize().background(C.accent.copy(alpha = 0.33f)), contentAlignment = Alignment.Center) {
             Box(Modifier.size(26.dp).clip(CircleShape).background(C.accent), contentAlignment = Alignment.Center) {
@@ -471,12 +476,7 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             }
         }
         // ritoccata in LightCraft (l'anteprima è quella sviluppata dal PC)
-        if (p.id in lib.developed) Box(Modifier.align(Alignment.BottomEnd)
-            .padding(end = 4.dp, bottom = if (c.cover && c.stack != null) 28.dp else 4.dp).size(18.dp).clip(CircleShape)
-            .background(Color(0x99000000)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Edit, L.t("Ritoccata in LightCraft", "Edited in LightCraft"), tint = Color.White,
-                modifier = Modifier.size(11.dp))
-        }
+        if (p.id in lib.developed && !(c.cover && c.stack != null)) EditedMark(Modifier.align(Alignment.BottomEnd).padding(4.dp))
         // modifica fatta sul telefono, non ancora in LightCraft
         if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
             .background(Color(0xFFFB923C)))
@@ -984,3 +984,12 @@ private val FORMAT_NAMES = mapOf("jpg" to "JPEG", "jpeg" to "JPEG", "tif" to "TI
         "rw2", "raf", "pef", "srw", "x3f", "3fr", "iiq", "rwl", "mos", "erf", "kdc", "mrw").associateWith { it.uppercase() }
 
 fun formatBadge(name: String): String? = FORMAT_NAMES[name.substringAfterLast('.', "").lowercase()]
+
+/** La matita «ritoccata in LightCraft»: tondino scuro trasparente in basso a destra della cella. */
+@Composable
+private fun EditedMark(modifier: Modifier = Modifier) {
+    Box(modifier.size(18.dp).clip(CircleShape).background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+        Icon(Icons.Filled.Edit, L.t("Ritoccata in LightCraft", "Edited in LightCraft"), tint = Color.White,
+            modifier = Modifier.size(11.dp))
+    }
+}
