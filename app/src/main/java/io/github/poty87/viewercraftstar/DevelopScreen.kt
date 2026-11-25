@@ -190,6 +190,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     var settings by remember { mutableStateOf<JSONObject?>(null) }
     var resets by remember { mutableIntStateOf(0) } // i cursori riprendono il valore delle impostazioni
     var image by remember { mutableStateOf<Bitmap?>(null) }
+    // la foto intera non raddrizzata per il ritaglio: tenuta a parte, così passando da una scheda all'altra si mostra
+    // sempre quella giusta (prima per un attimo si girava la foto già raddrizzata: doppia rotazione)
+    var cropImage by remember { mutableStateOf<Bitmap?>(null) }
+    var straightening by remember { mutableStateOf(false) } // dito sul cursore Raddrizza: griglia fitta
     var before by remember { mutableStateOf<Bitmap?>(null) }
     var showBefore by remember { mutableStateOf(false) }
     var section by remember { mutableStateOf(LIGHT) }
@@ -201,7 +205,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     val handle = remember { longArrayOf(0L) }
     // un solo filo per il motore (la foto aperta non va usata da due sviluppi insieme); conta solo l'ultima richiesta
     val engine = remember { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
-    val requests = remember { MutableStateFlow<String?>(null) }
+    val requests = remember { MutableStateFlow<Pair<String, Boolean>?>(null) } // (impostazioni, per il ritaglio)
     // zoom sulla foto (due dita, doppio tocco): ingrandita, si sviluppa alla risoluzione piena della smart preview
     var zoom by remember { mutableStateOf(1f) }
     var pan by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -263,20 +267,24 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         base = entry.sig
         original = JSONObject(entry.settings.toString())
         settings = entry.settings
-        requests.value = entry.settings.toString()
+        requests.value = entry.settings.toString() to false
     }
 
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.flow.combine(requests, sharp) { j, s -> j to s }.collectLatest { (json, big) ->
-            if (json == null || handle[0] == 0L) return@collectLatest
+        kotlinx.coroutines.flow.combine(requests, sharp) { j, s -> j to s }.collectLatest { (req, big) ->
+            if (req == null || handle[0] == 0L) return@collectLatest
+            val (json, forCrop) = req
             // ingrandita: il lato lungo della smart preview (circa 2560 pixel), altrimenti quanto lo schermo
             val full = maxOf(srcSize.first, srcSize.second).toInt()
             val size = if (big && full > edge) full else edge
             val a = withContext(engine) { DevelopEngine.render(handle[0], json, size, true) } ?: return@collectLatest
             val bmp = DevelopEngine.bitmap(a)
-            if (before == null) before = bmp
-            image = bmp
+            if (forCrop) cropImage = bmp
+            else {
+                if (before == null) before = bmp
+                image = bmp
+            }
         }
     }
 
@@ -317,7 +325,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
 
     fun changed() {
         editTick++
-        requests.value = renderJson()
+        requests.value = renderJson()?.let { it to (section == CROP) }
     }
 
     fun value(c: DevControl): Float = (settings?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
@@ -384,7 +392,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
             }
             // la foto (tenendo premuto «Prima» si vede com'era)
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
-                val shown = if (showBefore) before else image
+                val shown = if (showBefore) before else if (section == CROP) cropImage else image
                 val bitmap = remember(shown) { shown?.asImageBitmap() }
                 val cropping = section == CROP && !showBefore
                 if (bitmap != null && cropping) {
@@ -436,7 +444,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
                 // ritaglio: il riquadro sopra la foto intera raddrizzata, con angoli e lati da trascinare
                 if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height,
-                    geometry().optDouble("angle", 0.0).toFloat(), cropTick,
+                    geometry().optDouble("angle", 0.0).toFloat(), cropTick, dense = straightening,
                     rect = { geometry().optJSONObject("rect") },
                     current = { geometry().toString() },
                     onDrag = { start, handleIndex, gx, gy, px, py ->
@@ -591,7 +599,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                                 changed()
                             }
                         }
-                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets, start(STRAIGHTEN)) { v ->
+                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets, start(STRAIGHTEN),
+                            onActive = { straightening = it }) { v ->
                             val (w, h) = dims()
                             val angle = (v * 10).roundToInt() / 10.0
                             setGeometry(DevelopEngine.cropWithAngle(geometry().toString(), angle, w, h))
@@ -625,7 +634,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
  * partenza, la maniglia, il punto preso e quello attuale in coordinate 0..1 del riquadro).
  */
 @Composable
-private fun CropOverlay(imgW: Int, imgH: Int, angle: Float, tick: Int, rect: () -> JSONObject?, current: () -> String,
+private fun CropOverlay(imgW: Int, imgH: Int, angle: Float, tick: Int, dense: Boolean, rect: () -> JSONObject?, current: () -> String,
                         onDrag: (String, Int, Double, Double, Double, Double) -> Unit) {
     val density = LocalDensity.current
     val grabRadius = with(density) { 36.dp.toPx() }
@@ -687,12 +696,20 @@ private fun CropOverlay(imgW: Int, imgH: Int, angle: Float, tick: Int, rect: () 
             drawRect(shade, androidx.compose.ui.geometry.Offset(0f, b), androidx.compose.ui.geometry.Size(fw, fh - b))
             drawRect(shade, androidx.compose.ui.geometry.Offset(0f, t), androidx.compose.ui.geometry.Size(l, b - t))
             drawRect(shade, androidx.compose.ui.geometry.Offset(ri, t), androidx.compose.ui.geometry.Size(fw - ri, b - t))
-            // griglia dei terzi
-            for (i in 1..2) {
-                val x = l + (ri - l) * i / 3f
-                val y = t + (b - t) * i / 3f
-                drawLine(Color(0x66FFFFFF), androidx.compose.ui.geometry.Offset(x, t), androidx.compose.ui.geometry.Offset(x, b), 1.5f)
-                drawLine(Color(0x66FFFFFF), androidx.compose.ui.geometry.Offset(l, y), androidx.compose.ui.geometry.Offset(ri, y), 1.5f)
+            // griglia: dei terzi; mentre si raddrizza, fitta (righe ogni ~1/12 del lato lungo) per allinearsi alle linee
+            // della foto
+            val n = if (dense) 12 else 3
+            val cell = maxOf(ri - l, b - t) / n
+            val cols = if (dense) maxOf(2, ((ri - l) / cell).roundToInt()) else 3
+            val rows = if (dense) maxOf(2, ((b - t) / cell).roundToInt()) else 3
+            val grid = if (dense) Color(0x55FFFFFF) else Color(0x66FFFFFF)
+            for (i in 1 until cols) {
+                val x = l + (ri - l) * i / cols
+                drawLine(grid, androidx.compose.ui.geometry.Offset(x, t), androidx.compose.ui.geometry.Offset(x, b), if (dense) 1f else 1.5f)
+            }
+            for (i in 1 until rows) {
+                val y = t + (b - t) * i / rows
+                drawLine(grid, androidx.compose.ui.geometry.Offset(l, y), androidx.compose.ui.geometry.Offset(ri, y), if (dense) 1f else 1.5f)
             }
             drawRect(Color(0xCCFFFFFF), androidx.compose.ui.geometry.Offset(l, t), androidx.compose.ui.geometry.Size(ri - l, b - t),
                 style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
@@ -733,7 +750,8 @@ private fun unitGeometry(angle: Double): JSONObject = JSONObject()
  * `dot`: un pallino colorato accanto al nome (i colori delle Tinte, la tinta del grading).
  */
 @Composable
-private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float, dot: Color? = null, onChange: (Float) -> Unit) {
+private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float, dot: Color? = null,
+                          onActive: (Boolean) -> Unit = {}, onChange: (Float) -> Unit) {
     var v by remember(c.path, resets) { mutableStateOf(value.coerceIn(c.min, c.max)) }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -755,7 +773,8 @@ private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float
                     color = if (moved) C.accent else C.muted, fontSize = 13.sp)
             }
         }
-        Slider(value = v, onValueChange = { v = it; onChange(it) }, valueRange = c.min..c.max, modifier = Modifier.height(30.dp),
+        Slider(value = v, onValueChange = { onActive(true); v = it; onChange(it) }, onValueChangeFinished = { onActive(false) },
+            valueRange = c.min..c.max, modifier = Modifier.height(30.dp),
             colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.card))
     }
 }
