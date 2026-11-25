@@ -233,8 +233,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE)) Pill(L.t(sec.it, sec.en), section == sec) { section = sec }
                 }
-                // i cursori: al massimo 40% dello schermo, il resto scorre (la foto resta grande)
-                Column(Modifier.heightIn(max = (screen.screenHeightDp * 0.4f).dp).verticalScroll(rememberScrollState())) {
+                // i cursori: sempre la stessa altezza (le sezioni non saltano), il resto scorre; la foto resta grande
+                Column(Modifier.height((screen.screenHeightDp * 0.34f).dp).verticalScroll(rememberScrollState())) {
                     if (section == PROFILE) ProfilePicker(profiles, settings?.optJSONObject("profile")?.optString("id").orEmpty(), photo.camera) { p ->
                         scope.launch {
                             val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }

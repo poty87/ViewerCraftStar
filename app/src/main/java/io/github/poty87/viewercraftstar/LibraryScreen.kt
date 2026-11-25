@@ -892,11 +892,14 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     // «Sviluppa»: la foto aperta nell'editor (id), a tutto schermo sopra il visualizzatore
     var developing by remember { mutableStateOf<Int?>(null) }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
+    // l'editor prende il posto del visualizzatore (nella finestra dell'app: i margini delle barre di Android valgono
+    // come nel resto dell'app; in un dialog il pannello finiva sotto la barra di navigazione)
     developing?.let { id ->
         val photo = list.firstOrNull { it.id == id }
-        if (photo != null) androidx.compose.ui.window.Dialog(onDismissRequest = { developing = null },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        if (photo != null) {
+            androidx.activity.compose.BackHandler { developing = null }
             DevelopEditor(lib, photo) { developing = null }
+            return
         }
     }
     // l'ultima foto vista: la griglia la ritrova e la evidenzia quando si torna indietro
