@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -209,14 +211,16 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     } ?: 0.0
 
     /**
-     * Quello che si sviluppa: le impostazioni; mentre si ritaglia, la foto intera raddrizzata (il riquadro sopra la
-     * mostra il ritaglio, come in LightCraft).
+     * Quello che si sviluppa: le impostazioni; mentre si ritaglia, la foto intera NON raddrizzata (sempre la stessa,
+     * qualunque angolo): la raddrizza la scheda grafica girandola sullo schermo, all'istante. È la stessa cosa che fa
+     * LightCraft (la vista raddrizzata è la foto girata attorno al centro dentro il riquadro), senza risvilupparla a
+     * ogni movimento del cursore (circa un secondo ogni volta).
      */
     fun renderJson(): String? {
         val s = settings ?: return null
         if (section != CROP) return s.toString()
         val view = JSONObject(s.toString())
-        DevelopStore.setPath(view, "crop.geometry", unitGeometry(geometry().optDouble("angle", 0.0)))
+        DevelopStore.setPath(view, "crop.geometry", unitGeometry(0.0))
         return view.toString()
     }
 
@@ -269,7 +273,21 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val shown = if (showBefore) before else image
                 val bitmap = remember(shown) { shown?.asImageBitmap() }
-                if (bitmap != null) Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                val cropping = section == CROP && !showBefore
+                if (bitmap != null && cropping) {
+                    // la foto intera girata dell'angolo di Raddrizza, dentro il suo riquadro (gli angoli che escono si
+                    // tagliano, come in LightCraft)
+                    val angle = geometry().optDouble("angle", 0.0).toFloat()
+                    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val scale = minOf(constraints.maxWidth.toFloat() / bitmap.width, constraints.maxHeight.toFloat() / bitmap.height)
+                        val wDp = with(density) { (bitmap.width * scale).toDp() }
+                        val hDp = with(density) { (bitmap.height * scale).toDp() }
+                        Box(Modifier.width(wDp).height(hDp).clipToBounds()) {
+                            Image(bitmap, null, Modifier.fillMaxSize().graphicsLayer { rotationZ = angle + 0f * cropTick },
+                                contentScale = ContentScale.Fit)
+                        }
+                    }
+                } else if (bitmap != null) Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
                 // ritaglio: il riquadro sopra la foto intera raddrizzata, con angoli e lati da trascinare
                 if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height, cropTick,
