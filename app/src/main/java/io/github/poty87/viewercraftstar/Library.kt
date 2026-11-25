@@ -145,11 +145,21 @@ object LibraryStore {
             index || dev
         }
 
-    /** Le anteprime sviluppate della libreria (id → firma), già sul telefono. */
-    fun previews(context: Context, name: String): Map<Int, String> = runCatching {
-        val o = JSONObject(File(dir(context, name), PREVIEWS).readText()).getJSONObject("photos")
-        o.keys().asSequence().associate { it.toInt() to o.getString(it) }
-    }.getOrDefault(emptyMap())
+    /**
+     * Le anteprime preparate dal PC per la libreria, già sul telefono. Dalla 1.27 di PresetCraftAppLicator: tutte le
+     * foto, AVIF (grande e miniatura), più l'elenco delle ritoccate; prima solo le ritoccate, in JPEG.
+     */
+    class Previews(val sigs: Map<Int, String> = emptyMap(), val edited: Set<Int> = emptySet(), val avif: Boolean = false)
+
+    fun previewList(context: Context, name: String): Previews = runCatching {
+        val all = JSONObject(File(dir(context, name), PREVIEWS).readText())
+        val o = all.getJSONObject("photos")
+        val sigs = o.keys().asSequence().associate { it.toInt() to o.getString(it) }
+        if (all.optInt("version", 1) >= 2 && all.optString("format") == "avif") {
+            val e = all.optJSONArray("edited")
+            Previews(sigs, (0 until (e?.length() ?: 0)).map { e!!.getInt(it) }.toSet(), avif = true)
+        } else Previews(sigs, sigs.keys, avif = false)
+    }.getOrDefault(Previews())
 
     private fun fetch(s: DiskShare, path: String, local: File, stampName: String): Boolean {
         val stampFile = File(local.parentFile, stampName)

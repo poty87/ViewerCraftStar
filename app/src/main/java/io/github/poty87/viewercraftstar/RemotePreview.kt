@@ -60,14 +60,44 @@ object RemotePreview {
     }
 
     /** Cambia quando cambia il modo di ricavare le miniature, così quelle vecchie (sbagliate) non si usano più. */
-    private const val CACHE_VERSION = 2
+    private const val CACHE_VERSION = 3
 
-    /** Un'anteprima sviluppata da PresetCraftAppLicator sul NAS (JPEG già dritto); `sig` cambia con lo sviluppo. */
-    class Developed(val share: String, val path: String, val sig: String)
+    /**
+     * Un'anteprima preparata da PresetCraftAppLicator sul NAS (già dritta, sviluppata come in LightCraft): AVIF da 2560
+     * pixel e miniatura AVIF da 512 (dalla 1.27), o JPEG da 2048 delle foto ritoccate (versioni precedenti). `sig`
+     * cambia con lo sviluppo; `thumbPath` è la miniatura (vuoto se il PC non ne fa).
+     */
+    class Developed(val share: String, val path: String, val sig: String, val thumbPath: String = "")
+
+    /** Quanto spazio possono occupare sul telefono le anteprime grandi già viste (poi si tolgono le più vecchie). */
+    private const val FULL_CACHE_BYTES = 1500L shl 20
+
+    private fun libDir(context: Context, lib: String) =
+        File(context.cacheDir, "library/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_"))
 
     private fun diskFile(context: Context, lib: String, photo: LibPhoto, dev: Developed? = null) =
-        File(context.cacheDir, "library/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") +
-            "/${photo.id}_${photo.name.hashCode()}_v$CACHE_VERSION" + (dev?.let { "_d${it.sig}" } ?: "") + ".jpg")
+        if (dev != null && dev.thumbPath.isNotEmpty()) File(libDir(context, lib), "thumbs/${photo.id}_${dev.sig}.avif")
+        else File(libDir(context, lib), "${photo.id}_${photo.name.hashCode()}_v$CACHE_VERSION" + (dev?.let { "_d${it.sig}" } ?: "") + ".jpg")
+
+    /** L'anteprima grande del PC già scaricata (così rivedere una foto non passa dal NAS). */
+    private fun fullFile(context: Context, lib: String, photo: LibPhoto, dev: Developed) =
+        File(libDir(context, lib), "full/${photo.id}_${dev.sig}." + dev.path.substringAfterLast('.', "avif"))
+
+    /**
+     * Pulizia, una volta all'avvio: via le copie fatte con un modo vecchio (le JPEG ricompresse delle versioni prima
+     * della 0.27) e, se le anteprime grandi occupano troppo, le meno usate di recente.
+     */
+    fun cleanup(context: Context) = runCatching {
+        val root = File(context.cacheDir, "library")
+        val marker = File(root, ".v$CACHE_VERSION")
+        if (!marker.exists()) { root.deleteRecursively(); root.mkdirs(); marker.writeText("") }
+        val full = root.listFiles()?.mapNotNull { File(it, "full").listFiles()?.toList() }?.flatten().orEmpty()
+        var total = full.sumOf { it.length() }
+        for (f in full.sortedBy { it.lastModified() }) {
+            if (total <= FULL_CACHE_BYTES) break
+            total -= f.length(); f.delete()
+        }
+    }
 
     /** La miniatura già sul telefono (nessun accesso al NAS), o null. */
     /** La miniatura se è già in memoria (nessuna lettura dal disco: si può chiamare mentre si disegna), o null. */
@@ -87,10 +117,17 @@ object RemotePreview {
         memory.get(key)?.let { return it }
         if (maxSide <= THUMB) cachedThumb(context, index.library, photo, dev)?.let { return it }
         val bmp = if (dev != null) {
-            // sviluppata: se non si legge (appena tolta, o non ancora copiata) si mostra quella della fotocamera
-            val bytes = runCatching {
-                Remote.use(cfg, dev.share) { s -> Remote.open(s, dev.path).use { r -> r.read(0, r.size.toInt()) } }
-            }.getOrNull()
+            // preparata dal PC: la miniatura per la galleria, l'anteprima grande per lo schermo intero; si tengono sul
+            // telefono così come arrivano (niente ricompressione). Se non si legge (appena tolta, o non ancora copiata)
+            // si mostra quella della fotocamera
+            val small = maxSide <= THUMB && dev.thumbPath.isNotEmpty()
+            val local = if (small) diskFile(context, index.library, photo, dev) else fullFile(context, index.library, photo, dev)
+            val bytes = (if (local.exists()) runCatching { local.readBytes().also { local.setLastModified(System.currentTimeMillis()) } }.getOrNull() else null)
+                ?: runCatching {
+                    Remote.use(cfg, dev.share) { s -> Remote.open(s, if (small) dev.thumbPath else dev.path).use { r -> r.read(0, r.size.toInt()) } }
+                }.getOrNull()?.also { b ->
+                    runCatching { local.parentFile?.mkdirs(); val tmp = File(local.path + ".tmp"); tmp.writeBytes(b); tmp.renameTo(local) }
+                }
             bytes?.let { decodeJpeg(it, maxSide) } ?: return load(context, cfg, index, photo, maxSide, null)
         } else {
             val (share, path) = index.locate(photo) ?: return null
@@ -98,7 +135,7 @@ object RemotePreview {
             decode(picked, maxSide) ?: return null
         }
         memory.put(key, bmp)
-        if (maxSide <= THUMB) runCatching {
+        if (maxSide <= THUMB && (dev == null || dev.thumbPath.isEmpty())) runCatching {
             val f = diskFile(context, index.library, photo, dev)
             f.parentFile?.mkdirs()
             f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
@@ -202,14 +239,25 @@ object RemotePreview {
         return out
     }
 
+    /** JPEG o AVIF (Android li legge tutti e due), ridotto di potenze di due fino alla misura che serve. */
     private fun decodeJpeg(bytes: ByteArray, maxSide: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0) return null
+        if (bounds.outWidth <= 0) return decodeAny(bytes, maxSide)
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: decodeAny(bytes, maxSide)
     }
+
+    /** Con ImageDecoder (per i formati che BitmapFactory non conosce su qualche telefono). */
+    private fun decodeAny(bytes: ByteArray, maxSide: Int): Bitmap? = runCatching {
+        android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))) { d, info, _ ->
+            val big = maxOf(info.size.width, info.size.height)
+            if (big > maxSide) d.setTargetSampleSize(Integer.highestOneBit(maxOf(1, big / maxSide)))
+            d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+        }
+    }.getOrNull()
 
     // ---------------------------------------------------------------- TIFF (DNG, CR2, TIF…)
 

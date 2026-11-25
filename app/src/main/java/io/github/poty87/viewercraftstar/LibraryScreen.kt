@@ -139,8 +139,15 @@ internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, m
     val context = LocalContext.current
     val idx = lib.index ?: return
     // ritoccata in LightCraft: l'anteprima sviluppata dal PC (se non si chiede quella della fotocamera)
-    val sig = if (original) null else lib.developed[photo.id]
-    val dev = sig?.let { RemotePreview.Developed(lib.libShare, listOf(lib.libRoot, lib.current, "previews", "${photo.id}.jpg").joinToString("\\"), it) }
+    // l'anteprima preparata dal PC (AVIF, o JPEG delle sole ritoccate con un PresetCraftAppLicator vecchio); «Originale»
+    // mostra invece quella della fotocamera
+    val pv = lib.previews
+    val sig = if (original) null else pv.sigs[photo.id]
+    val dev = sig?.let {
+        fun at(dir: String, ext: String) = listOf(lib.libRoot, lib.current, dir, "${photo.id}.$ext").joinToString("\\")
+        if (pv.avif) RemotePreview.Developed(lib.libShare, at("previews", "avif"), it, at("thumbs", "avif"))
+        else RemotePreview.Developed(lib.libShare, at("previews", "jpg"), it)
+    }
     // mentre si scorre si prende solo ciò che è già in memoria: la lettura dal disco e la decodifica vanno fuori dal
     // thread che disegna (prima si facevano lì, ed era quello a far impuntare lo scorrimento)
     val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB)

@@ -619,8 +619,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     val libRoot: String get() = rootFound ?: LibraryStore.defaultRoot(settings.libFolder)
     val libShare: String get() = share
 
-    /** Foto con l'anteprima sviluppata da PresetCraftAppLicator (ritoccate in LightCraft): id → firma. */
+    /** Le anteprime preparate dal PC (tutte le foto, o le sole ritoccate con un PresetCraftAppLicator vecchio). */
+    var previews by mutableStateOf(LibraryStore.Previews()); private set
+
+    /** Foto ritoccate in LightCraft (matita e «Originale»): id → firma della loro anteprima. */
     var developed by mutableStateOf<Map<Int, String>>(emptyMap()); private set
+
+    private fun showPreviews(p: LibraryStore.Previews) {
+        previews = p
+        developed = p.sigs.filterKeys { it in p.edited }
+    }
 
     /** Come si vede la galleria (ricordato nelle impostazioni del telefono). */
     var gridMode by mutableStateOf(settings.libGrid); private set
@@ -640,6 +648,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     var showOriginal by mutableStateOf(false)
 
     init {
+        // le copie delle anteprime fatte con un modo vecchio si tolgono, quelle grandi si tengono entro un limite
+        viewModelScope.launch(Dispatchers.IO) { RemotePreview.cleanup(getApplication()) }
         if (current.isNotEmpty()) openCached(current)
     }
 
@@ -653,7 +663,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun show(idx: LibIndex) {
         val sameLibrary = index?.library == idx.library
         index = idx
-        developed = LibraryStore.previews(getApplication(), idx.library)
+        showPreviews(LibraryStore.previewList(getApplication(), idx.library))
         if (!sameLibrary) loadAiLocal(idx.library)
         if (!sameLibrary) expanded = savedExpanded(idx.library) ?: idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
@@ -683,7 +693,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 if (name.isNotEmpty()) {
                     val fresh = LibraryStore.download(getApplication(), cfg, share, libRoot, name)
                     val idx = withContext(Dispatchers.IO) { LibraryStore.load(getApplication(), name) }
-                    if (fresh && idx != null && index?.library == idx.library) developed = LibraryStore.previews(getApplication(), name)
+                    if (fresh && idx != null && index?.library == idx.library) showPreviews(LibraryStore.previewList(getApplication(), name))
                     if (current != name) { current = name; settings.library = name; index = null; clearFilters() }
                     if (idx != null && (index == null || index?.updated != idx.updated || index?.library != idx.library)) show(idx)
                     syncAi(name)
