@@ -49,8 +49,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -85,10 +88,12 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
     var wifiCb by remember { mutableStateOf<ConnectivityManager.NetworkCallback?>(null) }
     var gatt by remember { mutableStateOf<GrCamera.Gatt?>(null) }
     var selected by remember { mutableStateOf(setOf<String>()) }
-    var progress by remember { mutableStateOf<Triple<Int, Int, Float>?>(null) }
-    var bytesNow by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    var downloading by remember { mutableStateOf(false) }
-    var done by remember { mutableStateOf(setOf<String>()) } // foto scaricate in questo collegamento: spunta verde
+    // lo scarico vive fuori dalla pagina (continua anche passando a un'altra app): qui si legge il suo stato
+    val progress = CameraImport.progress
+    val bytesNow = CameraImport.bytesNow
+    val downloading = CameraImport.running
+    val done = CameraImport.done // foto scaricate in questo collegamento: spunta verde
+    LaunchedEffect(Unit) { CameraImport.reset() }
     var granted by remember { mutableStateOf(false) }
     // la fotocamera a cui collegarsi; se non ce n'è una associata, si cerca e si associa (come GR World)
     var device by remember { mutableStateOf<android.bluetooth.BluetoothDevice?>(null) }
@@ -113,12 +118,14 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
     var format by remember { mutableStateOf(vm.settings.cameraFormat) } // "dng", "jpg", "both"
 
     fun close() {
-        GrCamera.release(context, wifiCb); wifiCb = null; network = null
-        gatt?.close(); gatt = null
+        // se sta scaricando, la rete della fotocamera resta finché lo scarico non finisce
+        val cb = wifiCb; val g = gatt
+        CameraImport.closeWhenDone { GrCamera.release(context, cb); g?.close() }
+        wifiCb = null; network = null; gatt = null
         onBack()
     }
     BackHandler { close() }
-    DisposableEffect(Unit) { onDispose { GrCamera.release(context, wifiCb); gatt?.close() } }
+    DisposableEffect(Unit) { onDispose { val cb = wifiCb; val g = gatt; CameraImport.closeWhenDone { GrCamera.release(context, cb); g?.close() } } }
 
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
         granted = r.values.all { it }
@@ -179,8 +186,15 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
         }
     }
 
+    // le memorie con foto (interna e scheda SD): con tutte e due si può scegliere quale guardare
+    val storages = photos.orEmpty().map { it.storage }.filter { it.isNotEmpty() }.distinct().sortedBy { if (it == GrCamera.INTERNAL) 0 else 1 }
+    // da quale memoria si importa (il tasto in alto): all'inizio la memoria interna
+    var chosenMemory by remember { mutableStateOf(GrCamera.INTERNAL) }
+    val memory = if (storages.size > 1) chosenMemory else ""
+    fun storageName(st: String) = if (st == GrCamera.INTERNAL) L.t("Memoria interna", "Internal memory") else L.t("Scheda SD", "SD card")
     // si vedono i DNG (con «Solo JPEG», i JPEG)
-    val list = photos?.filter { if (format == "jpg") !it.name.endsWith(".dng", true) else it.name.endsWith(".dng", true) }.orEmpty()
+    val list = photos?.filter { if (format == "jpg") !it.name.endsWith(".dng", true) else it.name.endsWith(".dng", true) }
+        ?.filter { memory.isEmpty() || it.storage == memory }.orEmpty()
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 10.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { close() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L.t("Indietro", "Back"), tint = C.text) }
@@ -263,17 +277,16 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }) { Text(L.t("Associa una fotocamera", "Pair a camera")) }
                 }
             }
-            photos == null -> Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(20.dp), color = C.accent, strokeWidth = 2.dp)
-                Spacer(Modifier.size(12.dp))
-                Text(step, color = C.text, fontSize = 14.sp)
-            }
+            photos == null -> CameraConnecting(step)
             photos.orEmpty().isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState(EmptyGlyph.CARD, L.t("Scheda vuota", "Empty card"),
                     L.t("Sulla fotocamera non ci sono foto da scaricare.", "There are no photos on the camera to download."))
             }
             else -> {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp),
+                // i filtri a sinistra (scorrono se non ci stanno); a destra, fermo, il tasto della memoria (non si sposta quando
+                // compare o sparisce «Nessuna»)
+                Row(Modifier.fillMaxWidth().padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // cosa scaricare, a tendina come «Ordina»: i JPEG vanno sempre nella galleria del telefono
                     val formatLabels = listOf("dng" to L.t("Solo DNG", "DNG only"), "jpg" to L.t("Solo JPEG", "JPEG only"),
@@ -313,9 +326,25 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }
                     if (selected.isNotEmpty()) RoundChip(false, { selected = emptySet() }) { Text(L.t("Nessuna", "None")) }
                 }
-                Text(L.t("${list.size} foto sulla fotocamera · scure = già sul telefono o sul NAS", "${list.size} photos on the camera · dark = already on the phone or the NAS"),
+                // da dove importare: memoria interna o scheda SD (solo se ci sono foto in tutte e due); alto come gli altri
+                if (storages.size > 1) Row(Modifier.height(36.dp).clip(RoundedCornerShape(50)).background(C.card).padding(3.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    for (st in storages) {
+                        val on = chosenMemory == st
+                        Box(Modifier.fillMaxHeight().clip(RoundedCornerShape(50)).background(if (on) C.accent else Color.Transparent)
+                            .clickable(enabled = !downloading) { if (!on) { chosenMemory = st; selected = emptySet() } }
+                            .padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                            Text(if (st == GrCamera.INTERNAL) "IN" else "SD", color = if (on) Color.Black else C.text,
+                                fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+                }
+                val where = if (memory.isNotEmpty()) storageName(memory).lowercase() else ""
+                Text(L.t("${list.size} foto sulla fotocamera", "${list.size} photos on the camera") + (if (where.isNotEmpty()) " ($where)" else "") +
+                    L.t(" · scure = già sul telefono o sul NAS", " · dark = already on the phone or the NAS"),
                     color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                val names = remember(photos) { photos.orEmpty().map { it.name.lowercase() }.toHashSet() }
+                val names = remember(photos) { photos.orEmpty().map { it.storage + ":" + it.name.lowercase() }.toHashSet() }
                 // i gruppi per periodo (dalla data di scatto); senza data finiscono in «Senza data»
                 val groups = remember(list, groupBy) {
                     if (groupBy.isEmpty()) listOf("" to list)
@@ -335,7 +364,7 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for ((title, items) in groups) {
                         if (groupBy.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "h-$title") {
-                            val all = items.map { it.path }
+                            val all = items.map { it.key }
                             val allOn = all.isNotEmpty() && selected.containsAll(all)
                             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(title.ifEmpty { L.t("Senza data", "No date") }, color = C.text, fontSize = 16.sp,
@@ -347,30 +376,30 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                                         checkmarkColor = Color.Black, uncheckedColor = C.muted))
                             }
                         }
-                        items(items, key = { it.path }) { p ->
-                            val on = p.path in selected
+                        items(items, key = { it.key }) { p ->
+                            val on = p.key in selected
                             val had = have(p)
                             Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(6.dp)).background(C.card)
                                 // selezione come nella galleria della Libreria: bordo bianco, velo blu, spunta blu al centro
                                 .then(if (on) Modifier.border(3.dp, Color.White, RoundedCornerShape(6.dp)) else Modifier)
-                                .clickable { selected = if (on) selected - p.path else selected + p.path }) {
+                                .clickable { selected = if (on) selected - p.key else selected + p.key }) {
                                 network?.let { CameraThumb(it, p, names) }
-                                if (had && !on && p.path !in done) Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+                                if (had && !on && p.key !in done) Box(Modifier.fillMaxSize().background(Color(0x99000000)))
                                 Text(p.name + if (p.taken > 0) "  " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.ITALY)
                                     .format(java.util.Date(p.taken)) else "", color = Color.White, fontSize = 10.sp, maxLines = 1,
                                     modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color(0x80000000))
                                         .padding(horizontal = 4.dp, vertical = 2.dp))
-                                val ok = p.path in done
+                                val ok = p.key in done
                                 if (on || ok) Box(Modifier.fillMaxSize().background((if (ok) GREEN else C.accent).copy(alpha = 0.33f)), contentAlignment = Alignment.Center) {
                                     Box(Modifier.size(26.dp).clip(CircleShape).background(if (ok) GREEN else C.accent), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
                                     }
                                 }
                                 // scatto RAW+JPEG: informazione sulla foto, in alto a sinistra come la bandierina in Libreria
-                                if (format == "both" && p.name.endsWith(".dng", true) && p.name.substringBeforeLast('.').lowercase() + ".jpg" in names) {
+                                if (format == "both" && p.name.endsWith(".dng", true) && p.storage + ":" + p.name.substringBeforeLast('.').lowercase() + ".jpg" in names) {
                                     // verde quando quel JPEG è nella galleria (scaricato ora o già presente)
                                     val stem = p.name.substringBeforeLast('.')
-                                    val jpgDone = photos.orEmpty().any { it.dir == p.dir && it.path in done &&
+                                    val jpgDone = photos.orEmpty().any { it.dir == p.dir && it.storage == p.storage && it.key in done &&
                                         it.name.substringBeforeLast('.').equals(stem, true) && !it.name.endsWith(".dng", true) }
                                     Text("+JPEG", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                                         modifier = Modifier.align(Alignment.TopStart).padding(5.dp).clip(RoundedCornerShape(50))
@@ -406,26 +435,25 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                         }, enabled = !downloading, modifier = Modifier.weight(1f)) { Text(L.t("Spegni e chiudi", "Turn off and close"), maxLines = 1) }
                         PillButton(onClick = {
                             val net = network ?: return@PillButton
-                            val chosenNow = list.filter { it.path in selected }
+                            val chosenNow = list.filter { it.key in selected }
                             val all = photos.orEmpty()
                             fun twinOf(dngP: GrCamera.Photo): GrCamera.Photo? {
                                 val stem = dngP.name.substringBeforeLast('.')
-                                return all.firstOrNull { it.dir == dngP.dir && it.name.substringBeforeLast('.').equals(stem, true) &&
+                                return all.firstOrNull { it.dir == dngP.dir && it.storage == dngP.storage && it.name.substringBeforeLast('.').equals(stem, true) &&
                                     (it.name.endsWith(".jpg", true) || it.name.endsWith(".jpeg", true)) }
                             }
                             // prima tutti i DNG (le spunte diventano verdi una dopo l'altra), poi i loro JPEG (le etichette +JPEG
                             // diventano verdi una dopo l'altra, appena arriva ciascun JPEG)
                             val twins = if (format != "both") emptyList()
                                 else chosenNow.filter { it.name.endsWith(".dng", true) }.mapNotNull { twinOf(it) }
-                            val todo = (chosenNow + twins).distinctBy { it.path }
+                            val todo = (chosenNow + twins).distinctBy { it.key }
                             fun isJpeg(p: GrCamera.Photo) = p.name.endsWith(".jpg", true) || p.name.endsWith(".jpeg", true)
-                            scope.launch {
+                            CameraImport.start(context) {
                                 var ok = 0
                                 var skipped = 0 // JPEG già nella galleria: non riscaricati
                                 var skippedDng = 0 // DNG già sul telefono o sul NAS: non riscaricati (eviterebbe i doppioni « (1)»)
-                                downloading = true
                                 todo.forEachIndexed { i, p ->
-                                    progress = Triple(i + 1, todo.size, 0f)
+                                    CameraImport.progress = Triple(i + 1, todo.size, 0f)
                                     val ok1 = withContext(Dispatchers.IO) {
                                         var shown = -1
                                         // i JPEG nella galleria (se c'è già, non si riscarica); i DNG nella cartella delle foto nuove
@@ -443,16 +471,15 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                                             val step = if (total > 0) (got * 100 / total).toInt() else (got / 1_000_000).toInt()
                                             if (step != shown) {
                                                 shown = step
-                                                bytesNow = got to total
-                                                progress = Triple(i + 1, todo.size, if (total > 0) got.toFloat() / total else 0f)
+                                                CameraImport.bytesNow = got to total
+                                                CameraImport.progress = Triple(i + 1, todo.size, if (total > 0) got.toFloat() / total else 0f)
                                             }
                                         }
                                     }
-                                    if (ok1) { ok++; progress = Triple(i + 1, todo.size, 1f); done = done + p.path }
+                                    if (ok1) { ok++; CameraImport.progress = Triple(i + 1, todo.size, 1f); CameraImport.done = CameraImport.done + p.key }
                                 }
                                 // a fine scarico: barre verdi, le foto completate escono dalla selezione (restano con la spunta verde)
-                                downloading = false
-                                selected = selected - done
+                                selected = selected - CameraImport.done
                                 vm.reload()
                                 // il riepilogo conta solo i file scaricati davvero; i JPEG saltati hanno la loro notifica
                                 val got = ok - skipped - skippedDng
@@ -482,10 +509,66 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
     }
 }
 
+/**
+ * Il collegamento alla fotocamera in corso: come le altre pagine, un disegno grande al centro (la fotocamera con le onde
+ * del Wi-Fi che si accendono una dopo l'altra), sotto cosa sta facendo e una barra che scorre.
+ */
+@Composable
+private fun CameraConnecting(step: String) {
+    val screen = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "wifi")
+    val wave by pulse.animateFloat(0f, 4f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(1800, easing = androidx.compose.animation.core.LinearEasing)), label = "wave")
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            CameraLinkDrawing(androidx.compose.ui.Modifier.size(androidx.compose.ui.unit.min(screen * 0.46f, 220.dp)), wave)
+            Spacer(Modifier.size(22.dp))
+            Text(L.t("Collegamento alla fotocamera", "Connecting to the camera"), color = C.text, fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Spacer(Modifier.size(8.dp))
+            Text(step, color = C.muted, fontSize = 14.sp, lineHeight = 19.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Spacer(Modifier.size(20.dp))
+            LinearProgressIndicator(color = C.accent, trackColor = C.card,
+                modifier = Modifier.fillMaxWidth(0.6f).clip(RoundedCornerShape(50)))
+        }
+    }
+}
+
+/** Una fotocamera compatta vista di fronte, con sopra tre onde del Wi-Fi: accese fino a `wave` (0–3, poi si ricomincia). */
+@Composable
+private fun CameraLinkDrawing(modifier: Modifier, wave: Float) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width
+        val t = w * 0.045f
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(t)
+        val grey = EmptyTint
+        // corpo, impugnatura, otturatore e obiettivo
+        drawRoundRect(grey, androidx.compose.ui.geometry.Offset(w * 0.12f, w * 0.46f), androidx.compose.ui.geometry.Size(w * 0.76f, w * 0.42f),
+            androidx.compose.ui.geometry.CornerRadius(w * 0.07f), style = stroke)
+        drawRoundRect(grey, androidx.compose.ui.geometry.Offset(w * 0.20f, w * 0.40f), androidx.compose.ui.geometry.Size(w * 0.14f, w * 0.06f),
+            androidx.compose.ui.geometry.CornerRadius(w * 0.02f))
+        drawCircle(grey, w * 0.13f, androidx.compose.ui.geometry.Offset(w * 0.56f, w * 0.67f), style = stroke)
+        drawCircle(grey, w * 0.05f, androidx.compose.ui.geometry.Offset(w * 0.56f, w * 0.67f))
+        drawCircle(grey, w * 0.025f, androidx.compose.ui.geometry.Offset(w * 0.24f, w * 0.56f))
+        // onde del Wi-Fi sopra la fotocamera: quelle già "arrivate" in blu, le altre grigie
+        val c = androidx.compose.ui.geometry.Offset(w * 0.56f, w * 0.36f)
+        for (i in 0 until 3) {
+            val r = w * (0.08f + i * 0.08f)
+            val on = wave >= i + 1
+            drawArc(if (on) C.accent else grey, 225f, 90f, useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(c.x - r, c.y - r), size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(t, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        }
+        drawCircle(if (wave >= 0.3f) C.accent else grey, w * 0.03f, c)
+    }
+}
+
 /** La miniatura di una foto della fotocamera (o del suo JPEG gemello). */
 @Composable
 private fun CameraThumb(network: Network, p: GrCamera.Photo, names: Set<String>) {
-    val bmp by produceState<Bitmap?>(null, p.path) {
+    val bmp by produceState<Bitmap?>(null, p.key) {
         value = withContext(Dispatchers.IO) { thumbGate.withPermit { GrCamera.thumbnail(network, p, names) } }
     }
     bmp?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }

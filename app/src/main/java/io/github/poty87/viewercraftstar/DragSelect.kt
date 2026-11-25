@@ -10,7 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -30,16 +30,19 @@ import kotlinx.coroutines.launch
  * al bordo alto o basso la galleria scorre da sola. Le foto si registrano con [dragSelectTarget].
  */
 object DragSelect {
-    /** Dove sta ogni foto sullo schermo (coordinate della finestra), aggiornato mentre la galleria scorre. */
-    val bounds = HashMap<Int, Rect>()
+    /**
+     * Il posto di ogni foto sullo schermo: si tiene il riferimento al suo layout e la posizione si calcola solo quando
+     * serve (al tocco), non a ogni fotogramma mentre la galleria scorre.
+     */
+    val bounds = HashMap<Int, LayoutCoordinates>()
 
-    fun hit(p: Offset): Int? = bounds.entries.firstOrNull { it.value.contains(p) }?.key
+    fun hit(p: Offset): Int? = bounds.entries.firstOrNull { (_, c) -> c.isAttached && c.boundsInRoot().contains(p) }?.key
 }
 
 /** La cella di una foto: tiene aggiornata la sua posizione per la selezione trascinando. */
 fun Modifier.dragSelectTarget(id: Int): Modifier = composed {
     DisposableEffect(id) { onDispose { DragSelect.bounds.remove(id) } }
-    onGloballyPositioned { DragSelect.bounds[id] = it.boundsInRoot() }
+    onGloballyPositioned { DragSelect.bounds[id] = it }
 }
 
 /** Il contenitore della galleria: pressione lunga e trascinamento selezionano le foto toccate. */

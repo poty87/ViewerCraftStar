@@ -82,7 +82,7 @@ object AiStore {
                     tmp.outputStream().use { out ->
                         var at = 0L
                         while (at < r.size) {
-                            val chunk = r.read(at, 1024 * 1024)
+                            val chunk = r.read(at, Remote.BIG_READ)
                             if (chunk.isEmpty()) break
                             out.write(chunk)
                             at += chunk.size
@@ -101,7 +101,7 @@ object AiStore {
                     tmp.outputStream().use { out ->
                         var at = 0L
                         while (at < r.size) {
-                            val chunk = r.read(at, 1024 * 1024)
+                            val chunk = r.read(at, Remote.BIG_READ)
                             if (chunk.isEmpty()) break
                             out.write(chunk)
                             at += chunk.size
@@ -141,19 +141,13 @@ object AiStore {
                 ?.map { File(it, name) }?.firstOrNull { it.length() == size && sha256(it) == sha }
             if (same != null && same.renameTo(dest)) { before += size; progress(before, total); continue }
             val part = File(dir, "$name.part")
-            Remote.use(cfg, share) { s ->
-                Remote.open(s, join(folder, lib, "ia", "telefono", name)).use { r ->
-                    RandomAccessFile(part, "rw").use { out ->
-                        var at = minOf(part.length(), r.size)
-                        out.seek(at)
-                        while (at < r.size) {
-                            val chunk = r.read(at, 1024 * 1024)
-                            if (chunk.isEmpty()) break
-                            out.write(chunk)
-                            at += chunk.size
-                            progress(before + at, total)
-                        }
-                    }
+            // su più connessioni insieme (in VPN rende quasi il doppio); riprende da dove si era fermato
+            RandomAccessFile(part, "rw").use { out ->
+                val start = minOf(part.length(), size)
+                out.seek(start)
+                Remote.download(cfg, share, join(folder, lib, "ia", "telefono", name), start) { chunk, at ->
+                    out.write(chunk)
+                    progress(before + at, total)
                 }
             }
             if (part.length() != size || sha256(part) != sha) {

@@ -147,7 +147,7 @@ object GrCamera {
                 async(kotlinx.coroutines.Dispatchers.IO) {
                     gate.withPermit {
                         val t = runCatching {
-                            val dt = JSONObject(getText(network, p.path + "/info")).optString("datetime")
+                            val dt = JSONObject(getText(network, p.infoQuery)).optString("datetime")
                             java.time.LocalDateTime.parse(dt).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                         }.getOrDefault(0L)
                         synchronized(this@GrCamera) { done++ }
@@ -229,7 +229,7 @@ object GrCamera {
             add(photo)
             if (photo.name.endsWith(".dng", true)) {
                 val jpg = photo.name.substringBeforeLast('.') + ".JPG"
-                if (jpg.lowercase() in twins) add(photo.copy(name = jpg))
+                if (photo.storage + ":" + jpg.lowercase() in twins) add(photo.copy(name = jpg))
             }
         }
         val sizes = thumbSize?.let { listOf(it) + (THUMB_SIZES - it) } ?: THUMB_SIZES
@@ -332,28 +332,56 @@ object GrCamera {
         }
     }
 
-    /** Una foto sulla fotocamera: cartella (es. 100RICOH), nome del file e memoria ("in" o "sd1", vuota se unica). */
+    /**
+     * Una foto sulla fotocamera: cartella (es. 100RICOH), nome del file e memoria ("in" interna, "sd1" scheda; vuota
+     * se la fotocamera ne ha una sola). Le due memorie numerano le foto ognuna per conto suo: lo stesso nome può
+     * esserci in tutte e due, quindi una foto si riconosce da [key] (memoria + percorso).
+     */
     data class Photo(val dir: String, val name: String, val storage: String, val taken: Long = 0L) {
         val path: String get() = "/v1/photos/$dir/$name"
+        val key: String get() = "$storage:$path"
         /** Il nome che avrà sul telefono (come GR World): millisecondi dello scatto + "_" + nome della fotocamera. */
         val phoneName: String get() = if (taken > 0) "${taken}_$name" else name
-        fun query(size: String) = "$path?size=$size" + if (storage.isNotEmpty()) "&storage=$storage" else ""
+        private val storageArg: String get() = if (storage.isNotEmpty()) "storage=$storage" else ""
+        fun query(size: String) = "$path?size=$size" + if (storageArg.isNotEmpty()) "&$storageArg" else ""
+        val infoQuery: String get() = "$path/info" + if (storageArg.isNotEmpty()) "?$storageArg" else ""
     }
 
-    /** L'elenco delle foto (la più recente per prima). Il JSON grezzo finisce nel log, per verificarne il formato. */
+    /** Le memorie della GR, come le chiama GR World: interna e scheda SD. */
+    const val INTERNAL = "in"
+    const val SD = "sd1"
+
+    /**
+     * L'elenco delle foto di tutte e due le memorie (la più recente per prima). Senza indicare la memoria la GR risponde
+     * con una sola (con la scheda inserita, la scheda): si chiedono quindi la memoria interna e la scheda una per una.
+     * Se la fotocamera non distingue (stessa risposta per tutte e due) resta l'elenco unico. I JSON grezzi vanno nel log.
+     */
     suspend fun photos(network: Network): List<Photo> {
         // il server della fotocamera può metterci qualche secondo a rispondere dopo l'accensione del Wi-Fi
         var last: Throwable? = null
-        repeat(10) {
+        var plain: String? = null
+        for (i in 0 until 10) {
             val r = runCatching { getText(network, "/v1/photos") }
-            r.onSuccess { body ->
-                Log.i(TAG, "photos: " + body.take(3000))
-                return parse(body, "")
-            }
+            r.onSuccess { plain = it }
+            if (plain != null) break
             last = r.exceptionOrNull()
             delay(1500)
         }
-        throw last ?: IllegalStateException("la fotocamera non risponde")
+        val body = plain ?: throw last ?: IllegalStateException("la fotocamera non risponde")
+        Log.i(TAG, "photos: " + body.take(3000))
+        val byStorage = listOf(INTERNAL, SD).mapNotNull { st ->
+            runCatching { getText(network, "/v1/photos?storage=$st") }
+                .onSuccess { Log.i(TAG, "photos ($st): " + it.take(3000)) }
+                .onFailure { Log.i(TAG, "photos ($st): ${it.message}") }
+                .getOrNull()?.let { b -> st to parse(b, st) }
+        }.filter { it.second.isNotEmpty() }
+        val names = byStorage.map { (_, l) -> l.map { it.dir + "/" + it.name }.toSet() }
+        return when {
+            byStorage.isEmpty() -> parse(body, "")
+            // la fotocamera ignora la richiesta della memoria: le due risposte sono uguali, quindi c'è un elenco solo
+            byStorage.size == 2 && names[0] == names[1] -> parse(body, "")
+            else -> byStorage.flatMap { it.second }
+        }
     }
 
     fun parse(body: String, storage: String): List<Photo> {

@@ -60,6 +60,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <service
+            android:name=".CameraImportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
             android:name=".ShipService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

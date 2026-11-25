@@ -76,6 +76,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -133,16 +141,20 @@ internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, m
     // ritoccata in LightCraft: l'anteprima sviluppata dal PC (se non si chiede quella della fotocamera)
     val sig = if (original) null else lib.developed[photo.id]
     val dev = sig?.let { RemotePreview.Developed(lib.libShare, listOf(lib.libRoot, lib.current, "previews", "${photo.id}.jpg").joinToString("\\"), it) }
+    // mentre si scorre si prende solo ciò che è già in memoria: la lettura dal disco e la decodifica vanno fuori dal
+    // thread che disegna (prima si facevano lì, ed era quello a far impuntare lo scorrimento)
     val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB)
-        RemotePreview.cachedThumb(context, idx.library, photo, dev) else null, photo.id, maxSide, sig) {
+        RemotePreview.memoryThumb(idx.library, photo, dev) else null, photo.id, maxSide, sig) {
         // si riparte anche quando cambia lo sviluppo (sig): l'immagine vecchia resta finché arriva quella nuova
-        val cached = if (maxSide <= RemotePreview.THUMB) RemotePreview.cachedThumb(context, idx.library, photo, dev) else null
-        value = cached ?: runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
-            ?: value
+        value = withContext(Dispatchers.IO) {
+            (if (maxSide <= RemotePreview.THUMB) RemotePreview.cachedThumb(context, idx.library, photo, dev) else null)
+                ?: runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
+        } ?: value
     }
     Box(modifier.background(C.card), contentAlignment = Alignment.Center) {
         val b = bmp
-        if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(),
+        val image = remember(b) { b?.asImageBitmap() }
+        if (image != null) Image(image, null, Modifier.fillMaxSize(),
             contentScale = if (crop) ContentScale.Crop else ContentScale.Fit)
         else if (maxSide > RemotePreview.THUMB) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
     }
@@ -485,9 +497,8 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             Text(L.t("Ripristinate", "Restored"), color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).clip(RoundedCornerShape(8.dp))
                     .background(C.accent).padding(horizontal = 6.dp, vertical = 2.dp))
-        // modifica fatta sul telefono, non ancora in LightCraft
-        if (p.id in lib.edits) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp).clip(CircleShape)
-            .background(Color(0xFFFB923C)))
+        // modifica fatta sul telefono, non ancora in LightCraft: da inviare (arancione) o inviata (azzurro)
+        lib.edits[p.id]?.let { SyncMark(it, Modifier.align(Alignment.TopCenter).padding(5.dp)) }
         if (p.rating > 0) Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
             .background(Color(0x99000000)).padding(horizontal = 3.dp, vertical = 1.dp)) {
             repeat(p.rating) { Icon(Icons.Filled.Star, null, tint = C.star, modifier = Modifier.size(10.dp)) }
@@ -528,12 +539,25 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
             val w = Modifier.weight(1f)
             PillButton(onClick = { editing = true }, modifier = w, pad = 6.dp) { Text(L.t("Modifica", "Edit"), maxLines = 1) }
             PillButton(onClick = { asking = true }, modifier = w, pad = 6.dp) { Text(L.t("Scarica", "Download"), maxLines = 1) }
-            // pila, contestuale: più copertine di pile → «Unisci»; una foto dentro una pila → «Copertina»; altrimenti «Pila»
+            // pila: un menu a tendina con le azioni che valgono per la selezione (crea, unisci, copertina, togli)
             val sel = lib.selected
-            when {
-                lib.canMerge(sel) -> PillButton(onClick = { lib.mergeStacks(sel) }, modifier = w, pad = 6.dp) { Text(L.t("Unisci", "Merge"), maxLines = 1) }
-                lib.canMakeCover(sel) -> PillButton(onClick = { lib.makeCover(sel.first()) }, modifier = w, pad = 6.dp) { Text(L.t("Copertina", "Cover"), maxLines = 1) }
-                else -> PillButton(onClick = { lib.stack(sel) }, modifier = w, pad = 6.dp, enabled = sel.size >= 2) { Text(L.t("Pila", "Stack"), maxLines = 1) }
+            val stackActions = buildList {
+                if (lib.canMerge(sel)) add(L.t("Unisci le pile", "Merge stacks") to { lib.mergeStacks(sel) })
+                else if (sel.size >= 2) add(L.t("Crea una pila", "Create a stack") to { lib.stack(sel) })
+                if (lib.canMakeCover(sel)) add(L.t("Rendi copertina", "Make cover") to { lib.makeCover(sel.first()) })
+                if (lib.canUnstack(sel)) add(L.t("Togli dalla pila", "Remove from stack") to { lib.unstack(sel) })
+            }
+            Box(w) {
+                var open by remember { mutableStateOf(false) }
+                PillButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth(), pad = 6.dp, enabled = stackActions.isNotEmpty()) {
+                    Icon(Icons.Filled.Menu, null, modifier = Modifier.size(15.dp))
+                    Text(" " + L.t("Pila", "Stack"), maxLines = 1)
+                }
+                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                    stackActions.forEach { (label, act) ->
+                        androidx.compose.material3.DropdownMenuItem({ Text(label, color = C.text) }, onClick = { open = false; act() })
+                    }
+                }
             }
             PillButton(onClick = { trashing = true }, modifier = w, pad = 6.dp, content = Color(0xFFF87171)) { Text(L.t("Cestino", "Trash"), maxLines = 1) }
         }
@@ -857,14 +881,53 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     val inTrash = lib.edits[p.id]?.trash == true
     if (asking) DownloadDialog(1, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(listOf(p.id), jpeg) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1) { page ->
-            Box(Modifier.fillMaxSize()) {
-                RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black)
-                    .clickable { controls = !controls }, crop = false, original = lib.showOriginal || faceMode)
+        // zoom (fino al 125%: sono anteprime): con due dita o con un doppio tocco; ingrandita, un dito sposta la foto e
+        // lo scorrimento tra le foto si ferma finché non si torna al 100%
+        var zoom by remember { mutableStateOf(1f) }
+        var pan by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        LaunchedEffect(pager.currentPage) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
+        HorizontalPager(pager, Modifier.fillMaxSize(), key = { list[it].id }, beyondViewportPageCount = 1,
+            userScrollEnabled = zoom <= 1.001f) { page ->
+            val current = page == pager.currentPage
+            Box(Modifier.fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { controls = !controls }, onDoubleTap = { at ->
+                        if (zoom > 1.001f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
+                        else {
+                            zoom = MAX_ZOOM
+                            // il punto toccato resta sotto il dito
+                            val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                            pan = clampPan((c - at) * (MAX_ZOOM - 1f), MAX_ZOOM, size)
+                        }
+                    })
+                }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val ev = awaitPointerEvent()
+                            val fingers = ev.changes.count { it.pressed }
+                            if (fingers >= 2) {
+                                zoom = (zoom * ev.calculateZoom()).coerceIn(1f, MAX_ZOOM)
+                                pan = clampPan(pan + ev.calculatePan(), zoom, size)
+                                ev.changes.forEach { it.consume() }
+                            } else if (fingers == 1 && zoom > 1.001f) {
+                                pan = clampPan(pan + ev.calculatePan(), zoom, size)
+                                ev.changes.forEach { it.consume() }
+                            }
+                        } while (ev.changes.any { it.pressed })
+                    }
+                }
+                .graphicsLayer {
+                    if (current) { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y }
+                }) {
+                RemoteImage(lib, list[page], RemotePreview.FULL, Modifier.fillMaxSize().background(Color.Black),
+                    crop = false, original = lib.showOriginal || faceMode)
                 if (faceMode) FaceOverlay(lib.effective(list[page])) { naming = it }
             }
         }
-        if (controls) {
+        // l'intestazione sopra, e sotto di lei il resto: le informazioni lunghe scorrono senza mai coprire i pulsanti
+        if (controls) Column(Modifier.fillMaxSize()) {
             // intestazione: indietro, posizione e data; a destra i pulsanti, tutti tondi della stessa misura e allineati
             // (volti, modificata/originale, cestino in rosso come nel resto dell'app, scarica, informazioni)
             Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).statusBarsPadding()
@@ -894,8 +957,10 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     Icon(Icons.Filled.Info, null, tint = if (info) Color.Black else C.text, modifier = Modifier.size(20.dp))
                 }
             }
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-            if (info) Column(Modifier.fillMaxWidth().background(Color(0xE6141414))
+            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
+            // con le informazioni aperte le stelle e il resto della modifica si nascondono (resta solo l'avviso del cestino)
+            if (info) Column(Modifier.weight(1f, fill = false).fillMaxWidth().background(Color(0xE6141414))
+                .then(if (inTrash) Modifier else Modifier.navigationBarsPadding())
                 .verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -930,7 +995,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 }
             }
             // modifica: stelle, bandierina, etichetta, testi
-            Column(Modifier.fillMaxWidth().background(Color(0xD9141414)).navigationBarsPadding()
+            if (!info || inTrash) Column(Modifier.fillMaxWidth().background(Color(0xD9141414)).navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (inTrash) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(L.t("Nel cestino di LightCraft (in attesa del PC di casa).", "In LightCraft's trash (waiting for the home PC)."),
@@ -939,13 +1004,13 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 }
                 // foto singola: niente «Nessuna» (si toglie toccando di nuovo stella, etichetta o bandierina accese);
                 // lo stato della modifica sta in alto a destra, i testi accanto alle bandierine
-                EditControls(lib, listOf(p.id), p, showNone = false,
+                if (!info) EditControls(lib, listOf(p.id), p, showNone = false,
                     status = {
                         val e = lib.edits[p.id]
                         if (e != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFB923C)))
+                            SyncMark(e, size = 14.dp)
                             Text(" " + if (e.sent > 0) L.t("Inviata, in attesa del PC", "Sent, waiting for the PC") else L.t("Da inviare", "To send"),
-                                color = Color(0xFFFB923C), fontSize = 12.sp)
+                                color = syncColor(e), fontSize = 12.sp)
                         }
                     },
                     flagExtra = {
@@ -958,6 +1023,16 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
             }
         }
     }
+}
+
+/** Lo zoom massimo nel visualizzatore: le foto sono anteprime, oltre si vedrebbero i pixel. */
+private const val MAX_ZOOM = 1.25f
+
+/** Lo spostamento di una foto ingrandita, tenuto dentro i bordi (la foto copre sempre lo schermo che copriva). */
+private fun clampPan(p: androidx.compose.ui.geometry.Offset, zoom: Float, size: androidx.compose.ui.unit.IntSize): androidx.compose.ui.geometry.Offset {
+    val mx = size.width * (zoom - 1f) / 2f
+    val my = size.height * (zoom - 1f) / 2f
+    return androidx.compose.ui.geometry.Offset(p.x.coerceIn(-mx, mx), p.y.coerceIn(-my, my))
 }
 
 /** Pulsante tondo della barra della foto: stessa misura per tutti, acceso (blu) quando la sua funzione è attiva. */

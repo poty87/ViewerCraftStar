@@ -388,10 +388,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             .putStringSet("seen_restored", seenRestored.map { it.toString() }.toSet()).apply()
     }
 
-    /** Una pila delle foto selezionate: copertina la prima selezionata; quelle già in una pila portano con sé la loro. */
+    /**
+     * Una pila delle foto selezionate; quelle già in una pila portano con sé la loro. Copertina: se tra le selezionate
+     * c'è una pila, la sua copertina (le altre foto entrano in quella pila, come fa LightCraft); se no la prima scelta.
+     */
     fun stack(ids: Collection<Int>) {
         if (ids.size < 2) return
-        val top = ids.first()
+        cells()
+        val top = ids.mapNotNull { stacksNow[it] }.maxByOrNull { it.photos.size }?.photos?.first() ?: ids.first()
         edit(ids) { it.copy(stack = top) }
         clearSelection()
         expanded = expanded + (-top)
@@ -428,17 +432,42 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** «Rendi copertina»: la foto diventa la prima della sua pila (la pila resta aperta). */
     fun makeCover(id: Int) {
         if (!canMakeCover(listOf(id))) return
-        edit(listOf(id)) { it.copy(stack = id) }
+        // le altre foto della pila con una richiesta di pila ancora in attesa ora puntano alla nuova copertina (se no
+        // una vecchia «copertina» mai arrivata in LightCraft resterebbe in attesa per sempre)
+        val others = stacksNow[id]?.photos.orEmpty().filter { it != id && (edits[it]?.stack ?: 0) != 0 }
+        edit(listOf(id) + others) { it.copy(stack = id) }
         clearSelection()
         expanded = expanded + (-id)
         say("info", L.t("Nuova copertina della pila.\nIn LightCraft quando il PC di casa la applica.",
             "New stack cover.\nIn LightCraft once the home PC applies it."))
     }
 
+    /** Le foto selezionate sono tutte in una pila: si possono togliere. */
+    fun canUnstack(ids: Collection<Int>): Boolean {
+        if (ids.isEmpty()) return false
+        cells()
+        return ids.all { stacksNow[it] != null }
+    }
+
+    /**
+     * «Togli dalla pila»: le foto escono dalla loro pila e tornano singole in galleria (se era la copertina, lo diventa la
+     * foto dopo; con una foto sola rimasta la pila non c'è più). Sul NAS «stack» = 0.
+     */
+    fun unstack(ids: Collection<Int>) {
+        if (!canUnstack(ids)) return
+        edit(ids) { it.copy(stack = 0) }
+        clearSelection()
+        say("info", L.t(if (ids.size == 1) "Foto tolta dalla pila.\nIn LightCraft quando il PC di casa la applica."
+            else "${ids.size} foto tolte dalla pila.\nIn LightCraft quando il PC di casa le applica.",
+            if (ids.size == 1) "Photo removed from the stack.\nIn LightCraft once the home PC applies it."
+            else "${ids.size} photos removed from the stack.\nIn LightCraft once the home PC applies it."))
+    }
+
     /** Le pile come le vede il telefono: quelle di casa più quelle create qui e non ancora in LightCraft. */
     private fun stackMap(idx: LibIndex): Map<Int, LibStack> {
-        val groups = edits.entries.filter { it.value.stack != null && it.key in idx.byId }.groupBy({ it.value.stack!! }, { it.key })
-        val trashed = edits.entries.filter { it.value.trash == true }.map { it.key }.toSet()
+        val groups = edits.entries.filter { (it.value.stack ?: 0) != 0 && it.key in idx.byId }.groupBy({ it.value.stack!! }, { it.key })
+        // nel cestino o tolte dalla pila sul telefono, in attesa del PC: escono dalla pila subito
+        val trashed = edits.entries.filter { it.value.trash == true || it.value.stack == 0 }.map { it.key }.toSet()
         if (groups.isEmpty() && trashed.isEmpty()) return idx.stackOf
         val out = idx.stackOf.toMutableMap()
         for ((top, members) in groups) {
@@ -536,8 +565,24 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         clearSelection()
     }
 
-    /** Pile aperte (id). All'apertura di una libreria: quelle aperte anche in LightCraft. */
-    var expanded by mutableStateOf(setOf<Int>())
+    /**
+     * Pile aperte (id), ricordate per libreria anche chiudendo l'app. La prima volta che si apre una libreria: quelle
+     * aperte anche in LightCraft.
+     */
+    private var expandedNow by mutableStateOf(setOf<Int>())
+    var expanded: Set<Int>
+        get() = expandedNow
+        set(v) {
+            expandedNow = v
+            val lib = index?.library ?: return
+            uiPrefs().edit().putStringSet(EXPANDED_KEY + lib, v.map { it.toString() }.toSet()).apply()
+        }
+
+    private fun uiPrefs() = getApplication<Application>().getSharedPreferences("library_ui", android.content.Context.MODE_PRIVATE)
+
+    /** Le pile aperte l'ultima volta in questa libreria, o null se non è mai stata aperta. */
+    private fun savedExpanded(lib: String): Set<Int>? =
+        uiPrefs().getStringSet(EXPANDED_KEY + lib, null)?.mapNotNull { it.toIntOrNull() }?.toSet()
 
     val filtering: Boolean
         get() = filterCount > 0
@@ -610,7 +655,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         index = idx
         developed = LibraryStore.previews(getApplication(), idx.library)
         if (!sameLibrary) loadAiLocal(idx.library)
-        if (!sameLibrary) expanded = idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
+        if (!sameLibrary) expanded = savedExpanded(idx.library) ?: idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
         // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa
@@ -788,6 +833,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             else -> "altro"
         }
 
+        /** Nelle preferenze «library_ui»: le pile aperte di ogni libreria. */
+        private const val EXPANDED_KEY = "expanded:"
         /** Al massimo quanti risultati mostra la ricerca per soggetto. */
         const val AI_RESULTS = 600
         /** Quanto sale una foto con tutte le parole cercate nella descrizione (provato sulle foto vere: 0,04). */

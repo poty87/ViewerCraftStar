@@ -113,26 +113,19 @@ class DownloadService : Service() {
         }
         val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
         val ok = runCatching {
-            Remote.use(cfg, share) { s ->
+            if (jpeg) Remote.use(cfg, share) { s ->
                 Remote.open(s, path).use { r ->
                     cr.openOutputStream(uri)?.use { out ->
-                        if (jpeg) {
-                            val picked = RemotePreview.pick(r, photo, RemotePreview.FULL) ?: error("no preview")
-                            if (picked.isPlainJpeg) out.write(picked.jpeg)
-                            else (RemotePreview.decode(picked, Int.MAX_VALUE) ?: error("no preview"))
-                                .compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
-                        } else {
-                            var at = 0L
-                            while (at < r.size) {
-                                val chunk = r.read(at, 1024 * 1024)
-                                if (chunk.isEmpty()) break
-                                out.write(chunk)
-                                at += chunk.size
-                            }
-                        }
+                        val picked = RemotePreview.pick(r, photo, RemotePreview.FULL) ?: error("no preview")
+                        if (picked.isPlainJpeg) out.write(picked.jpeg)
+                        else (RemotePreview.decode(picked, Int.MAX_VALUE) ?: error("no preview"))
+                            .compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
                     } ?: error("no output")
                 }
-            }
+            } else cr.openOutputStream(uri)?.use { out ->
+                // l'originale intero: su più connessioni insieme (in VPN rende quasi il doppio)
+                Remote.download(cfg, share, path) { chunk, _ -> out.write(chunk) }
+            } ?: error("no output")
         }.isSuccess
         if (ok) cr.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         else runCatching { cr.delete(uri, null, null) }

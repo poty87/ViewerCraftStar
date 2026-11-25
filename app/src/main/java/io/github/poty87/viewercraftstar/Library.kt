@@ -162,7 +162,7 @@ object LibraryStore {
             tmp.outputStream().use { out ->
                 var at = 0L
                 while (at < r.size) {
-                    val chunk = r.read(at, 256 * 1024)
+                    val chunk = r.read(at, Remote.BIG_READ)
                     if (chunk.isEmpty()) break
                     out.write(chunk)
                     at += chunk.size

@@ -99,9 +99,8 @@ private fun TrashCell(lib: LibraryViewModel, p: LibPhoto, modifier: Modifier) {
                 modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(3.dp))
                     .background(Color(0x99000000)).padding(horizontal = 4.dp, vertical = 1.dp))
         }
-        // eliminata dal telefono e non ancora arrivata in LightCraft
-        if (lib.edits[p.id]?.trash == true) Box(Modifier.align(Alignment.TopCenter).padding(6.dp).size(10.dp)
-            .clip(CircleShape).background(Color(0xFFFB923C)))
+        // eliminata o ripristinata dal telefono e non ancora arrivata in LightCraft
+        lib.edits[p.id]?.let { SyncMark(it, Modifier.align(Alignment.TopCenter).padding(5.dp)) }
         if (chosen) Box(Modifier.fillMaxSize().background(C.accent.copy(alpha = 0.33f)), contentAlignment = Alignment.Center) {
             Box(Modifier.size(26.dp).clip(CircleShape).background(C.accent), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))

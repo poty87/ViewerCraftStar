@@ -943,6 +943,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
                 onBrowse = { nasPick = "service" }, onEdit = null, locked = lockMsg)
         }
         SettingsCard("VPN") { VpnCard(vm, nasReachable = vm.conn == Conn.HOME || vm.conn == Conn.VPN) }
+        SettingsCard(L.t("Velocità del NAS", "NAS speed")) { NasSpeedCard(vm, libVm) { save(); config() } }
         SettingsCard(L.t("Backup delle impostazioni", "Settings backup")) {
             BackupCard(vm, ready = unlocked && libFolder.isNotEmpty(), beforeSave = { save() })
         }
@@ -979,6 +980,34 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         Text("ViewerCraftStar ${BuildConfigInfo.version}", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
         Spacer(Modifier.height(24.dp))
     }
+}
+
+/** La prova di velocità verso il NAS: legge una foto della libreria in modi diversi e mostra i MB/s di ognuno. */
+@Composable
+private fun NasSpeedCard(vm: AppViewModel, libVm: LibraryViewModel, config: () -> NasConfig) {
+    var lines by remember { mutableStateOf<List<String>>(emptyList()) }
+    var running by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Text(L.t("Legge per qualche secondo una foto grande della libreria in modi diversi: una o più connessioni, una o più letture insieme, una o tutte e due le porte del NAS. Provala a casa e in VPN.",
+        "Reads a large photo of the library for a few seconds in different ways: one or more connections, one or more reads at once, one or both NAS ports. Try it at home and over the VPN."),
+        color = C.muted, fontSize = 12.sp)
+    val reachable = vm.conn == Conn.HOME || vm.conn == Conn.VPN
+    PillButton(onClick = {
+        val idx = libVm.index ?: return@PillButton
+        running = true
+        val where = when (vm.conn) { Conn.HOME -> L.t("rete di casa", "home network"); Conn.VPN -> "VPN"; else -> vm.conn.name }
+        lines = listOf(L.t("Collegamento: $where", "Connection: $where"))
+        scope.launch {
+            runCatching { NasSpeed.run(config(), idx) { l -> scope.launch { lines = lines + l } } }
+                .onFailure { e -> lines = lines + L.t("Prova non riuscita: ", "Test failed: ") + (e.message ?: e.javaClass.simpleName) }
+            running = false
+        }
+    }, primary = true, enabled = reachable && !running && libVm.index != null) {
+        Text(if (running) L.t("Misuro…", "Measuring…") else L.t("Misura la velocità", "Measure the speed"))
+    }
+    if (!reachable) Text(L.t("Serve il NAS raggiungibile (a casa o in VPN).", "The NAS must be reachable (at home or over the VPN)."),
+        color = C.muted, fontSize = 12.sp)
+    lines.forEach { Text(it, color = C.text, fontSize = 13.sp) }
 }
 
 /** Icona «spedisci al NAS»: una freccia in su che entra nel NAS (un box con due cassetti). */

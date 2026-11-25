@@ -55,7 +55,7 @@ object RemotePreview {
         val isPlainJpeg get() = tiles.isEmpty() && pixels == null
     }
 
-    private val memory = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
+    private val memory = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 4).toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
@@ -70,6 +70,10 @@ object RemotePreview {
             "/${photo.id}_${photo.name.hashCode()}_v$CACHE_VERSION" + (dev?.let { "_d${it.sig}" } ?: "") + ".jpg")
 
     /** La miniatura già sul telefono (nessun accesso al NAS), o null. */
+    /** La miniatura se è già in memoria (nessuna lettura dal disco: si può chiamare mentre si disegna), o null. */
+    fun memoryThumb(lib: String, photo: LibPhoto, dev: Developed? = null): Bitmap? =
+        memory.get("$lib:${photo.id}:$THUMB:${dev?.sig ?: ""}")
+
     fun cachedThumb(context: Context, lib: String, photo: LibPhoto, dev: Developed? = null): Bitmap? {
         val key = "$lib:${photo.id}:$THUMB:${dev?.sig ?: ""}"
         memory.get(key)?.let { return it }
@@ -128,7 +132,7 @@ object RemotePreview {
         val chosen = if (maxSide <= THUMB) sized.firstOrNull { maxOf(it.width, it.height) >= THUMB } ?: sized.last()
         else sized.last()
         val tiles = chosen.tiles ?: return Picked(r.read(chosen.offset, chosen.length), orientation)
-        return Picked(ByteArray(0), orientation, tiles.map { (at, n) -> r.read(at, n) },
+        return Picked(ByteArray(0), orientation, (if (r is Remote.Reader) r.readMany(tiles) else tiles.map { (at, n) -> r.read(at, n) }),
             chosen.width, chosen.height, chosen.tileW, chosen.tileH, develop = chosen.develop)
     }
 

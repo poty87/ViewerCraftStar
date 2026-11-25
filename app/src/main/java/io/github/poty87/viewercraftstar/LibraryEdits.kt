@@ -22,7 +22,7 @@ data class LibEdit(
     val keywords: List<String>? = null,
     /** true = nel cestino di LightCraft, false = ripristinare, null = non toccato. */
     val trash: Boolean? = null,
-    /** In una pila con copertina questa foto (id); null = non toccato. */
+    /** In una pila con copertina questa foto (id); 0 = tolta dalla sua pila; null = non toccato. */
     val stack: Int? = null,
     /** Nomi dati ai volti sul telefono: riquadro (LibFace.key) → nome ("" = togli il nome); null = non toccato. */
     val faces: Map<String, String>? = null,
@@ -45,7 +45,7 @@ data class LibEdit(
     /** La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. */
     fun settledIn(p: LibPhoto, home: LibStack?) = trash != true &&
         // pila: la copertina indicata è nella pila di casa; se indica se stessa («Rendi copertina») deve esserne la prima
-        (stack == null || (home?.photos?.contains(stack) == true && (stack != p.id || home.photos.first() == p.id))) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
+        (stack == null || (stack == 0 && home == null) || (stack != 0 && home?.photos?.contains(stack) == true && (stack != p.id || home.photos.first() == p.id))) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
         (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords) &&
         (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n && !it.auto } ?: true })
