@@ -70,7 +70,7 @@ private class DevControl(val path: String, val it: String, val en: String, val m
 
 private class DevSection(val it: String, val en: String, val controls: List<DevControl>)
 
-private val LIGHT = DevSection("Luce", "Light", listOf(
+private val LIGHT = DevSection("Base", "Basic", listOf(
     DevControl("light.exposure", "Esposizione", "Exposure", -5f, 5f, 0.01f, 2, 0f),
     DevControl("light.contrast", "Contrasto", "Contrast", -100f, 100f, 1f, 0, 0f),
     DevControl("light.highlights", "Alte luci", "Highlights", -100f, 100f, 1f, 0, 0f),
@@ -103,31 +103,51 @@ private val CURVE = DevSection("Curva", "Curve", listOf(
 ))
 private val MIXER = DevSection("Tinte", "HSL", emptyList())
 private val GRADING = DevSection("Grading", "Grading", emptyList())
-private val DETAIL = DevSection("Dettaglio", "Detail", listOf(
-    DevControl("detail.sharpen_amount", "Nitidezza", "Sharpening", 0f, 150f, 1f, 0, 40f),
+private val SHARP = DevSection("Nitidezza", "Sharpening", listOf(
+    DevControl("detail.sharpen_amount", "Fattore", "Amount", 0f, 150f, 1f, 0, 40f),
     DevControl("detail.sharpen_radius", "Raggio", "Radius", 0.5f, 3f, 0.1f, 1, 1f),
-    DevControl("detail.sharpen_detail", "Dettaglio", "Detail", 0f, 100f, 1f, 0, 25f),
+    DevControl("detail.sharpen_detail", "Dettagli", "Detail", 0f, 100f, 1f, 0, 25f),
     DevControl("detail.sharpen_masking", "Mascheratura", "Masking", 0f, 100f, 1f, 0, 0f),
+))
+private val NOISE = DevSection("Rumore", "Noise", listOf(
     DevControl("detail.nr_luminance", "Riduzione rumore", "Noise reduction", 0f, 100f, 1f, 0, 0f),
-    DevControl("detail.nr_detail", "Dettaglio rumore", "Noise detail", 0f, 100f, 1f, 0, 50f),
-    DevControl("detail.nr_contrast", "Contrasto rumore", "Noise contrast", 0f, 100f, 1f, 0, 0f),
-    DevControl("detail.nr_color", "Rumore di colore", "Color noise", 0f, 100f, 1f, 0, 25f),
-    DevControl("detail.nr_color_detail", "Dettaglio colore", "Color detail", 0f, 100f, 1f, 0, 50f),
-    DevControl("detail.nr_color_smoothness", "Uniformità colore", "Color smoothness", 0f, 100f, 1f, 0, 50f),
+    DevControl("detail.nr_detail", "Dettagli", "Detail", 0f, 100f, 1f, 0, 50f),
+    DevControl("detail.nr_contrast", "Contrasto", "Contrast", 0f, 100f, 1f, 0, 0f),
+))
+private val COLOR_NOISE = DevSection("Disturbo colore", "Color noise", listOf(
+    DevControl("detail.nr_color", "Fattore", "Amount", 0f, 100f, 1f, 0, 25f),
+    DevControl("detail.nr_color_detail", "Dettagli", "Detail", 0f, 100f, 1f, 0, 50f),
+    DevControl("detail.nr_color_smoothness", "Uniformità", "Smoothness", 0f, 100f, 1f, 0, 50f),
 ))
 private val EFFECTS = DevSection("Effetti", "Effects", listOf(
     DevControl("effects.texture", "Texture", "Texture", -100f, 100f, 1f, 0, 0f),
     DevControl("effects.clarity", "Chiarezza", "Clarity", -100f, 100f, 1f, 0, 0f),
     DevControl("effects.dehaze", "Foschia", "Dehaze", -100f, 100f, 1f, 0, 0f),
-    DevControl("vignette.amount", "Vignettatura", "Vignette", -100f, 100f, 1f, 0, 0f),
+))
+private val VIGNETTE = DevSection("Vignettatura", "Vignette", listOf(
+    DevControl("vignette.amount", "Fattore", "Amount", -100f, 100f, 1f, 0, 0f),
     DevControl("vignette.midpoint", "Punto medio", "Midpoint", 0f, 100f, 1f, 0, 50f),
     DevControl("vignette.roundness", "Rotondità", "Roundness", -100f, 100f, 1f, 0, 0f),
     DevControl("vignette.feather", "Sfumatura", "Feather", 0f, 100f, 1f, 0, 50f),
-    DevControl("vignette.highlights", "Alte luci vignettatura", "Vignette highlights", 0f, 100f, 1f, 0, 0f),
-    DevControl("grain.amount", "Grana", "Grain", 0f, 100f, 1f, 0, 0f),
-    DevControl("grain.size", "Dimensione grana", "Grain size", 0f, 100f, 1f, 0, 25f),
-    DevControl("grain.roughness", "Ruvidità grana", "Grain roughness", 0f, 100f, 1f, 0, 50f),
+    DevControl("vignette.highlights", "Alte luci", "Highlights", 0f, 100f, 1f, 0, 0f),
 ))
+private val GRAIN = DevSection("Grana", "Grain", listOf(
+    DevControl("grain.amount", "Fattore", "Amount", 0f, 100f, 1f, 0, 0f),
+    DevControl("grain.size", "Dimensione", "Size", 0f, 100f, 1f, 0, 25f),
+    DevControl("grain.roughness", "Ruvidità", "Roughness", 0f, 100f, 1f, 0, 50f),
+))
+
+/** Le categorie della barra in basso (come nei programmi di sviluppo per telefono), ognuna con le sue sotto-schede. */
+private class DevCategory(val it: String, val en: String, val icon: String, val groups: List<DevSection>)
+
+private val CATEGORIES = listOf(
+    DevCategory("Luce", "Light", "light", listOf(LIGHT, CURVE)),
+    DevCategory("Colore", "Color", "color", listOf(WHITE, COLOR, MIXER, GRADING)),
+    DevCategory("Effetti", "Effects", "effects", listOf(EFFECTS, VIGNETTE, GRAIN)),
+    DevCategory("Dettaglio", "Detail", "detail", listOf(SHARP, NOISE, COLOR_NOISE)),
+    DevCategory("Ritaglio", "Crop", "crop", listOf(CROP)),
+    DevCategory("Profili", "Profiles", "profiles", listOf(PROFILE)),
+)
 
 /** I colori del mixer (Tinte), con il loro colore per il pallino accanto al nome. */
 private val MIXER_COLORS = listOf(
@@ -169,6 +189,9 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     var before by remember { mutableStateOf<Bitmap?>(null) }
     var showBefore by remember { mutableStateOf(false) }
     var section by remember { mutableStateOf(LIGHT) }
+    var category by remember { mutableStateOf(CATEGORIES[0]) }
+    val lastGroup = remember { HashMap<DevCategory, DevSection>() } // la sotto-scheda ricordata per ogni categoria
+    val thumbs = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() } // miniature dei profili
     var profiles by remember { mutableStateOf<List<DevelopProfiles.Profile>>(emptyList()) }
     var saving by remember { mutableStateOf(false) }
     val handle = remember { longArrayOf(0L) }
@@ -359,20 +382,41 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
             if (settings != null) Column(Modifier.fillMaxWidth().background(Color(0xE6141414)).navigationBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
-                // sezioni, a pillole come nel resto dell'app
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE, CROP, CURVE, MIXER, GRADING, DETAIL, EFFECTS)) Pill(L.t(sec.it, sec.en), section == sec) {
-                        val wasCrop = section == CROP
-                        section = sec
-                        if (wasCrop != (sec == CROP)) changed() // dentro e fuori dal ritaglio la foto si mostra diversa
-                    }
+                fun open(sec: DevSection) {
+                    val wasCrop = section == CROP
+                    section = sec
+                    lastGroup[category] = sec
+                    if (wasCrop != (sec == CROP)) changed() // dentro e fuori dal ritaglio la foto si mostra diversa
                 }
-                // i cursori: sempre la stessa altezza (le sezioni non saltano), il resto scorre; la foto resta grande
-                Column(Modifier.height((screen.screenHeightDp * 0.34f).dp).verticalScroll(rememberScrollState())) {
-                    if (section == PROFILE) ProfilePicker(profiles, settings?.optJSONObject("profile")?.optString("id").orEmpty(), photo.camera) { p ->
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
-                            if (ok) { settings?.let { DevelopStore.setPath(it, "profile.id", p.id) }; changed() }
+                // le sotto-schede della categoria (Nitidezza | Rumore | Disturbo colore…), sottolineata quella aperta
+                // (sempre, anche con una scheda sola: il pannello resta della stessa altezza e la foto non si sposta)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    category.groups.forEach { g -> SubTab(L.t(g.it, g.en), section == g) { open(g) } }
+                }
+                // i cursori: sempre la stessa altezza (le schede non saltano), il resto scorre; la foto resta grande
+                Column(Modifier.fillMaxWidth().height((screen.screenHeightDp * 0.27f).dp).verticalScroll(rememberScrollState())) {
+                    if (section == PROFILE) {
+                        val current = settings?.optJSONObject("profile")?.optString("id").orEmpty()
+                        val shown = profilesFor(profiles, photo.camera)
+                        // le miniature: la foto com'è adesso, con ogni profilo (sviluppate dal motore, una alla volta)
+                        LaunchedEffect(shown, current) {
+                            val base = settings?.toString() ?: return@LaunchedEffect
+                            for (p in shown) {
+                                if (thumbs.containsKey(p.id) || handle[0] == 0L) continue
+                                val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
+                                if (!ok) continue
+                                val s = JSONObject(base)
+                                DevelopStore.setPath(s, "profile.id", p.id)
+                                withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 320, true) }
+                                    ?.let { thumbs[p.id] = DevelopEngine.bitmap(it) }
+                            }
+                        }
+                        ProfileStrip(shown, profiles, current, thumbs) { p ->
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
+                                if (ok) { settings?.let { DevelopStore.setPath(it, "profile.id", p.id) }; changed() }
+                            }
                         }
                     }
                     if (section == WHITE) {
@@ -488,6 +532,16 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                         }
                         Text(L.t("Trascina angoli e lati del riquadro sulla foto; dentro il riquadro lo sposti.",
                             "Drag the frame's corners and edges on the photo; drag inside it to move it."), color = C.muted, fontSize = 12.sp)
+                    }
+                }
+                // la barra delle categorie, in basso (icona e nome; accesa quella aperta)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CATEGORIES.forEach { c ->
+                        CategoryButton(L.t(c.it, c.en), c.icon, c == category) {
+                            category = c
+                            open(lastGroup[c] ?: c.groups.first())
+                        }
                     }
                 }
             }
@@ -629,19 +683,112 @@ private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float
     }
 }
 
-/** I profili della libreria (LUT), prima quelli della fotocamera della foto; quello in uso acceso. */
-@Composable
-private fun ProfilePicker(profiles: List<DevelopProfiles.Profile>, current: String, camera: String, onPick: (DevelopProfiles.Profile) -> Unit) {
+/** I profili LUT della libreria da proporre: prima (o solo) quelli della fotocamera della foto. */
+private fun profilesFor(profiles: List<DevelopProfiles.Profile>, camera: String): List<DevelopProfiles.Profile> {
     val luts = profiles.filter { it.kind == "lut" }
     val mine = luts.filter { camera.isNotEmpty() && (camera.contains(it.group, ignoreCase = true) || it.group.contains(camera, ignoreCase = true)) }
-    val shown = (mine.ifEmpty { luts }).sortedBy { it.name }
+    return (mine.ifEmpty { luts }).sortedBy { it.name }
+}
+
+/** I profili come miniature della foto sviluppata con ciascuno (nome sotto); acceso quello in uso. */
+@Composable
+private fun ProfileStrip(shown: List<DevelopProfiles.Profile>, all: List<DevelopProfiles.Profile>, current: String,
+                         thumbs: Map<String, Bitmap>, onPick: (DevelopProfiles.Profile) -> Unit) {
     if (current.isNotEmpty() && shown.none { it.id == current })
-        Text(L.t("In uso: ", "In use: ") + (profiles.firstOrNull { it.id == current }?.name ?: current), color = C.muted, fontSize = 12.sp)
+        Text(L.t("In uso: ", "In use: ") + (all.firstOrNull { it.id == current }?.name ?: current), color = C.muted, fontSize = 12.sp,
+            modifier = Modifier.padding(bottom = 6.dp))
     if (shown.isEmpty()) Text(L.t("Nessun profilo LUT nella libreria.", "No LUT profiles in the library."), color = C.muted, fontSize = 12.sp)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        shown.forEach { p -> Pill(p.name, p.id == current) { onPick(p) } }
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        shown.forEach { p ->
+            val on = p.id == current
+            Column(Modifier.width(118.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .background(if (on) C.accent else C.card).clickable { onPick(p) }.padding(3.dp)) {
+                Box(Modifier.fillMaxWidth().height(80.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    .background(Color(0xFF202020)), contentAlignment = Alignment.Center) {
+                    val b = thumbs[p.id]
+                    val img = remember(b) { b?.asImageBitmap() }
+                    if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                }
+                Text(p.name.removePrefix("Measured ").removePrefix("Camera "), color = if (on) Color.Black else C.text, fontSize = 12.sp,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
+                Text(if (p.name.startsWith("Measured")) L.t("Misurato", "Measured") else L.t("Fotocamera", "Camera"),
+                    color = if (on) Color(0xCC000000) else C.muted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
+            }
+        }
     }
-    Spacer(Modifier.width(1.dp))
+}
+
+/** Una sotto-scheda: testo, sottolineato quando è aperta. */
+@Composable
+private fun SubTab(text: String, on: Boolean, onClick: () -> Unit) {
+    Column(Modifier.clickable { onClick() }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text, color = if (on) C.text else C.muted, fontSize = 14.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.width(if (on) 44.dp else 0.dp).height(2.dp).background(C.text))
+    }
+}
+
+/** Un pulsante della barra delle categorie: icona sopra, nome sotto; acceso quando la categoria è aperta. */
+@Composable
+private fun CategoryButton(text: String, icon: String, on: Boolean, onClick: () -> Unit) {
+    val color = if (on) C.text else C.muted
+    Column(Modifier.width(64.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+        .background(if (on) C.card else Color.Transparent).clickable { onClick() }.padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        CategoryIcon(icon, color, Modifier.size(22.dp))
+        Spacer(Modifier.height(3.dp))
+        Text(text, color = color, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+/** Le icone delle categorie, disegnate come le altre icone dell'app. */
+@Composable
+private fun CategoryIcon(kind: String, color: Color, modifier: Modifier) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val c = androidx.compose.ui.geometry.Offset(w / 2, h / 2)
+        val st = androidx.compose.ui.graphics.drawscope.Stroke(w * 0.08f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        fun line(x0: Float, y0: Float, x1: Float, y1: Float) = drawLine(color, androidx.compose.ui.geometry.Offset(x0 * w, y0 * h),
+            androidx.compose.ui.geometry.Offset(x1 * w, y1 * h), w * 0.08f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        when (kind) {
+            "light" -> { // sole
+                drawCircle(color, w * 0.2f, c, style = st)
+                for (i in 0 until 8) {
+                    val a = Math.PI * i / 4
+                    val (cx, sx) = kotlin.math.cos(a).toFloat() to kotlin.math.sin(a).toFloat()
+                    line(0.5f + 0.32f * cx, 0.5f + 0.32f * sx, 0.5f + 0.45f * cx, 0.5f + 0.45f * sx)
+                }
+            }
+            "color" -> { // termometro
+                drawCircle(color, w * 0.14f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.76f))
+                line(0.5f, 0.12f, 0.5f, 0.66f)
+            }
+            "effects" -> { // riquadro con vignettatura
+                drawRoundRect(color, androidx.compose.ui.geometry.Offset(w * 0.1f, h * 0.18f), androidx.compose.ui.geometry.Size(w * 0.8f, h * 0.64f),
+                    androidx.compose.ui.geometry.CornerRadius(w * 0.08f), style = st)
+                drawOval(color, androidx.compose.ui.geometry.Offset(w * 0.28f, h * 0.32f), androidx.compose.ui.geometry.Size(w * 0.44f, h * 0.36f), style = st)
+            }
+            "detail" -> { // triangolo pieno
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(w * 0.5f, h * 0.1f); lineTo(w * 0.78f, h * 0.88f); lineTo(w * 0.22f, h * 0.88f); close()
+                }
+                drawPath(path, color)
+            }
+            "crop" -> { // ritaglio
+                line(0.28f, 0.08f, 0.28f, 0.72f); line(0.28f, 0.72f, 0.92f, 0.72f)
+                line(0.08f, 0.28f, 0.72f, 0.28f); line(0.72f, 0.28f, 0.72f, 0.92f)
+            }
+            else -> { // profili: due quadrati sovrapposti
+                drawRoundRect(color, androidx.compose.ui.geometry.Offset(w * 0.3f, h * 0.1f), androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
+                    androidx.compose.ui.geometry.CornerRadius(w * 0.08f), style = st)
+                drawRoundRect(color, androidx.compose.ui.geometry.Offset(w * 0.1f, h * 0.3f), androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
+                    androidx.compose.ui.geometry.CornerRadius(w * 0.08f))
+            }
+        }
+    }
 }
 
 /** L'icona di «Sviluppa»: tre cursori (come quelli di LightCraft), disegnata come le altre icone dell'app. */
