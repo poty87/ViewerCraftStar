@@ -26,6 +26,8 @@ data class LibEdit(
     val stack: Int? = null,
     /** Nomi dati ai volti sul telefono: riquadro (LibFace.key) → nome ("" = togli il nome); null = non toccato. */
     val faces: Map<String, String>? = null,
+    /** Sviluppo cambiato sul telefono: impostazioni complete di LightCraft e la firma da cui si era partiti. */
+    val develop: DevelopEdit? = null,
     val at: Long = 0,
     val sent: Long = 0,
 ) {
@@ -42,14 +44,21 @@ data class LibEdit(
             faces = newFaces, people = people)
     }
 
-    /** La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. */
-    fun settledIn(p: LibPhoto, home: LibStack?) = trash != true &&
+    /**
+     * La libreria di casa ha già questi valori: la modifica è arrivata in LightCraft. `devSig`: la firma dello sviluppo
+     * della foto a casa (develop.json.gz): lo sviluppo è arrivato quando non è più quella da cui il telefono era partito.
+     */
+    fun settledIn(p: LibPhoto, home: LibStack?, devSig: String? = null) = trash != true &&
+        (develop == null || (devSig != null && devSig != develop.base)) &&
         // pila: la copertina indicata è nella pila di casa; se indica se stessa («Rendi copertina») deve esserne la prima
         (stack == null || (stack == 0 && home == null) || (stack != 0 && home?.photos?.contains(stack) == true && (stack != p.id || home.photos.first() == p.id))) && (rating == null || rating == p.rating) && (flag == null || flag == p.flag) &&
         (label == null || label.equals(p.label, ignoreCase = true)) && (title == null || title == p.title) &&
         (caption == null || caption == p.caption) && (keywords == null || keywords == p.keywords) &&
         (faces == null || faces.all { (k, n) -> p.faces.firstOrNull { it.key == k }?.let { it.name == n && !it.auto } ?: true })
 }
+
+/** Lo sviluppo modificato sul telefono: le impostazioni complete (JSON di LightCraft) e la firma di partenza. */
+data class DevelopEdit(val settings: String, val base: String)
 
 /**
  * Le modifiche alla libreria di casa: tenute sul telefono finché la libreria non le conferma, e lasciate sul NAS in
@@ -80,6 +89,9 @@ object LibraryEdits {
                             r.getDouble(3).toFloat(), "").key to f.optString("name")
                     }
                 },
+                develop = e.optJSONObject("develop")?.let { d ->
+                    d.optJSONObject("settings")?.let { DevelopEdit(it.toString(), d.optString("base")) }
+                },
                 at = e.optLong("at"), sent = e.optLong("sent"))
         }
     }.getOrDefault(emptyMap())
@@ -108,6 +120,7 @@ object LibraryEdits {
         e.faces?.let { f ->
             put("faces", JSONArray(f.map { (k, n) -> JSONObject().put("rect", JSONArray(LibFace.rectOf(k))).put("name", n) }))
         }
+        e.develop?.let { d -> put("develop", JSONObject().put("settings", JSONObject(d.settings)).put("base", d.base)) }
     }
 
     /** Lascia sul NAS una richiesta con le modifiche indicate (file nascosto finché non è completo). */

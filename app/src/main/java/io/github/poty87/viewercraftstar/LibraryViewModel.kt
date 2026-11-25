@@ -1,5 +1,6 @@
 package io.github.poty87.viewercraftstar
 
+import android.graphics.Bitmap
 import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -323,7 +324,25 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         sendJob = viewModelScope.launch { delay(3000); sendPending() }
     }
 
-    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p, index?.stackOf?.get(p.id))
+    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p, index?.stackOf?.get(p.id), developSig(p.id, e))
+
+    /** La firma dello sviluppo della foto a casa (solo se c'è una modifica di sviluppo da controllare). */
+    private fun developSig(id: Int, e: LibEdit): String? = if (e.develop == null) null else
+        index?.let { DevelopStore.sigs(getApplication(), it.library)[id] }
+
+    /**
+     * Sviluppo cambiato sul telefono («Modifica»): parte come le altre modifiche; `result` è la foto sviluppata dal
+     * telefono, mostrata finché il PC non applica le impostazioni (poi arriva la sua anteprima).
+     */
+    fun setDevelop(id: Int, settings: String, base: String, result: Bitmap?) {
+        val idx = index ?: return
+        if (result != null) runCatching { DevelopPending.save(getApplication(), idx.library, id, result) }
+        pendingVersion++
+        edit(listOf(id)) { it.copy(develop = DevelopEdit(settings, base)) }
+    }
+
+    /** Cambia quando cambia una foto sviluppata sul telefono (le immagini si ricaricano). */
+    var pendingVersion by mutableStateOf(0); private set
 
     fun setRating(ids: Collection<Int>, r: Int) = edit(ids) { it.copy(rating = r) }
     fun setFlag(ids: Collection<Int>, f: String) = edit(ids) { it.copy(flag = f) }
@@ -669,9 +688,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
         // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa
-        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id]) }
+        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id], developSig(id, e)) }
             ?: (e.trash == false && id in idx.trashById) }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
+        // sviluppo arrivato a casa: la foto sviluppata dal telefono non serve più (arriva l'anteprima del PC)
+        val settled = stored.filter { (id, e) -> e.develop != null && kept[id]?.develop == null }.keys
+        if (settled.isNotEmpty()) { DevelopPending.forget(getApplication(), idx.library, settled); pendingVersion++ }
         edits = kept
         memo = null
     }

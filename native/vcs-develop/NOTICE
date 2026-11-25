@@ -1,0 +1,3 @@
+vcs-develop usa il motore di sviluppo di LightCraft (https://github.com/storytold/lightcraft),
+distribuito con licenza MIT OR Apache-2.0. Le crate di LightCraft sono scaricate da cargo alla
+versione indicata in Cargo.toml (tag v0.21.1) e compilate dentro libvcs_develop.so.

@@ -148,13 +148,16 @@ internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, m
         if (pv.avif) RemotePreview.Developed(lib.libShare, at("previews", "avif"), it, at("thumbs", "avif"))
         else RemotePreview.Developed(lib.libShare, at("previews", "jpg"), it)
     }
+    // sviluppata sul telefono («Modifica») e non ancora applicata dal PC: si vede il risultato del telefono
+    val pendingDev = if (original) null else lib.edits[photo.id]?.develop
     // mentre si scorre si prende solo ciò che è già in memoria: la lettura dal disco e la decodifica vanno fuori dal
     // thread che disegna (prima si facevano lì, ed era quello a far impuntare lo scorrimento)
-    val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB)
-        RemotePreview.memoryThumb(idx.library, photo, dev) else null, photo.id, maxSide, sig) {
+    val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB && pendingDev == null)
+        RemotePreview.memoryThumb(idx.library, photo, dev) else null, photo.id, maxSide, sig, pendingDev, lib.pendingVersion) {
         // si riparte anche quando cambia lo sviluppo (sig): l'immagine vecchia resta finché arriva quella nuova
         value = withContext(Dispatchers.IO) {
-            (if (maxSide <= RemotePreview.THUMB) RemotePreview.cachedThumb(context, idx.library, photo, dev) else null)
+            pendingDev?.let { decodeSampled(DevelopPending.file(context, idx.library, photo.id), maxSide) }
+                ?: (if (maxSide <= RemotePreview.THUMB) RemotePreview.cachedThumb(context, idx.library, photo, dev) else null)
                 ?: runCatching { RemotePreview.load(context, lib.settings.nas, idx, photo, maxSide, dev) }.getOrNull()
         } ?: value
     }
@@ -165,6 +168,16 @@ internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, m
             contentScale = if (crop) ContentScale.Crop else ContentScale.Fit)
         else if (maxSide > RemotePreview.THUMB) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
     }
+}
+
+/** Un JPEG del telefono ridotto (di potenze di due) fino alla misura che serve; null se non c'è. */
+internal fun decodeSampled(f: java.io.File, maxSide: Int): Bitmap? {
+    if (!f.exists()) return null
+    val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(f.path, o)
+    var sample = 1
+    while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= maxSide) sample *= 2
+    return android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
 /** Un'opzione a pillola: accesa in blu (o nei colori della bandierina), un tocco la sceglie. */
@@ -876,7 +889,16 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     // volti: i riquadri trovati da LightCraft sulla foto com'era allo scatto (l'anteprima sviluppata può essere ritagliata)
     var faceMode by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf<LibFace?>(null) }
+    // «Sviluppa»: la foto aperta nell'editor (id), a tutto schermo sopra il visualizzatore
+    var developing by remember { mutableStateOf<Int?>(null) }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
+    developing?.let { id ->
+        val photo = list.firstOrNull { it.id == id }
+        if (photo != null) androidx.compose.ui.window.Dialog(onDismissRequest = { developing = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            DevelopEditor(lib, photo) { developing = null }
+        }
+    }
     // l'ultima foto vista: la griglia la ritrova e la evidenzia quando si torna indietro
     LaunchedEffect(p.id) { lib.lastViewed = p.id }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { lib.lastViewedAt = System.currentTimeMillis() } }
@@ -959,6 +981,10 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 }
                 ViewerAction(L.t("Scarica sul telefono", "Download to the phone"), onClick = { asking = true }) {
                     DownloadIcon(Modifier.size(20.dp), C.text)
+                }
+                // sviluppo sul telefono con il motore di LightCraft (smart preview)
+                if (!inTrash && !faceMode) ViewerAction(L.t("Sviluppa", "Develop"), onClick = { developing = p.id }) {
+                    DevelopIcon(Modifier.size(20.dp), C.text)
                 }
                 ViewerAction(L.t("Informazioni", "Info"), on = info, onClick = { info = !info }) {
                     Icon(Icons.Filled.Info, null, tint = if (info) Color.Black else C.text, modifier = Modifier.size(20.dp))

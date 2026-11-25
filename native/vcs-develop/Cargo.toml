@@ -1,0 +1,29 @@
+[package]
+name = "vcs-develop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "ViewerCraftStar: il motore di sviluppo di LightCraft sul telefono (smart preview, impostazioni di sviluppo)"
+
+# fuori da ogni workspace: si compila da solo (tools/build-native.ps1)
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# il motore di LightCraft (MIT OR Apache-2.0), alla STESSA versione del PC: cambiare il tag insieme a LIGHTCRAFT_VERSION
+lightcraft-engine = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1", default-features = false }
+lightcraft-pipeline = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
+lightcraft-develop = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
+lightcraft-raster = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
+serde_json = "1"
+jni = "0.21"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

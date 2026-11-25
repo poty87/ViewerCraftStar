@@ -944,6 +944,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         }
         SettingsCard("VPN") { VpnCard(vm, nasReachable = vm.conn == Conn.HOME || vm.conn == Conn.VPN) }
         SettingsCard(L.t("Velocità del NAS", "NAS speed")) { NasSpeedCard(vm, libVm) { save(); config() } }
+        SettingsCard(L.t("Sviluppo sul telefono", "Developing on the phone")) { DevelopCard() }
         SettingsCard(L.t("Backup delle impostazioni", "Settings backup")) {
             BackupCard(vm, ready = unlocked && libFolder.isNotEmpty(), beforeSave = { save() })
         }
@@ -1008,6 +1009,29 @@ private fun NasSpeedCard(vm: AppViewModel, libVm: LibraryViewModel, config: () -
     if (!reachable) Text(L.t("Serve il NAS raggiungibile (a casa o in VPN).", "The NAS must be reachable (at home or over the VPN)."),
         color = C.muted, fontSize = 12.sp)
     lines.forEach { Text(it, color = C.text, fontSize = 13.sp) }
+}
+
+/** Sviluppo sul telefono: versione del motore e smart preview scaricate (spazio occupato, «Svuota»). */
+@Composable
+private fun DevelopCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var bytes by remember { mutableStateOf(-1L) }
+    LaunchedEffect(Unit) { bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.size(context) } }
+    val engine = if (DevelopEngine.available) "LightCraft " + DevelopEngine.version() else L.t("non disponibile", "not available")
+    Text(L.t("Motore di sviluppo: $engine. Le smart preview si scaricano quando apri «Sviluppa» su una foto e restano sul telefono (al massimo circa 1 GB: oltre si tolgono le meno usate).",
+        "Develop engine: $engine. Smart previews are downloaded when you open «Develop» on a photo and stay on the phone (about 1 GB at most: beyond that the least used go)."),
+        color = C.muted, fontSize = 12.sp)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(L.t("Smart preview scaricate: ", "Downloaded smart previews: ") +
+            if (bytes < 0) "…" else "%.0f MB".format(bytes / 1_048_576.0), color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        PillButton(onClick = {
+            scope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.clear(context) }
+                bytes = 0
+            }
+        }, enabled = bytes > 0) { Text(L.t("Svuota", "Clear")) }
+    }
 }
 
 /** Icona «spedisci al NAS»: una freccia in su che entra nel NAS (un box con due cassetti). */

@@ -142,7 +142,12 @@ object LibraryStore {
             val dev = if (s.fileExists(join(folder, name, PREVIEWS)))
                 fetch(s, join(folder, name, PREVIEWS), previews, "stamp-previews")
             else previews.exists() && previews.delete()
-            index || dev
+            // impostazioni di sviluppo per «Modifica» (PresetCraftAppLicator 1.29)
+            val develop = File(dir(context, name), DevelopStore.FILE)
+            val settings = if (s.fileExists(join(folder, name, DevelopStore.FILE)))
+                fetch(s, join(folder, name, DevelopStore.FILE), develop, "stamp-develop")
+            else develop.exists() && develop.delete()
+            index || dev || settings
         }
 
     /**
