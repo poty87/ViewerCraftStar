@@ -5,6 +5,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -198,6 +202,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     // un solo filo per il motore (la foto aperta non va usata da due sviluppi insieme); conta solo l'ultima richiesta
     val engine = remember { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
     val requests = remember { MutableStateFlow<String?>(null) }
+    // zoom sulla foto (due dita, doppio tocco): ingrandita, si sviluppa alla risoluzione piena della smart preview
+    var zoom by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val sharp = remember { MutableStateFlow(false) }
     var srcSize by remember { mutableStateOf(3.0 to 2.0) } // la foto aperta, in pixel
     var cropTick by remember { mutableIntStateOf(0) } // ridisegna il riquadro del ritaglio
     var editTick by remember { mutableIntStateOf(0) } // cambia a ogni modifica: aggiorna i segni di «modificato»
@@ -260,9 +268,12 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
 
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
     LaunchedEffect(Unit) {
-        requests.collectLatest { json ->
+        kotlinx.coroutines.flow.combine(requests, sharp) { j, s -> j to s }.collectLatest { (json, big) ->
             if (json == null || handle[0] == 0L) return@collectLatest
-            val a = withContext(engine) { DevelopEngine.render(handle[0], json, edge, true) } ?: return@collectLatest
+            // ingrandita: il lato lungo della smart preview (circa 2560 pixel), altrimenti quanto lo schermo
+            val full = maxOf(srcSize.first, srcSize.second).toInt()
+            val size = if (big && full > edge) full else edge
+            val a = withContext(engine) { DevelopEngine.render(handle[0], json, size, true) } ?: return@collectLatest
             val bmp = DevelopEngine.bitmap(a)
             if (before == null) before = bmp
             image = bmp
@@ -387,7 +398,41 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                             .width(with(density) { f.width.toDp() }).height(with(density) { f.height.toDp() })
                             .graphicsLayer { rotationZ = angle }, contentScale = ContentScale.FillBounds)
                     }
-                } else if (bitmap != null) Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                } else if (bitmap != null) {
+                    // due dita per ingrandire e spostare, doppio tocco per 2× e ritorno
+                    LaunchedEffect(zoom > 1.2f) { sharp.value = zoom > 1.2f }
+                    Image(bitmap, null, Modifier.fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(onDoubleTap = { at ->
+                                if (zoom > 1.001f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
+                                else {
+                                    zoom = DOUBLE_TAP_ZOOM
+                                    val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                                    pan = clampPan((c - at) * (DOUBLE_TAP_ZOOM - 1f), DOUBLE_TAP_ZOOM, size)
+                                }
+                            })
+                        }
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                do {
+                                    val ev = awaitPointerEvent()
+                                    val fingers = ev.changes.count { it.pressed }
+                                    if (fingers >= 2) {
+                                        zoom = (zoom * ev.calculateZoom()).coerceIn(1f, MAX_ZOOM)
+                                        pan = clampPan(pan + ev.calculatePan(), zoom, size)
+                                        ev.changes.forEach { it.consume() }
+                                    } else if (fingers == 1 && zoom > 1.001f) {
+                                        pan = clampPan(pan + ev.calculatePan(), zoom, size)
+                                        ev.changes.forEach { it.consume() }
+                                    }
+                                } while (ev.changes.any { it.pressed })
+                                if (zoom < 1.02f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
+                            }
+                        }
+                        .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y },
+                        contentScale = ContentScale.Fit)
+                }
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
                 // ritaglio: il riquadro sopra la foto intera raddrizzata, con angoli e lati da trascinare
                 if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height,
@@ -404,6 +449,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 .padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 fun open(sec: DevSection) {
+                    if (sec == CROP) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero } // il ritaglio si fa sulla foto intera
                     val wasCrop = section == CROP
                     section = sec
                     lastGroup[category] = sec

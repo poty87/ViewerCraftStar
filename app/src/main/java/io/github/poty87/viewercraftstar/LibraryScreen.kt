@@ -926,10 +926,10 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                     detectTapGestures(onTap = { controls = !controls }, onDoubleTap = { at ->
                         if (zoom > 1.001f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
                         else {
-                            zoom = MAX_ZOOM
+                            zoom = DOUBLE_TAP_ZOOM
                             // il punto toccato resta sotto il dito
                             val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-                            pan = clampPan((c - at) * (MAX_ZOOM - 1f), MAX_ZOOM, size)
+                            pan = clampPan((c - at) * (DOUBLE_TAP_ZOOM - 1f), DOUBLE_TAP_ZOOM, size)
                         }
                     })
                 }
@@ -1061,11 +1061,15 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     }
 }
 
-/** Lo zoom massimo nel visualizzatore: le foto sono anteprime, oltre si vedrebbero i pixel. */
-private const val MAX_ZOOM = 1.25f
+/**
+ * Lo zoom nel visualizzatore. Le anteprime preparate dal PC sono di 2560 pixel (AVIF): su un telefono largo 1280 il
+ * doppio tocco (2×) le mostra pixel per pixel; con due dita si va fino a 4×.
+ */
+internal const val MAX_ZOOM = 4f
+internal const val DOUBLE_TAP_ZOOM = 2f
 
 /** Lo spostamento di una foto ingrandita, tenuto dentro i bordi (la foto copre sempre lo schermo che copriva). */
-private fun clampPan(p: androidx.compose.ui.geometry.Offset, zoom: Float, size: androidx.compose.ui.unit.IntSize): androidx.compose.ui.geometry.Offset {
+internal fun clampPan(p: androidx.compose.ui.geometry.Offset, zoom: Float, size: androidx.compose.ui.unit.IntSize): androidx.compose.ui.geometry.Offset {
     val mx = size.width * (zoom - 1f) / 2f
     val my = size.height * (zoom - 1f) / 2f
     return androidx.compose.ui.geometry.Offset(p.x.coerceIn(-mx, mx), p.y.coerceIn(-my, my))
