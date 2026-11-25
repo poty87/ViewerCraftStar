@@ -2987,6 +2987,7 @@ dependencies = [
  "jni",
  "lightcraft-develop",
  "lightcraft-engine",
+ "lightcraft-geom",
  "lightcraft-pipeline",
  "lightcraft-raster",
  "serde_json",

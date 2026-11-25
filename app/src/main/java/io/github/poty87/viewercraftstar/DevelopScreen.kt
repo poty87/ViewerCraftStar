@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +83,16 @@ private val WHITE = DevSection("Bianco", "White balance", listOf(
 private val PROFILE = DevSection("Profilo", "Profile", listOf(
     DevControl("profile.amount", "Intensità", "Amount", 0f, 200f, 1f, 0, 100f),
 ))
+private val CROP = DevSection("Ritaglio", "Crop", emptyList())
+private val STRAIGHTEN = DevControl("crop.geometry.angle", "Raddrizza", "Straighten", -45f, 45f, 0.1f, 1, 0f)
+
+/** I rapporti del ritaglio (come in LightCraft): nome e larghezza:altezza. */
+private val ASPECTS = listOf("1:1" to (1 to 1), "4:5" to (4 to 5), "5:4" to (5 to 4), "2:3" to (2 to 3), "3:2" to (3 to 2),
+    "16:9" to (16 to 9), "9:16" to (9 to 16))
+
+/** Le rotazioni di 90 gradi in senso orario (orientamento di LightCraft). */
+private val TURNS = listOf("Normal", "Rotate90", "Rotate180", "Rotate270")
+private val SWAPS = setOf("Rotate90", "Rotate270", "Transpose", "Transverse")
 
 /**
  * «Modifica»: lo sviluppo della foto sul telefono, con il motore di LightCraft sulla smart preview. «Fatto» manda le
@@ -108,6 +120,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     // un solo filo per il motore (la foto aperta non va usata da due sviluppi insieme); conta solo l'ultima richiesta
     val engine = remember { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
     val requests = remember { MutableStateFlow<String?>(null) }
+    var srcSize by remember { mutableStateOf(3.0 to 2.0) } // la foto aperta, in pixel
+    var cropTick by remember { mutableIntStateOf(0) } // ridisegna il riquadro del ritaglio
     val density = LocalDensity.current
     val screen = LocalConfiguration.current
     val edge = with(density) { maxOf(screen.screenWidthDp, screen.screenHeightDp).dp.toPx() }.roundToInt().coerceIn(800, 1600)
@@ -156,6 +170,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         val h = withContext(engine) { DevelopEngine.open(bytes) }
         if (h == 0L) { error = L.t("Smart preview non leggibile.", "Smart preview can't be read."); return@LaunchedEffect }
         handle[0] = h
+        DevelopEngine.size(h)?.let { srcSize = it[0].toDouble() to it[1].toDouble() }
         base = entry.sig
         original = JSONObject(entry.settings.toString())
         settings = entry.settings
@@ -166,15 +181,47 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     LaunchedEffect(Unit) {
         requests.collectLatest { json ->
             if (json == null || handle[0] == 0L) return@collectLatest
-            val a = withContext(engine) { DevelopEngine.render(handle[0], json, edge) } ?: return@collectLatest
+            val a = withContext(engine) { DevelopEngine.render(handle[0], json, edge, true) } ?: return@collectLatest
             val bmp = DevelopEngine.bitmap(a)
             if (before == null) before = bmp
             image = bmp
         }
     }
 
+    /** Larghezza e altezza della foto girata come nelle impostazioni (quelle su cui si misura il ritaglio). */
+    fun dims(): Pair<Double, Double> {
+        val o = settings?.optString("orientation").orEmpty()
+        return if (o in SWAPS) srcSize.second to srcSize.first else srcSize
+    }
+
+    fun geometry(): JSONObject = settings?.optJSONObject("crop")?.optJSONObject("geometry") ?: unitGeometry(0.0)
+
+    fun setGeometry(json: String?) {
+        val s = settings ?: return
+        json ?: return
+        DevelopStore.setPath(s, "crop.geometry", JSONObject(json))
+        cropTick++
+    }
+
+    /** Il rapporto bloccato (larghezza/altezza in pixel), 0 = libero. */
+    fun aspect(): Double = settings?.optJSONObject("crop")?.optJSONArray("aspect")?.let { a ->
+        if (a.length() == 2 && a.getDouble(1) > 0) a.getDouble(0) / a.getDouble(1) else 0.0
+    } ?: 0.0
+
+    /**
+     * Quello che si sviluppa: le impostazioni; mentre si ritaglia, la foto intera raddrizzata (il riquadro sopra la
+     * mostra il ritaglio, come in LightCraft).
+     */
+    fun renderJson(): String? {
+        val s = settings ?: return null
+        if (section != CROP) return s.toString()
+        val view = JSONObject(s.toString())
+        DevelopStore.setPath(view, "crop.geometry", unitGeometry(geometry().optDouble("angle", 0.0)))
+        return view.toString()
+    }
+
     fun changed() {
-        requests.value = settings.toString()
+        requests.value = renderJson()
     }
 
     fun value(c: DevControl): Float = (settings?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
@@ -212,7 +259,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                     saving = true
                     scope.launch {
                         // la foto sviluppata dal telefono, da mostrare finché il PC non applica (2048 pixel)
-                        val big = withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 2048) }?.let { DevelopEngine.bitmap(it) }
+                        val big = withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 2048, true) }?.let { DevelopEngine.bitmap(it) }
                         lib.setDevelop(photo.id, s.toString(), base, big)
                         onClose()
                     }
@@ -224,6 +271,14 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 val bitmap = remember(shown) { shown?.asImageBitmap() }
                 if (bitmap != null) Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
+                // ritaglio: il riquadro sopra la foto intera raddrizzata, con angoli e lati da trascinare
+                if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height, cropTick,
+                    rect = { geometry().optJSONObject("rect") },
+                    current = { geometry().toString() },
+                    onDrag = { start, handleIndex, gx, gy, px, py ->
+                        val (w, h) = dims()
+                        setGeometry(DevelopEngine.cropDrag(start, handleIndex, gx, gy, px, py, w, h, aspect()))
+                    })
                 error?.let { Text(it, color = Color(0xFFF87171), fontSize = 14.sp, modifier = Modifier.padding(24.dp)) }
             }
             if (settings != null) Column(Modifier.fillMaxWidth().background(Color(0xE6141414)).navigationBarsPadding()
@@ -231,7 +286,11 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 // sezioni, a pillole come nel resto dell'app
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE)) Pill(L.t(sec.it, sec.en), section == sec) { section = sec }
+                    for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE, CROP)) Pill(L.t(sec.it, sec.en), section == sec) {
+                        val wasCrop = section == CROP
+                        section = sec
+                        if (wasCrop != (sec == CROP)) changed() // dentro e fuori dal ritaglio la foto si mostra diversa
+                    }
                 }
                 // i cursori: sempre la stessa altezza (le sezioni non saltano), il resto scorre; la foto resta grande
                 Column(Modifier.height((screen.screenHeightDp * 0.34f).dp).verticalScroll(rememberScrollState())) {
@@ -257,6 +316,60 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                             color = C.muted, fontSize = 12.sp)
                     }
                     section.controls.forEach { c -> ControlSlider(c, value(c), resets) { set(c, it) } }
+                    if (section == CROP) {
+                        val current = settings?.optJSONObject("crop")?.optJSONArray("aspect")
+                        val key = current?.let { if (it.length() == 2) "${it.getInt(0)}:${it.getInt(1)}" else null }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Pill(L.t("Libero", "Free"), key == null) {
+                                settings?.let { DevelopStore.setPath(it, "crop.aspect", null) }
+                                cropTick++
+                            }
+                            Pill(L.t("Originale", "Original"), false) {
+                                val (w, h) = dims()
+                                settings?.let { DevelopStore.setPath(it, "crop.aspect", null) }
+                                setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), 0.0))
+                            }
+                            ASPECTS.forEach { (name, ratio) ->
+                                Pill(name, key == name) {
+                                    val (w, h) = dims()
+                                    settings?.let { DevelopStore.setPath(it, "crop.aspect", org.json.JSONArray(listOf(ratio.first, ratio.second))) }
+                                    setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), ratio.first.toDouble() / ratio.second))
+                                }
+                            }
+                        }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // ruota di 90 gradi in senso orario: il ritaglio si rifà (cambiano larghezza e altezza)
+                            Pill(L.t("Ruota", "Rotate"), false) {
+                                val s = settings ?: return@Pill
+                                val o = s.optString("orientation", "Normal")
+                                s.put("orientation", TURNS[(TURNS.indexOf(o).coerceAtLeast(0) + 1) % TURNS.size])
+                                val (w, h) = dims()
+                                setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), aspect()))
+                                changed()
+                            }
+                            Pill(L.t("Rifletti", "Flip"), settings?.optJSONObject("crop")?.optBoolean("flip_h") == true) {
+                                val s = settings ?: return@Pill
+                                DevelopStore.setPath(s, "crop.flip_h", !(s.optJSONObject("crop")?.optBoolean("flip_h") ?: false))
+                                changed()
+                            }
+                            Pill(L.t("Azzera ritaglio", "Clear crop"), false) {
+                                val s = settings ?: return@Pill
+                                DevelopStore.setPath(s, "crop.aspect", null)
+                                DevelopStore.setPath(s, "crop.geometry", unitGeometry(0.0))
+                                cropTick++
+                                resets++
+                                changed()
+                            }
+                        }
+                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets) { v ->
+                            val (w, h) = dims()
+                            val angle = (v * 10).roundToInt() / 10.0
+                            setGeometry(DevelopEngine.cropWithAngle(geometry().toString(), angle, w, h))
+                            changed()
+                        }
+                        Text(L.t("Trascina angoli e lati del riquadro sulla foto; dentro il riquadro lo sposti.",
+                            "Drag the frame's corners and edges on the photo; drag inside it to move it."), color = C.muted, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -265,6 +378,102 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         }
     }
 }
+
+/**
+ * Il riquadro del ritaglio sopra la foto (intera e raddrizzata): fuori scurito, griglia dei terzi, maniglie. Si
+ * trascinano angoli (0..3), lati (4..7) o l'interno (8) con il modello di LightCraft (onDrag riceve la geometria di
+ * partenza, la maniglia, il punto preso e quello attuale in coordinate 0..1 del riquadro).
+ */
+@Composable
+private fun CropOverlay(imgW: Int, imgH: Int, tick: Int, rect: () -> JSONObject?, current: () -> String,
+                        onDrag: (String, Int, Double, Double, Double, Double) -> Unit) {
+    val density = LocalDensity.current
+    val grabRadius = with(density) { 36.dp.toPx() }
+    var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    // la foto mostrata (ContentScale.Fit) dentro lo spazio
+    fun shownRect(): androidx.compose.ui.geometry.Rect {
+        val bw = box.width.toFloat()
+        val bh = box.height.toFloat()
+        if (bw <= 0f || bh <= 0f || imgW <= 0 || imgH <= 0) return androidx.compose.ui.geometry.Rect.Zero
+        val s = minOf(bw / imgW, bh / imgH)
+        val w = imgW * s
+        val h = imgH * s
+        return androidx.compose.ui.geometry.Rect((bw - w) / 2f, (bh - h) / 2f, (bw + w) / 2f, (bh + h) / 2f)
+    }
+    Box(Modifier.fillMaxSize().onSizeChanged { box = it }.pointerInput(imgW, imgH) {
+        var start = ""
+        var handleIndex = 8
+        var gx = 0.0
+        var gy = 0.0
+        var px = 0.0
+        var py = 0.0
+        detectDragGestures(onDragStart = { at ->
+            val img = shownRect()
+            val r = rect()
+            if (r != null && img.width > 0f) {
+                fun sx(x: Double) = img.left + (x * img.width).toFloat()
+                fun sy(y: Double) = img.top + (y * img.height).toFloat()
+                val x0 = sx(r.optDouble("x0")); val x1 = sx(r.optDouble("x1"))
+                val y0 = sy(r.optDouble("y0")); val y1 = sy(r.optDouble("y1"))
+                val points = listOf(x0 to y0, x1 to y0, x1 to y1, x0 to y1, (x0 + x1) / 2 to y0, x1 to (y0 + y1) / 2,
+                    (x0 + x1) / 2 to y1, x0 to (y0 + y1) / 2)
+                val near = points.withIndex().minByOrNull { (_, p) -> kotlin.math.hypot(p.first - at.x, p.second - at.y) }
+                handleIndex = if (near != null && kotlin.math.hypot(near.value.first - at.x, near.value.second - at.y) <= grabRadius)
+                    near.index else 8
+                start = current()
+                gx = ((at.x - img.left) / img.width).toDouble()
+                gy = ((at.y - img.top) / img.height).toDouble()
+                px = gx
+                py = gy
+            }
+        }, onDrag = { change, delta ->
+            val img = shownRect()
+            if (img.width > 0f && start.isNotEmpty()) {
+                change.consume()
+                px += delta.x / img.width
+                py += delta.y / img.height
+                onDrag(start, handleIndex, gx, gy, px, py)
+            }
+        })
+    }) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            if (tick < 0) return@Canvas // si ridisegna quando cambia il ritaglio (tick)
+            val img = shownRect()
+            val r = rect() ?: return@Canvas
+            if (img.width <= 0f) return@Canvas
+            val l = img.left + (r.optDouble("x0") * img.width).toFloat()
+            val t = img.top + (r.optDouble("y0") * img.height).toFloat()
+            val ri = img.left + (r.optDouble("x1") * img.width).toFloat()
+            val b = img.top + (r.optDouble("y1") * img.height).toFloat()
+            val shade = Color(0x99000000)
+            // fuori dal ritaglio, scuro
+            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, img.top), androidx.compose.ui.geometry.Size(img.width, t - img.top))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, b), androidx.compose.ui.geometry.Size(img.width, img.bottom - b))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, t), androidx.compose.ui.geometry.Size(l - img.left, b - t))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(ri, t), androidx.compose.ui.geometry.Size(img.right - ri, b - t))
+            // griglia dei terzi
+            for (i in 1..2) {
+                val x = l + (ri - l) * i / 3f
+                val y = t + (b - t) * i / 3f
+                drawLine(Color(0x66FFFFFF), androidx.compose.ui.geometry.Offset(x, t), androidx.compose.ui.geometry.Offset(x, b), 1.5f)
+                drawLine(Color(0x66FFFFFF), androidx.compose.ui.geometry.Offset(l, y), androidx.compose.ui.geometry.Offset(ri, y), 1.5f)
+            }
+            drawRect(Color(0xCCFFFFFF), androidx.compose.ui.geometry.Offset(l, t), androidx.compose.ui.geometry.Size(ri - l, b - t),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
+            // maniglie agli angoli
+            val k = 28f
+            val thick = 9f
+            listOf(Triple(l, t, 1f to 1f), Triple(ri, t, -1f to 1f), Triple(ri, b, -1f to -1f), Triple(l, b, 1f to -1f)).forEach { (x, y, d) ->
+                drawLine(C.accent, androidx.compose.ui.geometry.Offset(x, y), androidx.compose.ui.geometry.Offset(x + k * d.first, y), thick)
+                drawLine(C.accent, androidx.compose.ui.geometry.Offset(x, y), androidx.compose.ui.geometry.Offset(x, y + k * d.second), thick)
+            }
+        }
+    }
+}
+
+/** La geometria di un ritaglio che prende tutta la foto, girata di `angle` gradi. */
+private fun unitGeometry(angle: Double): JSONObject = JSONObject()
+    .put("rect", JSONObject().put("x0", 0.0).put("y0", 0.0).put("x1", 1.0).put("y1", 1.0)).put("angle", angle)
 
 /** Un cursore con nome e valore; un tocco sul valore lo riporta a quello di base. */
 @Composable

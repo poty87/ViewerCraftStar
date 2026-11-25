@@ -18,6 +18,7 @@ lightcraft-engine = { git = "https://github.com/storytold/lightcraft", tag = "v0
 lightcraft-pipeline = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
 lightcraft-develop = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
 lightcraft-raster = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
+lightcraft-geom = { git = "https://github.com/storytold/lightcraft", tag = "v0.21.1" }
 serde_json = "1"
 jni = "0.21"
 

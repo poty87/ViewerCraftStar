@@ -25,8 +25,21 @@ object DevelopEngine {
     /** Apre una smart preview (.lcsp): un riferimento, 0 se non si legge. */
     @JvmStatic external fun open(bytes: ByteArray): Long
     /** Sviluppa: [larghezza, altezza, pixel ARGB…], null se le impostazioni non si leggono. */
-    @JvmStatic external fun render(handle: Long, settings: String, maxEdge: Int): IntArray?
+    @JvmStatic external fun render(handle: Long, settings: String, maxEdge: Int, applyCrop: Boolean): IntArray?
     @JvmStatic external fun close(handle: Long)
+    /** Larghezza e altezza della foto aperta. */
+    @JvmStatic external fun size(handle: Long): IntArray?
+
+    // ritaglio, con le funzioni di LightCraft (lightcraft_geom): geometria = JSON {"rect": {x0,y0,x1,y1}, "angle"}
+    /** Il ritaglio girato di `angle` gradi, tenuto dentro la foto (come il cursore Raddrizza). */
+    @JvmStatic external fun cropWithAngle(geom: String, angle: Double, w: Double, h: Double): String?
+    /** Il ritaglio più grande con il rapporto `aspect` (0 = quello della foto) a `angle` gradi. */
+    @JvmStatic external fun cropFit(w: Double, h: Double, angle: Double, aspect: Double): String?
+    /** Il ritaglio spostato (o rimpicciolito) finché sta dentro la foto. */
+    @JvmStatic external fun cropConstrained(geom: String, w: Double, h: Double): String?
+    /** Trascina una maniglia (0..3 angoli, 4..7 lati, 8 sposta) da grab a pointer, nel riquadro raddrizzato (0..1). */
+    @JvmStatic external fun cropDrag(geom: String, handle: Int, gx: Double, gy: Double, px: Double, py: Double,
+                                     w: Double, h: Double, aspect: Double): String?
 
     fun bitmap(a: IntArray): Bitmap {
         val w = a[0]
