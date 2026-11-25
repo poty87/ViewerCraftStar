@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -270,27 +274,26 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 }, primary = true, enabled = settings != null && !saving, pad = 14.dp) { Text(L.t("Fatto", "Done")) }
             }
             // la foto (tenendo premuto «Prima» si vede com'era)
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
                 val shown = if (showBefore) before else image
                 val bitmap = remember(shown) { shown?.asImageBitmap() }
                 val cropping = section == CROP && !showBefore
                 if (bitmap != null && cropping) {
-                    // la foto intera girata dell'angolo di Raddrizza, dentro il suo riquadro (gli angoli che escono si
-                    // tagliano, come in LightCraft)
-                    val angle = geometry().optDouble("angle", 0.0).toFloat()
-                    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        val scale = minOf(constraints.maxWidth.toFloat() / bitmap.width, constraints.maxHeight.toFloat() / bitmap.height)
-                        val wDp = with(density) { (bitmap.width * scale).toDp() }
-                        val hDp = with(density) { (bitmap.height * scale).toDp() }
-                        Box(Modifier.width(wDp).height(hDp).clipToBounds()) {
-                            Image(bitmap, null, Modifier.fillMaxSize().graphicsLayer { rotationZ = angle + 0f * cropTick },
-                                contentScale = ContentScale.Fit)
-                        }
+                    // la foto intera girata dell'angolo di Raddrizza, tutta visibile (rimpicciolita quanto basta), come in
+                    // Lightroom e LightCraft: quello che resta fuori dal ritaglio lo scurisce il riquadro sopra
+                    val angle = geometry().optDouble("angle", 0.0).toFloat() + 0f * cropTick
+                    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val f = frameRect(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), bitmap.width, bitmap.height, angle)
+                        Image(bitmap, null, Modifier
+                            .offset { androidx.compose.ui.unit.IntOffset(f.left.roundToInt(), f.top.roundToInt()) }
+                            .width(with(density) { f.width.toDp() }).height(with(density) { f.height.toDp() })
+                            .graphicsLayer { rotationZ = angle }, contentScale = ContentScale.FillBounds)
                     }
                 } else if (bitmap != null) Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
                 // ritaglio: il riquadro sopra la foto intera raddrizzata, con angoli e lati da trascinare
-                if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height, cropTick,
+                if (section == CROP && !showBefore && shown != null) CropOverlay(shown.width, shown.height,
+                    geometry().optDouble("angle", 0.0).toFloat(), cropTick,
                     rect = { geometry().optJSONObject("rect") },
                     current = { geometry().toString() },
                     onDrag = { start, handleIndex, gx, gy, px, py ->
@@ -334,10 +337,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                             color = C.muted, fontSize = 12.sp)
                     }
                     section.controls.forEach { c -> ControlSlider(c, value(c), resets) { set(c, it) } }
-                    if (section == CROP) {
+                    if (section == CROP) Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val current = settings?.optJSONObject("crop")?.optJSONArray("aspect")
                         val key = current?.let { if (it.length() == 2) "${it.getInt(0)}:${it.getInt(1)}" else null }
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill(L.t("Libero", "Free"), key == null) {
                                 settings?.let { DevelopStore.setPath(it, "crop.aspect", null) }
                                 cropTick++
@@ -347,15 +350,30 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                                 settings?.let { DevelopStore.setPath(it, "crop.aspect", null) }
                                 setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), 0.0))
                             }
-                            ASPECTS.forEach { (name, ratio) ->
-                                Pill(name, key == name) {
-                                    val (w, h) = dims()
-                                    settings?.let { DevelopStore.setPath(it, "crop.aspect", org.json.JSONArray(listOf(ratio.first, ratio.second))) }
-                                    setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), ratio.first.toDouble() / ratio.second))
+                            // gli altri rapporti, che si usano meno: in un menu (acceso quando ne è scelto uno)
+                            Box {
+                                var open by remember { mutableStateOf(false) }
+                                val on = key != null
+                                Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                                    .background(if (on) C.accent else C.card).clickable { open = true }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Menu, null,
+                                        tint = if (on) Color.Black else C.text, modifier = Modifier.size(15.dp))
+                                    Text(" " + (key ?: L.t("Rapporto", "Ratio")), color = if (on) Color.Black else C.text, fontSize = 13.sp)
+                                }
+                                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                                    ASPECTS.forEach { (name, ratio) ->
+                                        androidx.compose.material3.DropdownMenuItem({ Text(name, color = C.text) }, onClick = {
+                                            open = false
+                                            val (w, h) = dims()
+                                            settings?.let { DevelopStore.setPath(it, "crop.aspect", org.json.JSONArray(listOf(ratio.first, ratio.second))) }
+                                            setGeometry(DevelopEngine.cropFit(w, h, geometry().optDouble("angle", 0.0), ratio.first.toDouble() / ratio.second))
+                                        })
+                                    }
                                 }
                             }
                         }
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             // ruota di 90 gradi in senso orario: il ritaglio si rifà (cambiano larghezza e altezza)
                             Pill(L.t("Ruota", "Rotate"), false) {
                                 val s = settings ?: return@Pill
@@ -403,21 +421,15 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
  * partenza, la maniglia, il punto preso e quello attuale in coordinate 0..1 del riquadro).
  */
 @Composable
-private fun CropOverlay(imgW: Int, imgH: Int, tick: Int, rect: () -> JSONObject?, current: () -> String,
+private fun CropOverlay(imgW: Int, imgH: Int, angle: Float, tick: Int, rect: () -> JSONObject?, current: () -> String,
                         onDrag: (String, Int, Double, Double, Double, Double) -> Unit) {
     val density = LocalDensity.current
     val grabRadius = with(density) { 36.dp.toPx() }
     var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
-    // la foto mostrata (ContentScale.Fit) dentro lo spazio
-    fun shownRect(): androidx.compose.ui.geometry.Rect {
-        val bw = box.width.toFloat()
-        val bh = box.height.toFloat()
-        if (bw <= 0f || bh <= 0f || imgW <= 0 || imgH <= 0) return androidx.compose.ui.geometry.Rect.Zero
-        val s = minOf(bw / imgW, bh / imgH)
-        val w = imgW * s
-        val h = imgH * s
-        return androidx.compose.ui.geometry.Rect((bw - w) / 2f, (bh - h) / 2f, (bw + w) / 2f, (bh + h) / 2f)
-    }
+    // la cornice del riquadro raddrizzato sullo schermo (la stessa della foto girata)
+    val angleNow by androidx.compose.runtime.rememberUpdatedState(angle)
+    fun shownRect(): androidx.compose.ui.geometry.Rect =
+        frameRect(box.width.toFloat(), box.height.toFloat(), imgW, imgH, angleNow)
     Box(Modifier.fillMaxSize().onSizeChanged { box = it }.pointerInput(imgW, imgH) {
         var start = ""
         var handleIndex = 8
@@ -463,12 +475,14 @@ private fun CropOverlay(imgW: Int, imgH: Int, tick: Int, rect: () -> JSONObject?
             val t = img.top + (r.optDouble("y0") * img.height).toFloat()
             val ri = img.left + (r.optDouble("x1") * img.width).toFloat()
             val b = img.top + (r.optDouble("y1") * img.height).toFloat()
-            val shade = Color(0x99000000)
-            // fuori dal ritaglio, scuro
-            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, img.top), androidx.compose.ui.geometry.Size(img.width, t - img.top))
-            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, b), androidx.compose.ui.geometry.Size(img.width, img.bottom - b))
-            drawRect(shade, androidx.compose.ui.geometry.Offset(img.left, t), androidx.compose.ui.geometry.Size(l - img.left, b - t))
-            drawRect(shade, androidx.compose.ui.geometry.Offset(ri, t), androidx.compose.ui.geometry.Size(img.right - ri, b - t))
+            val shade = Color(0xA6000000)
+            // tutto quello che è fuori dal ritaglio, scuro (anche gli angoli della foto girata)
+            val fw = size.width
+            val fh = size.height
+            drawRect(shade, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Size(fw, t))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(0f, b), androidx.compose.ui.geometry.Size(fw, fh - b))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(0f, t), androidx.compose.ui.geometry.Size(l, b - t))
+            drawRect(shade, androidx.compose.ui.geometry.Offset(ri, t), androidx.compose.ui.geometry.Size(fw - ri, b - t))
             // griglia dei terzi
             for (i in 1..2) {
                 val x = l + (ri - l) * i / 3f
@@ -487,6 +501,23 @@ private fun CropOverlay(imgW: Int, imgH: Int, tick: Int, rect: () -> JSONObject?
             }
         }
     }
+}
+
+/**
+ * Dove sta sullo schermo il riquadro raddrizzato (la foto non girata, larga imgW × imgH) quando la foto girata di
+ * `angle` gradi deve stare tutta nello spazio cw × ch: centrato, rimpicciolito quanto basta.
+ */
+private fun frameRect(cw: Float, ch: Float, imgW: Int, imgH: Int, angle: Float): androidx.compose.ui.geometry.Rect {
+    if (cw <= 0f || ch <= 0f || imgW <= 0 || imgH <= 0) return androidx.compose.ui.geometry.Rect.Zero
+    val a = Math.toRadians(angle.toDouble())
+    val c = kotlin.math.abs(kotlin.math.cos(a)).toFloat()
+    val sn = kotlin.math.abs(kotlin.math.sin(a)).toFloat()
+    val bw = imgW * c + imgH * sn
+    val bh = imgW * sn + imgH * c
+    val s = minOf(cw / bw, ch / bh)
+    val w = imgW * s
+    val h = imgH * s
+    return androidx.compose.ui.geometry.Rect((cw - w) / 2f, (ch - h) / 2f, (cw + w) / 2f, (ch + h) / 2f)
 }
 
 /** La geometria di un ritaglio che prende tutta la foto, girata di `angle` gradi. */
