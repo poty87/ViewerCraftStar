@@ -90,6 +90,55 @@ private val PROFILE = DevSection("Profilo", "Profile", listOf(
     DevControl("profile.amount", "Intensità", "Amount", 0f, 200f, 1f, 0, 100f),
 ))
 private val CROP = DevSection("Ritaglio", "Crop", emptyList())
+
+// seconda fase: i controlli di LightCraft (lightcraft-cli controls), con i nomi del JSON delle impostazioni
+private val CURVE = DevSection("Curva", "Curve", listOf(
+    DevControl("curve.highlights", "Alte luci", "Highlights", -100f, 100f, 1f, 0, 0f),
+    DevControl("curve.lights", "Luci", "Lights", -100f, 100f, 1f, 0, 0f),
+    DevControl("curve.darks", "Scuri", "Darks", -100f, 100f, 1f, 0, 0f),
+    DevControl("curve.shadows", "Ombre", "Shadows", -100f, 100f, 1f, 0, 0f),
+    DevControl("curve.split_shadows", "Divisione ombre", "Shadows split", 10f, 70f, 1f, 0, 25f),
+    DevControl("curve.split_mid", "Divisione mezzitoni", "Midtones split", 20f, 80f, 1f, 0, 50f),
+    DevControl("curve.split_highlights", "Divisione alte luci", "Highlights split", 30f, 90f, 1f, 0, 75f),
+))
+private val MIXER = DevSection("Tinte", "HSL", emptyList())
+private val GRADING = DevSection("Grading", "Grading", emptyList())
+private val DETAIL = DevSection("Dettaglio", "Detail", listOf(
+    DevControl("detail.sharpen_amount", "Nitidezza", "Sharpening", 0f, 150f, 1f, 0, 40f),
+    DevControl("detail.sharpen_radius", "Raggio", "Radius", 0.5f, 3f, 0.1f, 1, 1f),
+    DevControl("detail.sharpen_detail", "Dettaglio", "Detail", 0f, 100f, 1f, 0, 25f),
+    DevControl("detail.sharpen_masking", "Mascheratura", "Masking", 0f, 100f, 1f, 0, 0f),
+    DevControl("detail.nr_luminance", "Riduzione rumore", "Noise reduction", 0f, 100f, 1f, 0, 0f),
+    DevControl("detail.nr_detail", "Dettaglio rumore", "Noise detail", 0f, 100f, 1f, 0, 50f),
+    DevControl("detail.nr_contrast", "Contrasto rumore", "Noise contrast", 0f, 100f, 1f, 0, 0f),
+    DevControl("detail.nr_color", "Rumore di colore", "Color noise", 0f, 100f, 1f, 0, 25f),
+    DevControl("detail.nr_color_detail", "Dettaglio colore", "Color detail", 0f, 100f, 1f, 0, 50f),
+    DevControl("detail.nr_color_smoothness", "Uniformità colore", "Color smoothness", 0f, 100f, 1f, 0, 50f),
+))
+private val EFFECTS = DevSection("Effetti", "Effects", listOf(
+    DevControl("effects.texture", "Texture", "Texture", -100f, 100f, 1f, 0, 0f),
+    DevControl("effects.clarity", "Chiarezza", "Clarity", -100f, 100f, 1f, 0, 0f),
+    DevControl("effects.dehaze", "Foschia", "Dehaze", -100f, 100f, 1f, 0, 0f),
+    DevControl("vignette.amount", "Vignettatura", "Vignette", -100f, 100f, 1f, 0, 0f),
+    DevControl("vignette.midpoint", "Punto medio", "Midpoint", 0f, 100f, 1f, 0, 50f),
+    DevControl("vignette.roundness", "Rotondità", "Roundness", -100f, 100f, 1f, 0, 0f),
+    DevControl("vignette.feather", "Sfumatura", "Feather", 0f, 100f, 1f, 0, 50f),
+    DevControl("vignette.highlights", "Alte luci vignettatura", "Vignette highlights", 0f, 100f, 1f, 0, 0f),
+    DevControl("grain.amount", "Grana", "Grain", 0f, 100f, 1f, 0, 0f),
+    DevControl("grain.size", "Dimensione grana", "Grain size", 0f, 100f, 1f, 0, 25f),
+    DevControl("grain.roughness", "Ruvidità grana", "Grain roughness", 0f, 100f, 1f, 0, 50f),
+))
+
+/** I colori del mixer (Tinte), con il loro colore per il pallino accanto al nome. */
+private val MIXER_COLORS = listOf(
+    Triple("red", "Rossi" to "Reds", Color(0xFFEF4444)), Triple("orange", "Arancioni" to "Oranges", Color(0xFFF97316)),
+    Triple("yellow", "Gialli" to "Yellows", Color(0xFFEAB308)), Triple("green", "Verdi" to "Greens", Color(0xFF22C55E)),
+    Triple("aqua", "Acqua" to "Aquas", Color(0xFF06B6D4)), Triple("blue", "Blu" to "Blues", Color(0xFF3B82F6)),
+    Triple("purple", "Viola" to "Purples", Color(0xFFA855F7)), Triple("magenta", "Magenta" to "Magentas", Color(0xFFEC4899)))
+
+/** Le zone del color grading. */
+private val GRADING_RANGES = listOf("shadows" to ("Ombre" to "Shadows"), "midtones" to ("Mezzitoni" to "Midtones"),
+    "highlights" to ("Alte luci" to "Highlights"), "global" to ("Globale" to "Global"))
 private val STRAIGHTEN = DevControl("crop.geometry.angle", "Raddrizza", "Straighten", -45f, 45f, 0.1f, 1, 0f)
 
 /** I rapporti del ritaglio (come in LightCraft): nome e larghezza:altezza. */
@@ -128,6 +177,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     val requests = remember { MutableStateFlow<String?>(null) }
     var srcSize by remember { mutableStateOf(3.0 to 2.0) } // la foto aperta, in pixel
     var cropTick by remember { mutableIntStateOf(0) } // ridisegna il riquadro del ritaglio
+    var mixerMode by remember { mutableStateOf("hue") } // Tinte: tinta, saturazione o luminanza
+    var gradingRange by remember { mutableStateOf("midtones") } // Grading: la zona
     val density = LocalDensity.current
     val screen = LocalConfiguration.current
     val edge = with(density) { maxOf(screen.screenWidthDp, screen.screenHeightDp).dp.toPx() }.roundToInt().coerceIn(800, 1600)
@@ -234,6 +285,9 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
 
     fun value(c: DevControl): Float = (settings?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
 
+    /** Il valore che il controllo aveva quando si è aperto l'editor (un tocco sul numero lo rimette). */
+    fun start(c: DevControl): Float = (original?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
+
     fun set(c: DevControl, v: Float) {
         val s = settings ?: return
         val rounded = if (c.decimals == 0) v.roundToInt().toDouble() else (v / c.step).roundToInt() * c.step.toDouble()
@@ -307,7 +361,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 // sezioni, a pillole come nel resto dell'app
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE, CROP)) Pill(L.t(sec.it, sec.en), section == sec) {
+                    for (sec in listOf(LIGHT, COLOR, WHITE, PROFILE, CROP, CURVE, MIXER, GRADING, DETAIL, EFFECTS)) Pill(L.t(sec.it, sec.en), section == sec) {
                         val wasCrop = section == CROP
                         section = sec
                         if (wasCrop != (sec == CROP)) changed() // dentro e fuori dal ritaglio la foto si mostra diversa
@@ -336,7 +390,36 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                         if (!kelvin) Text(L.t("Foto non raw: temperatura e tinta sono relative allo scatto.", "Not a raw photo: temperature and tint are relative to the shot."),
                             color = C.muted, fontSize = 12.sp)
                     }
-                    section.controls.forEach { c -> ControlSlider(c, value(c), resets) { set(c, it) } }
+                    section.controls.forEach { c -> ControlSlider(c, value(c), resets, start(c)) { set(c, it) } }
+                    if (section == MIXER) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)) {
+                            listOf("hue" to ("Tinta" to "Hue"), "sat" to ("Saturazione" to "Saturation"), "lum" to ("Luminanza" to "Luminance"))
+                                .forEach { (k, n) -> Pill(L.t(n.first, n.second), mixerMode == k) { mixerMode = k } }
+                        }
+                        MIXER_COLORS.forEach { (key, names, dot) ->
+                            val c = DevControl("mixer.$key.$mixerMode", names.first, names.second, -100f, 100f, 1f, 0, 0f)
+                            androidx.compose.runtime.key(c.path) { ControlSlider(c, value(c), resets, start(c), dot) { set(c, it) } }
+                        }
+                    }
+                    if (section == GRADING) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GRADING_RANGES.forEach { (k, n) -> Pill(L.t(n.first, n.second), gradingRange == k) { gradingRange = k } }
+                        }
+                        val hue = DevControl("grading.$gradingRange.hue", "Tinta", "Hue", 0f, 360f, 1f, 0, 0f)
+                        val sat = DevControl("grading.$gradingRange.sat", "Saturazione", "Saturation", 0f, 100f, 1f, 0, 0f)
+                        val lum = DevControl("grading.$gradingRange.lum", "Luminanza", "Luminance", -100f, 100f, 1f, 0, 0f)
+                        // il pallino mostra il colore scelto (tinta a piena saturazione)
+                        val swatch = Color(android.graphics.Color.HSVToColor(floatArrayOf(value(hue), 0.8f, 0.95f)))
+                        androidx.compose.runtime.key(gradingRange) {
+                            ControlSlider(hue, value(hue), resets, start(hue), swatch) { set(hue, it) }
+                            ControlSlider(sat, value(sat), resets, start(sat)) { set(sat, it) }
+                            ControlSlider(lum, value(lum), resets, start(lum)) { set(lum, it) }
+                        }
+                        val blending = DevControl("grading.blending", "Fusione", "Blending", 0f, 100f, 1f, 0, 50f)
+                        val balance = DevControl("grading.balance", "Bilanciamento", "Balance", -100f, 100f, 1f, 0, 0f)
+                        ControlSlider(blending, value(blending), resets, start(blending)) { set(blending, it) }
+                        ControlSlider(balance, value(balance), resets, start(balance)) { set(balance, it) }
+                    }
                     if (section == CROP) Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val current = settings?.optJSONObject("crop")?.optJSONArray("aspect")
                         val key = current?.let { if (it.length() == 2) "${it.getInt(0)}:${it.getInt(1)}" else null }
@@ -397,7 +480,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                                 changed()
                             }
                         }
-                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets) { v ->
+                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets, 0f) { v ->
                             val (w, h) = dims()
                             val angle = (v * 10).roundToInt() / 10.0
                             setGeometry(DevelopEngine.cropWithAngle(geometry().toString(), angle, w, h))
@@ -524,15 +607,22 @@ private fun frameRect(cw: Float, ch: Float, imgW: Int, imgH: Int, angle: Float):
 private fun unitGeometry(angle: Double): JSONObject = JSONObject()
     .put("rect", JSONObject().put("x0", 0.0).put("y0", 0.0).put("x1", 1.0).put("y1", 1.0)).put("angle", angle)
 
-/** Un cursore con nome e valore; un tocco sul valore lo riporta a quello di base. */
+/**
+ * Un cursore con nome e valore; un tocco sul valore lo riporta a `reset` (quello che la foto aveva all'apertura).
+ * `dot`: un pallino colorato accanto al nome (i colori delle Tinte, la tinta del grading).
+ */
 @Composable
-private fun ControlSlider(c: DevControl, value: Float, resets: Int, onChange: (Float) -> Unit) {
+private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float, dot: Color? = null, onChange: (Float) -> Unit) {
     var v by remember(c.path, resets) { mutableStateOf(value.coerceIn(c.min, c.max)) }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (dot != null) {
+                Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(dot))
+                Spacer(Modifier.width(8.dp))
+            }
             Text(L.t(c.it, c.en), color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Text(if (c.decimals == 0) v.roundToInt().toString() else "%.${c.decimals}f".format(v), color = C.muted, fontSize = 13.sp,
-                modifier = Modifier.clickable { v = c.default; onChange(c.default) }.padding(horizontal = 6.dp))
+                modifier = Modifier.clickable { v = reset.coerceIn(c.min, c.max); onChange(v) }.padding(horizontal = 6.dp))
         }
         Slider(value = v, onValueChange = { v = it; onChange(it) }, valueRange = c.min..c.max, modifier = Modifier.height(30.dp),
             colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.card))
