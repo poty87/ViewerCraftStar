@@ -122,13 +122,18 @@ object RemotePreview {
             // si mostra quella della fotocamera
             val small = maxSide <= THUMB && dev.thumbPath.isNotEmpty()
             val local = if (small) diskFile(context, index.library, photo, dev) else fullFile(context, index.library, photo, dev)
-            val bytes = (if (local.exists()) runCatching { local.readBytes().also { local.setLastModified(System.currentTimeMillis()) } }.getOrNull() else null)
-                ?: runCatching {
-                    Remote.use(cfg, dev.share) { s -> Remote.open(s, if (small) dev.thumbPath else dev.path).use { r -> r.read(0, r.size.toInt()) } }
-                }.getOrNull()?.also { b ->
+            // una copia sul telefono che non si apre (file vuoto: il PC si era spento mentre la scriveva) si butta e si
+            // riscarica; si tiene solo un'anteprima che si apre davvero, così quando il PC la rifà arriva quella nuova
+            val kept = if (local.exists()) runCatching { local.readBytes() }.getOrNull()
+                ?.let { b -> decodeJpeg(b, maxSide)?.also { local.setLastModified(System.currentTimeMillis()) } }
+                .also { if (it == null) local.delete() } else null
+            kept ?: runCatching {
+                Remote.use(cfg, dev.share) { s -> Remote.open(s, if (small) dev.thumbPath else dev.path).use { r -> r.read(0, r.size.toInt()) } }
+            }.getOrNull()?.let { b ->
+                decodeJpeg(b, maxSide)?.also {
                     runCatching { local.parentFile?.mkdirs(); val tmp = File(local.path + ".tmp"); tmp.writeBytes(b); tmp.renameTo(local) }
                 }
-            bytes?.let { decodeJpeg(it, maxSide) } ?: return load(context, cfg, index, photo, maxSide, null)
+            } ?: return load(context, cfg, index, photo, maxSide, null)
         } else {
             val (share, path) = index.locate(photo) ?: return null
             val picked = Remote.use(cfg, share) { s -> Remote.open(s, path).use { r -> pick(r, photo, maxSide) } } ?: return null
