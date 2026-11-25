@@ -200,6 +200,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     val requests = remember { MutableStateFlow<String?>(null) }
     var srcSize by remember { mutableStateOf(3.0 to 2.0) } // la foto aperta, in pixel
     var cropTick by remember { mutableIntStateOf(0) } // ridisegna il riquadro del ritaglio
+    var editTick by remember { mutableIntStateOf(0) } // cambia a ogni modifica: aggiorna i segni di «modificato»
     var mixerMode by remember { mutableStateOf("hue") } // Tinte: tinta, saturazione o luminanza
     var gradingRange by remember { mutableStateOf("midtones") } // Grading: la zona
     val density = LocalDensity.current
@@ -281,6 +282,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         json ?: return
         DevelopStore.setPath(s, "crop.geometry", JSONObject(json))
         cropTick++
+        editTick++
     }
 
     /** Il rapporto bloccato (larghezza/altezza in pixel), 0 = libero. */
@@ -303,6 +305,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     }
 
     fun changed() {
+        editTick++
         requests.value = renderJson()
     }
 
@@ -310,6 +313,24 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
 
     /** Il valore che il controllo aveva quando si è aperto l'editor (un tocco sul numero lo rimette). */
     fun start(c: DevControl): Float = (original?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
+
+    /** I campi di una sotto-scheda (per sapere se lì è cambiato qualcosa). */
+    fun pathsOf(sec: DevSection): List<String> = when (sec) {
+        MIXER -> listOf("mixer")
+        GRADING -> listOf("grading")
+        CROP -> listOf("crop", "orientation")
+        PROFILE -> listOf("profile")
+        WHITE -> listOf("wb")
+        else -> sec.controls.map { it.path }
+    }
+
+    /** True se nella sotto-scheda qualcosa è diverso da com'era all'apertura dell'editor. */
+    fun sectionChanged(sec: DevSection): Boolean {
+        if (editTick < 0) return false // (letto: i segni si aggiornano a ogni modifica)
+        val s = settings ?: return false
+        val o = original ?: return false
+        return pathsOf(sec).any { DevelopStore.getPath(s, it)?.toString() != DevelopStore.getPath(o, it)?.toString() }
+    }
 
     fun set(c: DevControl, v: Float) {
         val s = settings ?: return
@@ -392,7 +413,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 // (sempre, anche con una scheda sola: il pannello resta della stessa altezza e la foto non si sposta)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    category.groups.forEach { g -> SubTab(L.t(g.it, g.en), section == g) { open(g) } }
+                    category.groups.forEach { g -> SubTab(L.t(g.it, g.en), section == g, sectionChanged(g)) { open(g) } }
                 }
                 // i cursori: sempre la stessa altezza (le schede non saltano), il resto scorre; la foto resta grande
                 Column(Modifier.fillMaxWidth().height((screen.screenHeightDp * 0.27f).dp).verticalScroll(rememberScrollState())) {
@@ -524,7 +545,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                                 changed()
                             }
                         }
-                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets, 0f) { v ->
+                        ControlSlider(STRAIGHTEN, geometry().optDouble("angle", 0.0).toFloat(), resets, start(STRAIGHTEN)) { v ->
                             val (w, h) = dims()
                             val angle = (v * 10).roundToInt() / 10.0
                             setGeometry(DevelopEngine.cropWithAngle(geometry().toString(), angle, w, h))
@@ -538,7 +559,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     CATEGORIES.forEach { c ->
-                        CategoryButton(L.t(c.it, c.en), c.icon, c == category) {
+                        CategoryButton(L.t(c.it, c.en), c.icon, c == category, c.groups.any { sectionChanged(it) }) {
                             category = c
                             open(lastGroup[c] ?: c.groups.first())
                         }
@@ -675,11 +696,36 @@ private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float
                 Spacer(Modifier.width(8.dp))
             }
             Text(L.t(c.it, c.en), color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Text(if (c.decimals == 0) v.roundToInt().toString() else "%.${c.decimals}f".format(v), color = C.muted, fontSize = 13.sp,
-                modifier = Modifier.clickable { v = reset.coerceIn(c.min, c.max); onChange(v) }.padding(horizontal = 6.dp))
+            // toccato (diverso da com'era all'apertura): numero blu e ↺ per rimetterlo com'era
+            val moved = kotlin.math.abs(v - reset.coerceIn(c.min, c.max)) >= c.step / 2
+            Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                .clickable { v = reset.coerceIn(c.min, c.max); onChange(v) }.padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                if (moved) {
+                    UndoIcon(Modifier.size(14.dp), C.accent)
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(if (c.decimals == 0) v.roundToInt().toString() else "%.${c.decimals}f".format(v),
+                    color = if (moved) C.accent else C.muted, fontSize = 13.sp)
+            }
         }
         Slider(value = v, onValueChange = { v = it; onChange(it) }, valueRange = c.min..c.max, modifier = Modifier.height(30.dp),
             colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.card))
+    }
+}
+
+/** «Rimetti com'era»: una freccia circolare, disegnata come le altre icone dell'app. */
+@Composable
+private fun UndoIcon(modifier: Modifier, color: Color) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val w = size.width
+        val st = androidx.compose.ui.graphics.drawscope.Stroke(w * 0.13f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawArc(color, 200f, 280f, false, androidx.compose.ui.geometry.Offset(w * 0.15f, w * 0.15f),
+            androidx.compose.ui.geometry.Size(w * 0.7f, w * 0.7f), style = st)
+        // punta della freccia all'inizio dell'arco (in alto a sinistra)
+        val tip = androidx.compose.ui.geometry.Offset(w * 0.17f, w * 0.36f)
+        drawLine(color, tip, androidx.compose.ui.geometry.Offset(w * 0.05f, w * 0.12f), w * 0.13f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(color, tip, androidx.compose.ui.geometry.Offset(w * 0.42f, w * 0.30f), w * 0.13f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 
@@ -720,19 +766,26 @@ private fun ProfileStrip(shown: List<DevelopProfiles.Profile>, all: List<Develop
     }
 }
 
-/** Una sotto-scheda: testo, sottolineato quando è aperta. */
+/** Una sotto-scheda: testo, sottolineato quando è aperta; un puntino blu se dentro è cambiato qualcosa. */
 @Composable
-private fun SubTab(text: String, on: Boolean, onClick: () -> Unit) {
+private fun SubTab(text: String, on: Boolean, changed: Boolean, onClick: () -> Unit) {
     Column(Modifier.clickable { onClick() }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text, color = if (on) C.text else C.muted, fontSize = 14.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text, color = if (on) C.text else C.muted, fontSize = 14.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
+            if (changed) {
+                Spacer(Modifier.width(5.dp))
+                Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(C.accent))
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Box(Modifier.width(if (on) 44.dp else 0.dp).height(2.dp).background(C.text))
     }
 }
 
-/** Un pulsante della barra delle categorie: icona sopra, nome sotto; acceso quando la categoria è aperta. */
+/** Un pulsante della barra delle categorie: icona sopra, nome sotto; acceso quando la categoria è aperta; un
+ * puntino blu sotto il nome se dentro è cambiato qualcosa (come i programmi di sviluppo per telefono). */
 @Composable
-private fun CategoryButton(text: String, icon: String, on: Boolean, onClick: () -> Unit) {
+private fun CategoryButton(text: String, icon: String, on: Boolean, changed: Boolean, onClick: () -> Unit) {
     val color = if (on) C.text else C.muted
     Column(Modifier.width(64.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
         .background(if (on) C.card else Color.Transparent).clickable { onClick() }.padding(vertical = 6.dp),
@@ -740,6 +793,8 @@ private fun CategoryButton(text: String, icon: String, on: Boolean, onClick: () 
         CategoryIcon(icon, color, Modifier.size(22.dp))
         Spacer(Modifier.height(3.dp))
         Text(text, color = color, fontSize = 11.sp, maxLines = 1)
+        Spacer(Modifier.height(3.dp))
+        Box(Modifier.size(5.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (changed) C.accent else Color.Transparent))
     }
 }
 
