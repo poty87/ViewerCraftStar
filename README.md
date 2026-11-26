@@ -189,7 +189,9 @@ MIT — see [LICENSE](LICENSE). Uses [smbj](https://github.com/hierynomus/smbj) 
 and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT) for search by subject. The files in
 `app/src/main/aidl/de/blinkt/openvpn/api` and `app/src/main/java/de/blinkt/openvpn/api` are the public API of
 [OpenVPN for Android](https://github.com/schwabe/ics-openvpn) by Arne Schwabe (Apache 2.0, exempted from that app's GPL);
-OpenVPN for Android itself is a separate app, not included.
+OpenVPN for Android itself is a separate app, not included. The «Object (AI)» masks use Google's MagicTouch model
+from [MediaPipe](https://github.com/google-ai-edge/mediapipe) (`app/src/main/assets/magic_touch.tflite`, Apache 2.0)
+run with [LiteRT](https://github.com/google-ai-edge/LiteRT) (Apache 2.0).
 
 ---
 
@@ -333,7 +335,9 @@ servizi su internet: l'app parla solo con il tuo NAS.
 
 **Licenza**: MIT — vedi [LICENSE](LICENSE). I file in `de/blinkt/openvpn/api` sono l'API pubblica di
 [OpenVPN for Android](https://github.com/schwabe/ics-openvpn) di Arne Schwabe (Apache 2.0); l'app OpenVPN for Android
-è separata e non inclusa.
+è separata e non inclusa. Le maschere «Oggetto (IA)» usano il modello MagicTouch di Google da
+[MediaPipe](https://github.com/google-ai-edge/mediapipe) (`app/src/main/assets/magic_touch.tflite`, Apache 2.0), eseguito
+con [LiteRT](https://github.com/google-ai-edge/LiteRT) (Apache 2.0).
 
 ### Sostieni il progetto
 

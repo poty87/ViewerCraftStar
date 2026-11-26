@@ -92,7 +92,7 @@ internal object Masks {
     /** Si può cambiare la forma sul telefono (le altre si vedono e se ne regolano le correzioni). */
     fun editable(m: JSONObject?, i: Int = part): Boolean = kind(m, i) in EDITABLE
 
-    val EDITABLE = setOf("linear", "radial", "brush", "luminanceRange", "colorRange", "sky", "subject", "background")
+    val EDITABLE = setOf("linear", "radial", "brush", "luminanceRange", "colorRange", "sky", "subject", "background", "object")
 
     /** Aggiunge alla maschera una forma con `op` (add, subtract, intersect); torna il suo indice. */
     fun addComponent(m: JSONObject, op: String, shape: JSONObject): Int {
@@ -121,6 +121,7 @@ internal object Masks {
         "depthRange" -> L.t("Profondità", "Depth range")
         "subject" -> L.t("Soggetto", "Subject")
         "sky" -> L.t("Cielo", "Sky")
+        "object" -> L.t("Oggetto (IA)", "Object (AI)")
         "background" -> L.t("Sfondo", "Background")
         "object" -> L.t("Oggetto", "Object")
         "prompt" -> L.t("Descrizione", "Description")
@@ -559,6 +560,7 @@ internal fun MaskBar(masks: List<JSONObject>, selected: Int?, overlay: Boolean, 
                     DropdownMenuItem({ Text(L.t("Pennello", "Brush"), color = C.text) }, onClick = { open = false; onNew("brush") })
                     DropdownMenuItem({ Text(L.t("Luminanza", "Luminance range"), color = C.text) }, onClick = { open = false; onNew("luminanceRange") })
                     DropdownMenuItem({ Text(L.t("Colore", "Color range"), color = C.text) }, onClick = { open = false; onNew("colorRange") })
+                    DropdownMenuItem({ Text(L.t("Oggetto (IA)", "Object (AI)"), color = C.text) }, onClick = { open = false; onNew("object") })
                     DropdownMenuItem({ Text(L.t("Cielo", "Sky"), color = C.text) }, onClick = { open = false; onNew("sky") })
                     DropdownMenuItem({ Text(L.t("Soggetto", "Subject"), color = C.text) }, onClick = { open = false; onNew("subject") })
                     DropdownMenuItem({ Text(L.t("Sfondo", "Background"), color = C.text) }, onClick = { open = false; onNew("background") })

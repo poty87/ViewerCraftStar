@@ -226,6 +226,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     // maschere: quella aperta (id), la sovrapposizione rossa (sempre, o solo mentre si trascina), la sotto-scheda
     var maskSel by remember { mutableStateOf<Int?>(null) }
     var maskOverlay by remember { mutableStateOf(true) }
+    // «Oggetto (IA)»: scontorno in calcolo, e la foto senza ritaglio e senza maschere già sviluppata (si riusa finché
+    // le impostazioni, maschere escluse, non cambiano)
+    var objectBusy by remember { mutableStateOf(false) }
+    val objectSource = remember { arrayOfNulls<Pair<String, android.graphics.Bitmap>>(1) }
     var maskDragging by remember { mutableStateOf(false) }
     var maskTab by remember { mutableIntStateOf(0) }
     var maskRenaming by remember { mutableStateOf(false) }
@@ -480,6 +484,31 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         else if (section == CROP) Triple(frameJson(s), true, s.toString()) else Triple(s.toString(), false, frameJson(s))
     }
 
+    /**
+     * «Oggetto (IA)»: scontorna di nuovo con tutti i tocchi della forma `sh` e salva lo scontorno nella forma (`seg`).
+     * L'immagine del modello è la foto sviluppata senza ritaglio e senza maschere, come per le maschere IA di LightCraft.
+     */
+    suspend fun computeObject(st: JSONObject, sh: JSONObject) {
+        val taps = MagicTouch.taps(sh)
+        if (taps.isEmpty()) return
+        objectBusy = true
+        try {
+            val src = JSONObject(st.toString()).apply { remove("masks") }.toString()
+            val photo = objectSource[0]?.takeIf { it.first == src }?.second ?: withContext(engine) {
+                DevelopEngine.render(handleFor(src), src, 1024, false)?.let { DevelopEngine.bitmap(it) }
+            }?.also { objectSource[0] = src to it } ?: return
+            val prob = MagicTouch.probability(context, photo, taps)
+            sh.put("seg", MagicTouch.segMask(prob))
+            maskOverlay = true
+            changed()
+        } catch (t: Throwable) {
+            android.util.Log.w("MagicTouch", "scontorno non riuscito", t)
+            note = L.t("Scontorno non riuscito: $t", "Cut-out failed: $t")
+        } finally {
+            objectBusy = false
+        }
+    }
+
     fun value(c: DevControl): Float = (settings?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
 
     /** Il valore che il controllo aveva quando si è aperto l'editor (un tocco sul numero lo rimette). */
@@ -725,6 +754,20 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             .put("flow", brushFlow.toDouble()).put("density", 100.0).put("erase", brushErase).put("auto_mask", brushAuto))
                         changed()
                     }
+                } else if (section == MASKS && !showBefore && shown != null && Masks.editable(openMask) && Masks.kind(openMask) == "object") {
+                    val bw = shown.width
+                    val bh = shown.height
+                    ColorPickOverlay(bw, bh) { o ->
+                        val st = settings ?: return@ColorPickOverlay
+                        val sh = Masks.shape(Masks.find(st, maskSel ?: -1)) ?: return@ColorPickOverlay
+                        // il tocco nella foto senza ritaglio (la cornice delle maschere IA di LightCraft)
+                        val mp = DevelopEngine.maskMap(handle[0], st.toString(), true, bw, bh, doubleArrayOf(o.x.toDouble(), o.y.toDouble()), true)
+                            ?: return@ColorPickOverlay
+                        if (mp[0] !in 0.0..1.0 || mp[1] !in 0.0..1.0) return@ColorPickOverlay
+                        val hint = sh.optJSONArray("hint") ?: JSONArray().also { sh.put("hint", it) }
+                        hint.put(JSONObject().put("x", mp[0]).put("y", mp[1]))
+                        scope.launch { computeObject(st, sh) }
+                    }
                 } else if (section == MASKS && !showBefore && shown != null && Masks.editable(openMask) && Masks.kind(openMask) == "colorRange") {
                     val bw = shown.width
                     val bh = shown.height
@@ -784,6 +827,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             val bw = img.width.toDouble()
                             val bh = img.height.toDouble()
                             return if (kind in setOf("sky", "subject", "background")) Masks.auto(kind)
+                            else if (kind == "object") MagicTouch.emptyShape()
                             else if (kind == "brush") Masks.brush()
                             else if (kind == "luminanceRange") Masks.luminance()
                             else if (kind == "colorRange") Masks.color()
@@ -803,6 +847,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             val bw = img.width.toDouble()
                             val bh = img.height.toDouble()
                             val shape = if (kind in setOf("sky", "subject", "background")) Masks.auto(kind)
+                            else if (kind == "object") MagicTouch.emptyShape()
                             else if (kind == "brush") Masks.brush()
                             else if (kind == "luminanceRange") Masks.luminance()
                             else if (kind == "colorRange") Masks.color()
@@ -850,7 +895,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             // le forme della maschera: + / − / ∩, la forma aperta, «+ Forma»
                             val kindsForParts = listOf("linear" to L.t("Lineare", "Linear"), "radial" to L.t("Radiale", "Radial"),
                                 "brush" to L.t("Pennello", "Brush"), "luminanceRange" to L.t("Luminanza", "Luminance range"),
-                                "colorRange" to L.t("Colore", "Color range"), "sky" to L.t("Cielo", "Sky"), "subject" to L.t("Soggetto", "Subject"),
+                                "colorRange" to L.t("Colore", "Color range"), "object" to L.t("Oggetto (IA)", "Object (AI)"),
+                                "sky" to L.t("Cielo", "Sky"), "subject" to L.t("Soggetto", "Subject"),
                                 "background" to L.t("Sfondo", "Background"))
                             MaskParts(sel, Masks.part, kindsForParts,
                                 onOpen = { i -> Masks.part = i; resets++; editTick++ },
@@ -879,6 +925,27 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                 ControlSlider(DevControl("brush.size", "Dimensione", "Size", 6f, 90f, 1f, 0, 22f), brushSize, resets, 22f) { brushSize = it }
                                 ControlSlider(DevControl("brush.feather", "Sfumatura", "Feather", 0f, 100f, 1f, 0, 50f), brushFeather, resets, 50f) { brushFeather = it }
                                 ControlSlider(DevControl("brush.flow", "Flusso", "Flow", 1f, 100f, 1f, 0, 100f), brushFlow, resets, 100f) { brushFlow = it }
+                            }
+                            if (Masks.editable(sel) && kind == "object" && sh != null) {
+                                val n = MagicTouch.taps(sh).size
+                                MaskHint(when {
+                                    objectBusy -> L.t("Scontorno in corso…", "Cutting out…")
+                                    n == 0 -> L.t("Tocca la foto sull'oggetto da scontornare (una persona, un animale, una cosa). Altri tocchi aggiungono le parti mancanti; per togliere una parte: «+ Forma» › Sottrai › Oggetto (IA).",
+                                        "Tap the photo on the object to cut out (a person, an animal, a thing). More taps add missing parts; to remove a part: «+ Shape» › Subtract › Object (AI).")
+                                    else -> L.t(if (n == 1) "1 tocco. Tocca ancora per aggiungere le parti mancanti." else "$n tocchi. Tocca ancora per aggiungere le parti mancanti.",
+                                        if (n == 1) "1 tap. Tap again to add missing parts." else "$n taps. Tap again to add missing parts.")
+                                })
+                                if (n > 0) Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Pill(L.t("Annulla tocco", "Undo tap"), false) {
+                                        sh.optJSONArray("hint")?.remove(n - 1)
+                                        val st = settings
+                                        if (n == 1 || st == null) { sh.remove("seg"); resets++; changed() } else scope.launch { computeObject(st, sh) }
+                                    }
+                                }
+                                val dc = DevControl("mask.$id.edge", "Bordo", "Edge", -100f, 100f, 1f, 0, 0f)
+                                ControlSlider(dc, sh.optDouble("edge", 0.0).toFloat(), resets, (Masks.shape(startMask)?.optDouble("edge", 0.0) ?: 0.0).toFloat()) { v ->
+                                    if (v.roundToInt() == 0) sh.remove("edge") else sh.put("edge", v.roundToInt().toDouble()); changed()
+                                }
                             }
                             if (Masks.editable(sel) && kind == "luminanceRange" && sh != null) {
                                 // la striscia dei grigi: dove si trovano «Da» e «A»
