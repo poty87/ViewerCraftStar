@@ -109,12 +109,12 @@ private fun segmentKey(iso: String, by: String): String = when (by) {
 }
 
 private fun segmentTitle(key: String, by: String): String = runCatching {
-    val loc = Locale.getDefault()
+    val loc = L.locale
     when (by) {
         "year" -> key
-        "day" -> LocalDate.parse(key).format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", loc))
+        "day" -> LocalDate.parse(key).format(DateTimeFormatter.ofPattern(L.t("EEEE d MMMM yyyy", "EEEE, MMMM d, yyyy"), loc))
             .replaceFirstChar { it.titlecase(loc) }
-        else -> LocalDate.parse("$key-01").format(DateTimeFormatter.ofPattern("yyyy MMMM", loc))
+        else -> LocalDate.parse("$key-01").format(DateTimeFormatter.ofPattern(L.t("yyyy MMMM", "MMMM yyyy"), loc))
     }
 }.getOrDefault(key.ifEmpty { L.t("Senza data", "No date") })
 

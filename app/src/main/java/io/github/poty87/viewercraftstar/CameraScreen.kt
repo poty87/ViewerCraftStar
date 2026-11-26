@@ -353,8 +353,8 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                     else list.groupBy { p ->
                         if (p.taken <= 0) "" else {
                             val dt = java.time.Instant.ofEpochMilli(p.taken).atZone(java.time.ZoneId.systemDefault())
-                            val pattern = when (groupBy) { "day" -> "EEEE d MMMM yyyy"; "month" -> "MMMM yyyy"; else -> "yyyy" }
-                            dt.format(java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.getDefault()))
+                            val pattern = when (groupBy) { "day" -> L.t("EEEE d MMMM yyyy", "EEEE, MMMM d, yyyy"); "month" -> "MMMM yyyy"; else -> "yyyy" }
+                            dt.format(java.time.format.DateTimeFormatter.ofPattern(pattern, L.locale))
                                 .replaceFirstChar { it.uppercase() }
                         }
                     }.toList()

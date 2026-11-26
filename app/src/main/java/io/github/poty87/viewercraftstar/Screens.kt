@@ -899,6 +899,20 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         // ricerca per soggetti: il modello IA scaricato occupa spazio (centinaia di MB)
         val context = androidx.compose.ui.platform.LocalContext.current
         var aiBytes by remember { mutableStateOf(AiStore.modelsSize(context)) }
+        SettingsCard(L.t("Lingua", "Language")) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((k, name) in listOf("auto" to L.t("Come il telefono", "Same as the phone"), "it" to "Italiano", "en" to "English"))
+                    Pill(name, L.choice == k) {
+                        if (L.choice != k) {
+                            save()
+                            context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).edit().putString("language", k).commit()
+                            ConfigBackup.restart(context) // i testi si leggono all'avvio
+                        }
+                    }
+            }
+            Text(L.t("Cambiando lingua l'app si riavvia.", "Changing the language restarts the app."), color = C.muted, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+        }
         SettingsCard(L.t("Permessi", "Permissions")) { PermissionsCard() }
         SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
             PathRow(L.t("Cartella delle foto nuove (non sincronizzata)", "New photos folder (not synced)"), fullPath(work),

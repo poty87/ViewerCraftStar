@@ -64,8 +64,22 @@ data class PhotoMeta(
 /** Un preset della libreria LightCraft, dall'elenco che PresetCraftAppLicator pubblica sul NAS. */
 data class PresetInfo(val id: String, val name: String, val group: String, val profile: String?, val profileOnly: Boolean)
 
-/** Testi dell'interfaccia: italiano, altrimenti inglese. */
+/**
+ * Testi dell'interfaccia: italiano o inglese. L'impostazione «Lingua» (`language` nelle impostazioni): "auto" segue la
+ * lingua del telefono (italiano se è italiano, altrimenti inglese), "it" e "en" la fissano. Si legge all'avvio dell'app
+ * ([VcsApp]); cambiandola l'app si riavvia.
+ */
 object L {
-    private val it = Locale.getDefault().language == "it"
+    @Volatile private var it = Locale.getDefault().language == "it"
+    @Volatile var choice = "auto"; private set
+
+    fun init(context: android.content.Context) {
+        choice = context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).getString("language", "auto") ?: "auto"
+        it = when (choice) { "it" -> true; "en" -> false; else -> Locale.getDefault().language == "it" }
+    }
+
     fun t(italian: String, english: String) = if (it) italian else english
+
+    /** La lingua delle date (nomi di mesi e giorni): quella dei testi. */
+    val locale: Locale get() = if (it) Locale.ITALIAN else Locale.ENGLISH
 }
