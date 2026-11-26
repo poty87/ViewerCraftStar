@@ -193,8 +193,8 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
     val memory = if (storages.size > 1) chosenMemory else ""
     fun storageName(st: String) = if (st == GrCamera.INTERNAL) L.t("Memoria interna", "Internal memory") else L.t("Scheda SD", "SD card")
     // si vedono i DNG (con «Solo JPEG», i JPEG)
-    val list = photos?.filter { if (format == "jpg") !it.name.endsWith(".dng", true) else it.name.endsWith(".dng", true) }
-        ?.filter { memory.isEmpty() || it.storage == memory }.orEmpty()
+    val inFormat = photos?.filter { if (format == "jpg") !it.name.endsWith(".dng", true) else it.name.endsWith(".dng", true) }.orEmpty()
+    val list = inFormat.filter { memory.isEmpty() || it.storage == memory }
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 10.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { close() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L.t("Indietro", "Back"), tint = C.text) }
@@ -332,9 +332,11 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                     for (st in storages) {
                         val on = chosenMemory == st
                         Box(Modifier.fillMaxHeight().clip(RoundedCornerShape(50)).background(if (on) C.accent else Color.Transparent)
-                            .clickable(enabled = !downloading) { if (!on) { chosenMemory = st; selected = emptySet() } }
+                            // la selezione resta passando da una memoria all'altra: si scaricano insieme le foto scelte in tutte e due
+                            .clickable(enabled = !downloading) { if (!on) chosenMemory = st }
                             .padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
-                            Text(if (st == GrCamera.INTERNAL) "IN" else "SD", color = if (on) Color.Black else C.text,
+                            val picked = selected.count { it.startsWith("$st:") }
+                            Text((if (st == GrCamera.INTERNAL) "IN" else "SD") + (if (picked > 0) " · $picked" else ""), color = if (on) Color.Black else C.text,
                                 fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
                         }
                     }
@@ -435,7 +437,7 @@ fun CameraScreen(vm: AppViewModel, onBack: () -> Unit) {
                         }, enabled = !downloading, modifier = Modifier.weight(1f)) { Text(L.t("Spegni e chiudi", "Turn off and close"), maxLines = 1) }
                         PillButton(onClick = {
                             val net = network ?: return@PillButton
-                            val chosenNow = list.filter { it.key in selected }
+                            val chosenNow = inFormat.filter { it.key in selected } // anche quelle scelte nell'altra memoria
                             val all = photos.orEmpty()
                             fun twinOf(dngP: GrCamera.Photo): GrCamera.Photo? {
                                 val stem = dngP.name.substringBeforeLast('.')
