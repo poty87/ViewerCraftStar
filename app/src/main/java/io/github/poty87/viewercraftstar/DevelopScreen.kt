@@ -96,6 +96,7 @@ private val PROFILE = DevSection("Profilo", "Profile", listOf(
 ))
 private val CROP = DevSection("Ritaglio", "Crop", emptyList())
 private val PRESETS = DevSection("Preset", "Presets", emptyList())
+private val MASKS = DevSection("Maschere", "Masks", emptyList())
 
 // seconda fase: i controlli di LightCraft (lightcraft-cli controls), con i nomi del JSON delle impostazioni
 private val CURVE = DevSection("Curva", "Curve", listOf(
@@ -151,6 +152,7 @@ private val CATEGORIES = listOf(
     DevCategory("Colore", "Color", "color", listOf(WHITE, COLOR, MIXER, GRADING)),
     DevCategory("Effetti", "Effects", "effects", listOf(EFFECTS, VIGNETTE, GRAIN)),
     DevCategory("Dettaglio", "Detail", "detail", listOf(SHARP, NOISE, COLOR_NOISE)),
+    DevCategory("Maschere", "Masks", "masks", listOf(MASKS)),
     DevCategory("Ritaglio", "Crop", "crop", listOf(CROP)),
     DevCategory("Profili", "Profiles", "profiles", listOf(PROFILE)),
     DevCategory("Preset", "Presets", "presets", listOf(PRESETS)),
@@ -208,6 +210,13 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     var straightening by remember { mutableStateOf(false) } // dito sul cursore Raddrizza: griglia fitta
     var before by remember { mutableStateOf<Bitmap?>(null) }
     var showBefore by remember { mutableStateOf(false) }
+    // maschere: quella aperta (id), la sovrapposizione rossa (sempre, o solo mentre si trascina), la sotto-scheda
+    var maskSel by remember { mutableStateOf<Int?>(null) }
+    var maskOverlay by remember { mutableStateOf(true) }
+    var maskDragging by remember { mutableStateOf(false) }
+    var maskTab by remember { mutableIntStateOf(0) }
+    var maskRenaming by remember { mutableStateOf(false) }
+    val overlayFlow = remember { MutableStateFlow(-1) } // la maschera da disegnare sopra lo sviluppo (-1 = nessuna)
     var section by ui::section
     var category by ui::category
     val lastGroup = ui.lastGroup // la sotto-scheda ricordata per ogni categoria (anche passando ad altre foto)
@@ -314,6 +323,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         }
     }
 
+    LaunchedEffect(section, maskSel, maskOverlay, maskDragging, showBefore) {
+        overlayFlow.value = if (section == MASKS && !showBefore && (maskOverlay || maskDragging)) maskSel ?: -1 else -1
+    }
+
     /** La foto da sviluppare con queste impostazioni: l'originale decodificato con il loro profilo DCP, se è pronto. */
     fun handleFor(json: String): Long {
         val pid = runCatching { JSONObject(json).optJSONObject("profile")?.optString("id") }.getOrNull().orEmpty()
@@ -322,13 +335,16 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
 
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.flow.combine(requests, sharp, sourceTick) { j, s, _ -> j to s }.collectLatest { (req, big) ->
+        kotlinx.coroutines.flow.combine(requests, sharp, sourceTick, overlayFlow) { j, s, _, o -> Triple(j, s, o) }.collectLatest { (req, big, ov) ->
             if (req == null || handle[0] == 0L) return@collectLatest
             val (json, forCrop, other) = req
             // ingrandita: il lato lungo della smart preview (circa 2560 pixel), altrimenti quanto lo schermo
             val full = maxOf(srcSize.first, srcSize.second).toInt()
             val size = if (big && full > edge) full else edge
-            val a = withContext(engine) { DevelopEngine.render(handleFor(json), json, size, true) } ?: return@collectLatest
+            val a = withContext(engine) {
+                if (ov >= 0 && !forCrop) DevelopEngine.renderMask(handleFor(json), json, size, true, ov)
+                else DevelopEngine.render(handleFor(json), json, size, true)
+            } ?: return@collectLatest
             val bmp = DevelopEngine.bitmap(a)
             if (forCrop) cropImage = bmp
             else {
@@ -455,6 +471,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         CROP -> listOf("crop", "orientation")
         PROFILE -> listOf("profile")
         PRESETS -> emptyList()
+        MASKS -> listOf("masks")
         WHITE -> listOf("wb")
         else -> sec.controls.map { it.path }
     }
@@ -594,6 +611,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                     Image(bitmap, null, Modifier.fillMaxSize()
                         .pointerInput(Unit) {
                             detectTapGestures(onDoubleTap = { at ->
+                                if (section == MASKS) return@detectTapGestures
                                 if (zoom > 1.001f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
                                 else {
                                     zoom = DOUBLE_TAP_ZOOM
@@ -605,6 +623,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
+                                if (section == MASKS) return@awaitEachGesture
                                 var multi = false
                                 do {
                                     val ev = awaitPointerEvent()
@@ -642,6 +661,17 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         val (w, h) = dims()
                         setGeometry(DevelopEngine.cropDrag(start, handleIndex, gx, gy, px, py, w, h, aspect()))
                     })
+                // maschera aperta (lineare o radiale): le sue maniglie sopra la foto
+                if (section == MASKS && !showBefore && shown != null && Masks.editable(Masks.find(settings, maskSel ?: -1))) {
+                    val bw = shown.width
+                    val bh = shown.height
+                    MaskOverlay(bw, bh, editTick, mask = { Masks.find(settings, maskSel ?: -1) },
+                        toOut = { pts -> settings?.let { DevelopEngine.maskMap(handle[0], it.toString(), true, bw, bh, pts, false) } },
+                        toMask = { pts -> settings?.let { DevelopEngine.maskMap(handle[0], it.toString(), true, bw, bh, pts, true) } },
+                        long = { val (w, h) = dims(); val l = maxOf(w, h).coerceAtLeast(1.0); (w / l) to (h / l) },
+                        onDragging = { maskDragging = it },
+                        onEdit = { changed() })
+                }
                 error?.let { Text(it, color = Color(0xFFF87171), fontSize = 14.sp, modifier = Modifier.padding(24.dp)) }
             }
             if (settings != null) Column(Modifier.fillMaxWidth().background(Color(0xE6141414)).navigationBarsPadding()
@@ -649,7 +679,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 rawStatus?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 fun open(sec: DevSection) {
-                    if (sec == CROP) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero } // il ritaglio si fa sulla foto intera
+                    // il ritaglio si fa sulla foto intera; le maschere sulla foto a 1× (le maniglie seguono la foto mostrata)
+                    if (sec == CROP || sec == MASKS) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
                     val wasCrop = section == CROP
                     section = sec
                     lastGroup[category] = sec
@@ -663,6 +694,102 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                 }
                 // i cursori: sempre la stessa altezza (le schede non saltano), il resto scorre; la foto resta grande
                 Column(Modifier.fillMaxWidth().height((screen.screenHeightDp * 0.27f).dp).verticalScroll(rememberScrollState())) {
+                    if (section == MASKS) {
+                        val ms = remember(editTick, settings) { Masks.all(settings) }
+                        val sel = maskSel?.let { id -> ms.firstOrNull { it.optInt("id") == id } }
+                        fun newMask(kind: String) {
+                            val s = settings ?: return
+                            val img = image ?: return
+                            val bw = img.width.toDouble()
+                            val bh = img.height.toDouble()
+                            val shape = if (kind == "linear") {
+                                val p = DevelopEngine.maskMap(handle[0], s.toString(), true, img.width, img.height,
+                                    doubleArrayOf(bw * 0.5, bh * 0.2, bw * 0.5, bh * 0.55), true) ?: return
+                                Masks.linear(doubleArrayOf(p[0], p[1]), doubleArrayOf(p[2], p[3]))
+                            } else {
+                                val p = DevelopEngine.maskMap(handle[0], s.toString(), true, img.width, img.height,
+                                    doubleArrayOf(bw * 0.5, bh * 0.5), true) ?: return
+                                Masks.radial(p[0], p[1], 0.18, 0.13)
+                            }
+                            maskSel = Masks.add(s, shape)
+                            maskOverlay = true
+                            maskTab = 0
+                            resets++
+                            changed()
+                        }
+                        MaskBar(ms, maskSel, maskOverlay, onOverlay = { maskOverlay = !maskOverlay },
+                            onSelect = { id -> maskSel = if (maskSel == id) null else id; resets++ },
+                            onNew = { newMask(it) },
+                            onMenu = { key ->
+                                val s = settings
+                                val id = maskSel
+                                if (s != null && id != null) {
+                                    val m = Masks.find(s, id)
+                                    when (key) {
+                                        "rename" -> maskRenaming = true
+                                        "duplicate" -> maskSel = Masks.duplicate(s, id) ?: id
+                                        "invert" -> m?.put("invert", !m.optBoolean("invert"))
+                                        "visible" -> m?.put("visible", !m.optBoolean("visible", true))
+                                        "delete" -> { Masks.remove(s, id); maskSel = null }
+                                    }
+                                    resets++
+                                    changed()
+                                }
+                            })
+                        if (ms.isEmpty()) MaskHint(L.t("Aggiungi una maschera con «+ Nuova»: lineare (una sfumatura, per esempio sul cielo) o radiale (un'ellisse, per esempio su un volto). Poi trascini le maniglie sulla foto e regoli le correzioni solo lì.",
+                            "Add a mask with «+ New»: linear (a gradient, e.g. on the sky) or radial (an ellipse, e.g. on a face). Then drag the handles on the photo and adjust only there."))
+                        else if (sel == null) MaskHint(L.t("Tocca una maschera per vederla e cambiarla.", "Tap a mask to see and change it."))
+                        if (sel != null) {
+                            val id = sel.optInt("id")
+                            val startMask = Masks.find(original, id)
+                            val kind = Masks.kind(sel)
+                            if (!Masks.editable(sel)) MaskHint(L.t("${Masks.kindName(kind)}: forma fatta in LightCraft; qui ne regoli le correzioni, la forma si cambia sul PC.",
+                                "${Masks.kindName(kind)}: shape made in LightCraft; here you adjust its corrections, the shape is changed on the PC."))
+                            fun adjust(): JSONObject = sel.optJSONObject("adjust") ?: JSONObject().also { sel.put("adjust", it) }
+                            val all = MASK_GROUPS[maskTab].third + MASK_AMOUNT
+                            all.forEachIndexed { i, mc ->
+                                if (i == 0) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                                    MASK_GROUPS.forEachIndexed { gi, g ->
+                                        val ch = g.third.any { c -> kotlin.math.abs((adjust().optDouble(c.key, c.default.toDouble())) -
+                                            (startMask?.optJSONObject("adjust")?.optDouble(c.key, c.default.toDouble()) ?: c.default.toDouble())) > 1e-9 }
+                                        SubTab(L.t(g.first, g.second), gi == maskTab, ch) { maskTab = gi }
+                                    }
+                                }
+                                val dc = DevControl("mask.$id.${mc.key}", mc.it, mc.en, mc.min, mc.max, mc.step, mc.decimals, mc.default)
+                                val now = adjust().optDouble(mc.key, mc.default.toDouble()).toFloat()
+                                val was = (startMask?.optJSONObject("adjust")?.optDouble(mc.key, mc.default.toDouble()) ?: mc.default.toDouble()).toFloat()
+                                androidx.compose.runtime.key(dc.path) {
+                                    ControlSlider(dc, now, resets, was) { v ->
+                                        val r = if (mc.decimals == 0) v.roundToInt().toDouble() else (v / mc.step).roundToInt() * mc.step.toDouble()
+                                        adjust().put(mc.key, r)
+                                        changed()
+                                    }
+                                }
+                            }
+                        }
+                        if (sel != null && Masks.kind(sel) == "radial") {
+                            val id = sel.optInt("id")
+                            val startMask = Masks.find(original, id)
+                            Masks.shape(sel)?.let { sh ->
+                                val fc = DevControl("mask.$id.feather", "Sfumatura", "Feather", 0f, 100f, 1f, 0, 50f)
+                                ControlSlider(fc, sh.optDouble("feather", 50.0).toFloat(), resets,
+                                    (Masks.shape(startMask)?.optDouble("feather", 50.0) ?: 50.0).toFloat()) { v ->
+                                    sh.put("feather", v.roundToInt().toDouble()); changed()
+                                }
+                            }
+                            Masks.shape(sel)?.let { sh ->
+                                Row(Modifier.padding(top = 4.dp)) {
+                                    Pill(L.t("Effetto fuori dall'ellisse", "Effect outside the ellipse"), sh.optBoolean("invert")) {
+                                        sh.put("invert", !sh.optBoolean("invert")); changed()
+                                    }
+                                }
+                            }
+                        }
+                        if (maskRenaming) Masks.find(settings, maskSel ?: -1)?.let { m ->
+                            MaskNameDialog(m.optString("name"), { maskRenaming = false }) { n -> m.put("name", n); maskRenaming = false; changed() }
+                        }
+                    }
                     if (section == PRESETS) {
                         val groups = presets.map { it.group }.distinct()
                         val group = presetGroup.takeIf { it in groups } ?: groups.firstOrNull().orEmpty()
@@ -1220,6 +1347,11 @@ private fun CategoryIcon(kind: String, color: Color, modifier: Modifier) {
             "crop" -> { // ritaglio
                 line(0.28f, 0.08f, 0.28f, 0.72f); line(0.28f, 0.72f, 0.92f, 0.72f)
                 line(0.08f, 0.28f, 0.72f, 0.28f); line(0.72f, 0.28f, 0.72f, 0.92f)
+            }
+            "masks" -> { // maschere: un cerchio con metà piena
+                drawCircle(color, w * 0.32f, c, style = st)
+                drawArc(color, 90f, 180f, true, androidx.compose.ui.geometry.Offset(w * 0.18f, h * 0.18f),
+                    androidx.compose.ui.geometry.Size(w * 0.64f, h * 0.64f))
             }
             "presets" -> { // preset: un elenco
                 for (i in 0..2) {

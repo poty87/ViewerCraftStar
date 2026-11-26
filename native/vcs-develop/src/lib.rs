@@ -91,16 +91,37 @@ pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_openR
 pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_render<'a>(
     mut env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong, settings: JString<'a>, max_edge: jint, apply_crop: jboolean,
 ) -> jintArray {
+    render_with(&mut env, handle, &settings, max_edge, apply_crop, -1)
+}
+
+/// Come `render`, con la maschera `mask_id` (l'id di una maschera delle impostazioni) disegnata sopra in rosso, come
+/// la sovrapposizione di LightCraft; `mask_id` < 0 = nessuna.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_renderMask<'a>(
+    mut env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong, settings: JString<'a>, max_edge: jint, apply_crop: jboolean, mask_id: jint,
+) -> jintArray {
+    render_with(&mut env, handle, &settings, max_edge, apply_crop, mask_id)
+}
+
+fn render_with<'a>(env: &mut JNIEnv<'a>, handle: jlong, settings: &JString<'a>, max_edge: jint, apply_crop: jboolean, mask_id: jint) -> jintArray {
     if handle == 0 {
         return std::ptr::null_mut();
     }
     let photo = unsafe { &*(handle as *const Photo) };
-    let Ok(json) = env.get_string(&settings) else { return std::ptr::null_mut() };
+    let Ok(json) = env.get_string(settings) else { return std::ptr::null_mut() };
     let json: String = json.into();
     let Ok(s) = serde_json::from_str::<lightcraft_develop::DevelopSettings>(&json) else { return std::ptr::null_mut() };
     let edge = max_edge.max(16) as usize;
     let mut req = lightcraft_pipeline::RenderRequest::fit(edge, edge);
     req.apply_crop = apply_crop != 0;
+    if mask_id >= 0 {
+        req.overlay = lightcraft_pipeline::Overlay::Mask {
+            id: mask_id as u16,
+            view: lightcraft_pipeline::MaskView::Color,
+            color: [235, 64, 52],
+            opacity: 50,
+        };
+    }
     let r = lightcraft_engine::media::develop(&photo.src, &photo.info, &s, &req, Some(&photo.cache), false);
     let img = r.image;
     let mut out: Vec<i32> = Vec::with_capacity(2 + img.data.len());
@@ -109,6 +130,54 @@ pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_rende
     out.extend(img.data.iter().map(|p| i32::from_be_bytes([p[3], p[0], p[1], p[2]])));
     let Ok(arr) = env.new_int_array(out.len() as i32) else { return std::ptr::null_mut() };
     if env.set_int_array_region(&arr, 0, &out).is_err() {
+        return std::ptr::null_mut();
+    }
+    arr.into_raw()
+}
+
+/// Converte punti (x, y, x, y…) tra la foto sviluppata con `settings` (`out_w` x `out_h` pixel, `apply_crop` come nello
+/// sviluppo) e le coordinate delle maschere di LightCraft (normalizzate sulla foto com'è scattata, prima di obiettivo,
+/// ritaglio e raddrizzamento: `Mask::on_photo`). `to_mask` vero: dai pixel alle maschere; falso: il contrario (NaN per
+/// un punto che non ha posto nella foto). Con la `Frame` di LightCraft, così ritaglio, raddrizzamento e correzioni
+/// dell'obiettivo valgono come nello sviluppo.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_maskMap<'a>(
+    mut env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong, settings: JString<'a>, apply_crop: jboolean, out_w: jint, out_h: jint,
+    pts: jni::objects::JDoubleArray<'a>, to_mask: jboolean,
+) -> jni::sys::jdoubleArray {
+    if handle == 0 {
+        return std::ptr::null_mut();
+    }
+    let photo = unsafe { &*(handle as *const Photo) };
+    let Ok(json) = env.get_string(&settings) else { return std::ptr::null_mut() };
+    let json: String = json.into();
+    let Ok(s) = serde_json::from_str::<lightcraft_develop::DevelopSettings>(&json) else { return std::ptr::null_mut() };
+    let Ok(n) = env.get_array_length(&pts) else { return std::ptr::null_mut() };
+    let mut v = vec![0f64; n as usize];
+    if env.get_double_array_region(&pts, 0, &mut v).is_err() {
+        return std::ptr::null_mut();
+    }
+    let frame = lightcraft_pipeline::geometry::Frame::with_lens(photo.src.width, photo.src.height, &s, apply_crop != 0, photo.info.lens.as_ref());
+    let f = frame.for_mask(true);
+    let (w, h) = (out_w.max(1) as usize, out_h.max(1) as usize);
+    let mut out = Vec::with_capacity(v.len());
+    if to_mask != 0 {
+        let m = f.out_to_mask(w, h);
+        for c in v.chunks(2) {
+            let p = m.apply(lightcraft_geom::Point::new(c[0], c.get(1).copied().unwrap_or(0.0)));
+            out.extend([p.x, p.y]);
+        }
+    } else {
+        let g = f.mask_to_out(w, h);
+        for c in v.chunks(2) {
+            match g(lightcraft_geom::Point::new(c[0], c.get(1).copied().unwrap_or(0.0))) {
+                Some(p) => out.extend([p.x, p.y]),
+                None => out.extend([f64::NAN, f64::NAN]),
+            }
+        }
+    }
+    let Ok(arr) = env.new_double_array(out.len() as i32) else { return std::ptr::null_mut() };
+    if env.set_double_array_region(&arr, 0, &out).is_err() {
         return std::ptr::null_mut();
     }
     arr.into_raw()

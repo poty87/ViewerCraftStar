@@ -32,6 +32,14 @@ object DevelopEngine {
     @JvmStatic external fun openRaw(bytes: ByteArray, dcp: ByteArray?, maxEdge: Int): Long
     /** Sviluppa: [larghezza, altezza, pixel ARGB…], null se le impostazioni non si leggono. */
     @JvmStatic external fun render(handle: Long, settings: String, maxEdge: Int, applyCrop: Boolean): IntArray?
+    /** Come [render], con la maschera `maskId` disegnata sopra in rosso (come in LightCraft); < 0 = nessuna. */
+    @JvmStatic external fun renderMask(handle: Long, settings: String, maxEdge: Int, applyCrop: Boolean, maskId: Int): IntArray?
+    /**
+     * Converte punti (x, y, …) tra la foto sviluppata con `settings` (`outW` x `outH` pixel) e le coordinate delle
+     * maschere di LightCraft (sulla foto com'è scattata): `toMask` vero dai pixel alle maschere, falso il contrario.
+     */
+    @JvmStatic external fun maskMap(handle: Long, settings: String, applyCrop: Boolean, outW: Int, outH: Int, pts: DoubleArray,
+                                    toMask: Boolean): DoubleArray?
     @JvmStatic external fun close(handle: Long)
     /** Larghezza e altezza della foto aperta. */
     @JvmStatic external fun size(handle: Long): IntArray?
