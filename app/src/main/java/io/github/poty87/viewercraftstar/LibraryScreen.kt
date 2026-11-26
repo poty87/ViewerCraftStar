@@ -923,7 +923,7 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     val developUi = remember { DevelopUi() }
     // dopo uno scorrimento che ha salvato: la foto e la modifica di prima, per «Annulla» (qualche secondo)
     var undo by remember { mutableStateOf<Pair<Int, LibEdit?>?>(null) }
-    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4500); undo = null } }
+    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(7000); undo = null } }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
     // l'editor prende il posto del visualizzatore (nella finestra dell'app: i margini delle barre di Android valgono
     // come nel resto dell'app; in un dialog il pannello finiva sotto la barra di navigazione)
@@ -1025,9 +1025,13 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, L.t("Indietro", "Back"), tint = C.text)
                 }
-                Text("${pager.currentPage + 1}/${list.size}  ·  ${dateText(p.captured).substringBefore(' ')}" +
-                    (if (p.copyOf != null) "  ·  " + p.copyName.ifEmpty { L.t("copia virtuale", "virtual copy") } else ""), color = C.text,
-                    fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // posizione sopra; data (e, per una copia virtuale, il suo nome) sotto, più piccole: entrano anche con
+                // tutti i pulsanti a destra
+                Column(Modifier.weight(1f)) {
+                    Text("${pager.currentPage + 1}/${list.size}", color = C.text, fontSize = 13.sp, maxLines = 1)
+                    Text(dateText(p.captured).substringBefore(' '), color = C.muted, fontSize = 11.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                }
                 // ritoccata in LightCraft: com'è adesso (sviluppata dal PC) o com'era allo scatto
                 if (p.id in lib.developed && !faceMode) Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
                     color = if (lib.showOriginal) C.text else C.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium,
@@ -1050,6 +1054,14 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 ViewerAction(L.t("Informazioni", "Info"), on = info, onClick = { info = !info }) {
                     Icon(Icons.Filled.Info, null, tint = if (info) Color.Black else C.text, modifier = Modifier.size(20.dp))
                 }
+            }
+            // copia virtuale: il suo nome, sotto l'intestazione (accanto ai pulsanti non ci starebbe)
+            if (p.copyOf != null) Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                CopyMark()
+                Spacer(Modifier.width(8.dp))
+                Text(L.t("Copia virtuale", "Virtual copy") + (if (p.copyName.isNotEmpty()) " · ${p.copyName}" else ""),
+                    color = C.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
             // con le informazioni aperte le stelle e il resto della modifica si nascondono (resta solo l'avviso del cestino)

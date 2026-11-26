@@ -268,16 +268,18 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         profiles.firstOrNull { it.id == current }?.let { withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, cfg, lib.libShare, libDir, idx.library, it) } }
         if (current.startsWith("dcp:")) note = L.t("Profilo della fotocamera (DCP): sul telefono il cambio di profilo è approssimato.",
             "Camera profile (DCP): changing profile on the phone is approximate.")
-        // versione del motore e di LightCraft sul PC
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val folder = lib.libRoot.substringBeforeLast("\\libraries")
-                Remote.use(cfg, lib.libShare) { s -> Remote.open(s, "$folder\\lightcraft.json").use { r -> String(r.read(0, r.size.toInt())) } }
-            }.getOrNull()?.let { JSONObject(it).optString("version") }
-        }?.let { pc ->
-            val mine = DevelopEngine.version()
-            if (pc.isNotEmpty() && pc != mine) note = L.t("Motore del telefono $mine, LightCraft sul PC $pc: il risultato potrebbe differire di poco. Aggiorna ViewerCraftStar.",
-                "Phone engine $mine, LightCraft on the PC $pc: the result may differ slightly. Update ViewerCraftStar.")
+        // versione del motore e di LightCraft sul PC: in parallelo, la foto non la aspetta
+        launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val folder = lib.libRoot.substringBeforeLast("\\libraries")
+                    Remote.use(cfg, lib.libShare) { s -> Remote.open(s, "$folder\\lightcraft.json").use { r -> String(r.read(0, r.size.toInt())) } }
+                }.getOrNull()?.let { JSONObject(it).optString("version") }
+            }?.let { pc ->
+                val mine = DevelopEngine.version()
+                if (pc.isNotEmpty() && pc != mine) note = L.t("Motore del telefono $mine, LightCraft sul PC $pc: il risultato potrebbe differire di poco. Aggiorna ViewerCraftStar.",
+                    "Phone engine $mine, LightCraft on the PC $pc: the result may differ slightly. Update ViewerCraftStar.")
+            }
         }
         val h = withContext(engine) { DevelopEngine.open(bytes) }
         if (h == 0L) { error = L.t("Smart preview non leggibile.", "Smart preview can't be read."); return@LaunchedEffect }

@@ -279,8 +279,16 @@ object DevelopProfiles {
     private fun dir(context: Context, lib: String) =
         File(context.filesDir, "libraries/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/profiles")
 
+    /** Letti da poco: libreria → (quando, elenco). Aprendo una foto dopo l'altra non si rilegge il NAS ogni volta. */
+    private val recent = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Profile>>>()
+
     /** L'elenco dei profili (letto dal NAS, tenuto sul telefono per quando il NAS non risponde). */
     suspend fun list(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String): List<Profile> {
+        recent[lib]?.let { (at, l) -> if (System.currentTimeMillis() - at < FRESH_MS) return l }
+        return read(context, cfg, share, libDir, lib).also { recent[lib] = System.currentTimeMillis() to it }
+    }
+
+    private suspend fun read(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String): List<Profile> {
         val local = File(dir(context, lib), "profiles.json")
         val text = runCatching {
             Remote.use(cfg, share) { s -> Remote.open(s, "$libDir\\profiles.json").use { r -> String(r.read(0, r.size.toInt())) } }
@@ -314,7 +322,14 @@ object DevelopPresets {
         val profileId: String get() = settings.optJSONObject("profile")?.optString("id").orEmpty()
     }
 
+    private val recent = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Preset>>>()
+
     suspend fun list(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String): List<Preset> {
+        recent[lib]?.let { (at, l) -> if (System.currentTimeMillis() - at < FRESH_MS) return l }
+        return read(context, cfg, share, libDir, lib).also { recent[lib] = System.currentTimeMillis() to it }
+    }
+
+    private suspend fun read(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String): List<Preset> {
         val local = File(context.filesDir, "libraries/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/develop-presets.json")
         val text = runCatching {
             Remote.use(cfg, share) { s -> Remote.open(s, "$libDir\\presets.json").use { r -> String(r.read(0, r.size.toInt()), Charsets.UTF_8) } }
@@ -355,6 +370,9 @@ object DevelopClipboard {
         label = name
     }
 }
+
+/** Per quanto tempo elenchi di profili e preset letti dal NAS valgono senza rileggerli. */
+internal const val FRESH_MS = 10 * 60 * 1000L
 
 /** La foto com'è dopo una modifica di sviluppo fatta sul telefono, finché il PC non la applica. */
 object DevelopPending {
