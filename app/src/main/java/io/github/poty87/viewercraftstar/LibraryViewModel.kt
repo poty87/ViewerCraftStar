@@ -855,11 +855,20 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
         val made = DevelopStore.copies(getApplication(), idx.library)
+        // sviluppo arrivato anche quando a casa la foto ha proprio le impostazioni mandate dal telefono: con «Togli le
+        // modifiche del telefono» (o una foto rimessa com'era) la firma torna quella di partenza e da sola non basta
+        val devIds = stored.filter { it.value.develop != null && it.value.copy == null && it.key >= 0 }.keys
+        val homeDev = if (devIds.isEmpty()) emptyMap() else DevelopStore.entries(getApplication(), idx.library, devIds)
+        val sameAsHome = devIds.filter { id ->
+            val h = homeDev[id] ?: return@filter false
+            runCatching { jsonSame(h.settings, JSONObject(stored.getValue(id).develop!!.settings)) }.getOrDefault(false)
+        }.toSet()
         // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa; una copia virtuale finché il PC
         // non l'ha creata
         val kept = stored.filter { (id, e) ->
             if (e.copy != null) !copySettled(id, e, idx, made)
-            else idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id], developSig(id, e)) } ?: (e.trash == false && id in idx.trashById)
+            else idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id], if (id in sameAsHome) "=" + e.develop?.base else developSig(id, e)) }
+                ?: (e.trash == false && id in idx.trashById)
         }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
         // sviluppo arrivato a casa: la foto sviluppata dal telefono non serve più (arriva l'anteprima del PC)
