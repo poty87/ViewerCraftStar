@@ -325,7 +325,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         sendJob = viewModelScope.launch { delay(3000); sendPending() }
     }
 
-    private fun isNoop(e: LibEdit, p: LibPhoto) = e.settledIn(p, index?.stackOf?.get(p.id), developSig(p.id, e))
+    private fun isNoop(e: LibEdit, p: LibPhoto) = e.copy == null && e.settledIn(p, index?.stackOf?.get(p.id), developSig(p.id, e))
 
     /** La firma dello sviluppo della foto a casa (solo se c'è una modifica di sviluppo da controllare). */
     private fun developSig(id: Int, e: LibEdit): String? = if (e.develop == null) null else
@@ -412,11 +412,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val e = edits[id] ?: continue
                 if (e.develop == null) continue
                 val home = entries[id]
-                if (e.sent == 0L || home == null) edit(listOf(id)) { it.copy(develop = null) }
+                if (e.copy != null && home != null) edit(listOf(id)) { it.copy(develop = DevelopEdit(home.settings.toString(), home.sig)) }
+                else if (e.sent == 0L || home == null) edit(listOf(id)) { it.copy(develop = null) }
                 else edit(listOf(id)) { it.copy(develop = DevelopEdit(home.settings.toString(), home.sig)) }
             }
             DevelopPending.forget(getApplication(), idx.library, ids)
             pendingVersion++
+            renderPending(ids.filter { edits[it]?.copy != null }, emptyMap())
             say("ok", L.t("Modifiche di sviluppo del telefono tolte da ${ids.size} foto.", "The phone's develop changes removed from ${ids.size} photos."))
         }
     }
@@ -486,7 +488,16 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun setLabel(ids: Collection<Int>, l: String) = edit(ids) { it.copy(label = l) }
     /** Nel cestino di LightCraft: la foto sparisce subito dal telefono, dalla libreria quando il PC la applica. */
     fun trash(ids: Collection<Int>) {
-        edit(ids) { it.copy(trash = true) }
+        val drafts = ids.filter { it < 0 && edits[it]?.copy != null && edits[it]?.sent == 0L }
+        if (drafts.isNotEmpty()) {
+            val idx = rawIndex
+            val next = edits - drafts.toSet()
+            edits = next
+            idx?.let { LibraryEdits.save(getApplication(), it.library, next); DevelopPending.forget(getApplication(), it.library, drafts); index = withCopies(it, next) }
+            memo = null
+        }
+        val rest = ids - drafts.toSet()
+        if (rest.isNotEmpty()) edit(rest) { it.copy(trash = true) }
         clearSelection()
         say("info", L.t("${ids.size} foto nel cestino di LightCraft.\nLe toglie il PC di casa; i file restano sul NAS.",
             "${ids.size} photos to LightCraft's trash.\nThe home PC removes them; the files stay on the NAS."))
@@ -831,23 +842,102 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** L'indice com'è arrivato dal PC (senza le copie virtuali in attesa, aggiunte in [index]). */
+    private var rawIndex: LibIndex? = null
+
     private fun show(idx: LibIndex) {
         val sameLibrary = index?.library == idx.library
+        rawIndex = idx
         index = idx
         showPreviews(LibraryStore.previewList(getApplication(), idx.library))
         if (!sameLibrary) loadAiLocal(idx.library)
         if (!sameLibrary) expanded = savedExpanded(idx.library) ?: idx.stacks.filter { !it.collapsed }.map { it.id }.toSet()
         // le modifiche che la libreria di casa ormai contiene sono arrivate: si tolgono
         val stored = LibraryEdits.load(getApplication(), idx.library)
-        // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa
-        val kept = stored.filter { (id, e) -> idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id], developSig(id, e)) }
-            ?: (e.trash == false && id in idx.trashById) }
+        val made = DevelopStore.copies(getApplication(), idx.library)
+        // una richiesta di ripristino resta finché la foto è ancora nel cestino di casa; una copia virtuale finché il PC
+        // non l'ha creata
+        val kept = stored.filter { (id, e) ->
+            if (e.copy != null) !copySettled(id, e, idx, made)
+            else idx.byId[id]?.let { !e.settledIn(it, idx.stackOf[id], developSig(id, e)) } ?: (e.trash == false && id in idx.trashById)
+        }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
         // sviluppo arrivato a casa: la foto sviluppata dal telefono non serve più (arriva l'anteprima del PC)
         // (l'immagine del telefono resta finché il PC non pubblica l'anteprima nuova: vedi refreshHeld)
         edits = kept
+        index = withCopies(idx, kept)
         memo = null
         refreshHeld()
+    }
+
+    /**
+     * La copia virtuale in attesa è arrivata: il PC l'ha creata (token in develop.json) e ha ricevuto anche l'ultima
+     * modifica fatta qui; la sua immagine passa alla copia vera. Una copia tolta prima che partisse non serve più.
+     */
+    private fun copySettled(id: Int, e: LibEdit, idx: LibIndex, made: Map<String, Int>): Boolean {
+        val c = e.copy ?: return false
+        if (e.sent == 0L || e.sent < e.at) return false
+        if (e.trash == true) return true
+        val real = made[c.token] ?: return false
+        if (real in idx.byId) DevelopPending.move(getApplication(), idx.library, id, real)
+        return real in idx.byId || real < 0
+    }
+
+    /** L'indice con le copie virtuali fatte sul telefono e non ancora create dal PC, subito dopo la loro foto (e nella sua pila). */
+    private fun withCopies(idx: LibIndex, kept: Map<Int, LibEdit>): LibIndex {
+        val pend = kept.filter { it.value.copy != null && it.value.trash != true }
+        DevelopStore.virtual = pend.mapValues { (_, e) -> e.copy!!.parent to e.copy.token }
+        if (pend.isEmpty()) return idx
+        val extra = HashMap<Int, MutableList<LibPhoto>>()
+        for ((id, e) in pend.entries.sortedByDescending { it.key }) {
+            val p = idx.byId[e.copy!!.parent] ?: continue
+            extra.getOrPut(p.id) { mutableListOf() } += p.copy(id = id, copyOf = p.id, copyName = e.copy.name, faces = emptyList(), edited = false)
+        }
+        if (extra.isEmpty()) return idx
+        val photos = idx.photos.flatMap { listOf(it) + extra[it.id].orEmpty() }
+        val stacks = idx.stacks.map { s ->
+            if (s.photos.none { it in extra }) s else s.copy(photos = s.photos.flatMap { listOf(it) + extra[it].orEmpty().map { f -> f.id } })
+        }
+        return LibIndex(idx.library, idx.updated, idx.drives, photos, stacks, idx.trash)
+    }
+
+    /** Il nome proposto per una nuova copia virtuale della foto: «Copia 1», «Copia 2»… (il primo libero). */
+    fun nextCopyName(parent: Int): String {
+        val names = index?.photos?.filter { it.copyOf == parent }?.map { it.copyName }?.toSet().orEmpty()
+        var n = names.size + 1
+        while ("Copia $n" in names) n++
+        return "Copia $n"
+    }
+
+    /**
+     * Crea una copia virtuale della foto (o della foto da cui nasce, se è già una copia): compare subito, com'era la foto
+     * all'importazione (nessun ritocco), e si può già sviluppare anche a PC spento; il PC la crea in LightCraft quando
+     * applica le modifiche.
+     */
+    fun createCopy(photoId: Int, name: String) {
+        val idx = rawIndex ?: return
+        val parent = index?.byId?.get(photoId)?.let { it.copyOf ?: it.id } ?: return
+        if (parent < 0) return
+        viewModelScope.launch {
+            val ctx: Application = getApplication()
+            val (ready, cur) = withContext(Dispatchers.IO) { DevelopStore.hasFirst(ctx, idx.library) to DevelopStore.entry(ctx, idx.library, parent) }
+            if (!ready || cur == null) {
+                say("warn", L.t("Per le copie virtuali dal telefono serve PresetCraftAppLicator 1.30 (o più nuovo) sul PC, che abbia già pubblicato la libreria.",
+                    "Virtual copies from the phone need PresetCraftAppLicator 1.30 (or newer) on the PC, after it has published the library."))
+                return@launch
+            }
+            val clean = withContext(Dispatchers.IO) { DevelopStore.first(ctx, idx.library, parent) } ?: cur.settings
+            val token = java.util.UUID.randomUUID().toString()
+            var id = -((System.currentTimeMillis() / 1000) % 2_000_000_000L).toInt() - 1
+            while (id in edits) id--
+            val label = name.trim().ifEmpty { nextCopyName(parent) }
+            edit(listOf(id)) { LibEdit(copy = CopyReq(token, parent, label), develop = DevelopEdit(clean.toString(), "copy:$token")) }
+            index = withCopies(idx, edits)
+            memo = null
+            renderPending(listOf(id), emptyMap())
+            say("ok", L.t("Copia virtuale «$label» creata: la trovi accanto alla foto, com'era all'importazione. In LightCraft quando il PC di casa applica le modifiche.",
+                "Virtual copy «$label» created: it's next to the photo, as it was when imported. In LightCraft once the home PC applies the changes."))
+        }
     }
 
     /**

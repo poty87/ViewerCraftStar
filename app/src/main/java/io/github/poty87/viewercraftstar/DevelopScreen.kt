@@ -218,6 +218,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     var presetGroup by remember { mutableStateOf("") }
     val presetThumbs = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() }
     var copying by remember { mutableStateOf(false) } // la finestra «Copia sviluppo»
+    var naming by remember { mutableStateOf(false) } // la finestra «Crea copia virtuale»
     var profiles by remember { mutableStateOf<List<DevelopProfiles.Profile>>(emptyList()) }
     var saving by remember { mutableStateOf(false) }
     val handle = remember { longArrayOf(0L) }
@@ -537,6 +538,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         androidx.compose.material3.DropdownMenu(open, { open = false }) {
                             androidx.compose.material3.DropdownMenuItem({ Text(L.t("Copia sviluppo…", "Copy develop settings…"), color = C.text) },
                                 onClick = { open = false; copying = true })
+                            androidx.compose.material3.DropdownMenuItem({ Text(L.t("Crea copia virtuale…", "Create virtual copy…"), color = C.text) },
+                                onClick = { open = false; naming = true })
                             if (lib.clipboardLabel.isNotEmpty()) androidx.compose.material3.DropdownMenuItem(
                                 { Text(L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}"), color = C.text) },
                                 onClick = {
@@ -877,6 +880,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                 }
             }
         }
+        if (naming) CopyNameDialog(lib, photo.id, { naming = false }) { name -> naming = false; lib.createCopy(photo.id, name) }
         if (copying) CopyDevelopDialog({ copying = false }) { sections ->
             copying = false
             settings?.let { lib.copyDevelop(it, sections, photo.name) }

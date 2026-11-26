@@ -28,6 +28,8 @@ data class LibEdit(
     val faces: Map<String, String>? = null,
     /** Sviluppo cambiato sul telefono: impostazioni complete di LightCraft e la firma da cui si era partiti. */
     val develop: DevelopEdit? = null,
+    /** Copia virtuale chiesta dal telefono (l'id di questa modifica è provvisorio, negativo, finché il PC non la crea). */
+    val copy: CopyReq? = null,
     val at: Long = 0,
     val sent: Long = 0,
 ) {
@@ -61,6 +63,12 @@ data class LibEdit(
 data class DevelopEdit(val settings: String, val base: String)
 
 /**
+ * Una copia virtuale fatta sul telefono: `token` la distingue (PresetCraftAppLicator la crea una volta sola anche se la
+ * richiesta arriva più volte), `parent` è la foto da cui nasce, `name` il nome della copia («Copia 1»…).
+ */
+data class CopyReq(val token: String, val parent: Int, val name: String)
+
+/**
  * Le modifiche alla libreria di casa: tenute sul telefono finché la libreria non le conferma, e lasciate sul NAS in
  * <cartella>/<libreria>/changes/ (un file .json per richiesta), dove PresetCraftAppLicator le applica a LightCraft (con LightCraft chiuso).
  */
@@ -92,6 +100,7 @@ object LibraryEdits {
                 develop = e.optJSONObject("develop")?.let { d ->
                     d.optJSONObject("settings")?.let { DevelopEdit(it.toString(), d.optString("base")) }
                 },
+                copy = e.optJSONObject("copy")?.let { c -> CopyReq(c.optString("token"), c.optInt("parent"), c.optString("name")) },
                 at = e.optLong("at"), sent = e.optLong("sent"))
         }
     }.getOrDefault(emptyMap())
@@ -121,6 +130,7 @@ object LibraryEdits {
             put("faces", JSONArray(f.map { (k, n) -> JSONObject().put("rect", JSONArray(LibFace.rectOf(k))).put("name", n) }))
         }
         e.develop?.let { d -> put("develop", JSONObject().put("settings", JSONObject(d.settings)).put("base", d.base)) }
+        e.copy?.let { c -> put("copy", JSONObject().put("token", c.token).put("parent", c.parent).put("name", c.name)) }
     }
 
     /** Lascia sul NAS una richiesta con le modifiche indicate (file nascosto finché non è completo). */

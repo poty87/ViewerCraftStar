@@ -294,6 +294,20 @@ fun TextsDialog(p: LibPhoto, onDismiss: () -> Unit, onSave: (String, String, Lis
     }
 }
 
+/** «Crea copia virtuale…»: il nome della copia («Copia 1», «Copia 2»… proposto). */
+@Composable
+fun CopyNameDialog(lib: LibraryViewModel, photoId: Int, onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    val parent = lib.index?.byId?.get(photoId)?.let { it.copyOf ?: it.id } ?: photoId
+    var name by remember { mutableStateOf(lib.nextCopyName(parent)) }
+    BlurDialog(onDismiss) {
+        DialogTitle(L.t("Copia virtuale", "Virtual copy"))
+        DialogText(L.t("Una copia della foto com'era all'importazione, senza ritocchi, per darle uno stile diverso. La puoi sviluppare subito, anche a PC spento; in LightCraft arriva quando il PC di casa applica le modifiche.",
+            "A copy of the photo as it was when imported, with no edits, to give it a different style. You can develop it right away, even with the PC off; it reaches LightCraft once the home PC applies the changes."))
+        OutlinedTextField(name, { name = it }, label = { Text(L.t("Nome della copia", "Copy name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, main = L.t("Crea", "Create") to { onCreate(name) })
+    }
+}
+
 /** Nome di un volto: scritto o scelto tra le persone già nella libreria. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -551,6 +565,8 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
     // «Copia sviluppo…» di una foto scelta nella galleria (senza aprire l'editor)
     var copyingFrom by remember { mutableStateOf<Int?>(null) }
     copyingFrom?.let { id -> CopyDevelopDialog({ copyingFrom = null }) { sections -> copyingFrom = null; lib.copyDevelopFrom(id, sections) } }
+    var copyOf by remember { mutableStateOf<Int?>(null) }
+    copyOf?.let { id -> CopyNameDialog(lib, id, { copyOf = null }) { name -> copyOf = null; lib.createCopy(id, name); lib.clearSelection() } }
     if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(lib.selected, jpeg) }
     if (trashing) TrashDialog(lib.selected.size, onDismiss = { trashing = false }) { trashing = false; lib.trash(lib.selected) }
     if (editing) BlurDialog({ editing = false }) {
@@ -575,6 +591,7 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
             val devActions = buildList {
                 if (lib.clipboardLabel.isNotEmpty()) add(L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}") to { lib.pasteDevelop(sel.toList()) })
                 if (sel.size == 1) add(L.t("Copia sviluppo…", "Copy develop settings…") to { copyingFrom = sel.first() })
+                if (sel.size == 1) add(L.t("Crea copia virtuale…", "Create virtual copy…") to { copyOf = sel.first() })
                 if (pendingDev.isNotEmpty()) add(L.t("Togli le modifiche del telefono (${pendingDev.size})", "Remove the phone's changes (${pendingDev.size})") to { lib.discardDevelop(pendingDev) })
             }
             Box(w) {

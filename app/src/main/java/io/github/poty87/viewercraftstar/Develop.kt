@@ -73,6 +73,74 @@ object DevelopStore {
 
     class Entry(val sig: String, val settings: JSONObject, val smart: String?)
 
+    /**
+     * Le copie virtuali fatte sul telefono e non ancora create dal PC: id provvisorio (negativo) → (foto da cui nasce,
+     * token). Il loro sviluppo parte da com'era quella foto all'importazione ([first]) e usa la sua smart preview.
+     */
+    @Volatile var virtual: Map<Int, Pair<Int, String>> = emptyMap()
+
+    private fun virtualEntry(context: Context, lib: String, id: Int): Entry? {
+        val (parent, token) = virtual[id] ?: return null
+        val e = entry(context, lib, parent) ?: return null
+        return Entry("copy:$token", first(context, lib, parent) ?: e.settings, e.smart)
+    }
+
+    /** Il file ha le informazioni per le copie dal telefono («first», da PresetCraftAppLicator 1.30). */
+    fun hasFirst(context: Context, lib: String): Boolean = runCatching {
+        var found = false
+        reader(file(context, lib)).use { r ->
+            r.beginObject()
+            while (r.hasNext()) { if (r.nextName() == "first") found = true; r.skipValue() }
+        }
+        found
+    }.getOrDefault(false)
+
+    /**
+     * Com'era la foto all'importazione (prima voce della cronologia di LightCraft: il profilo scelto da
+     * PresetCraftAppLicator, nessun ritocco); null se è uguale a com'è adesso (o se il file non lo dice).
+     */
+    fun first(context: Context, lib: String, id: Int): JSONObject? = runCatching {
+        var base: JSONObject? = null
+        var entry: JSONArray? = null
+        val key = id.toString()
+        reader(file(context, lib)).use { r ->
+            r.beginObject()
+            while (r.hasNext()) {
+                when (r.nextName()) {
+                    "base" -> base = readValue(r) as JSONObject
+                    "first" -> {
+                        r.beginObject()
+                        while (r.hasNext()) if (r.nextName() == key) entry = readValue(r) as JSONArray else r.skipValue()
+                        r.endObject()
+                    }
+                    else -> r.skipValue()
+                }
+            }
+        }
+        val b = base ?: return null
+        val a = entry ?: return null
+        val settings = JSONObject(b.toString())
+        a.getJSONObject(0).let { d -> d.keys().forEach { k -> setPath(settings, k, d.get(k)) } }
+        a.optJSONArray(1)?.let { drop -> for (i in 0 until drop.length()) removePath(settings, drop.getString(i)) }
+        settings
+    }.getOrNull()
+
+    /** Le copie virtuali che il PC ha creato su richiesta del telefono: token → id della copia (-1: non creata). */
+    fun copies(context: Context, lib: String): Map<String, Int> = runCatching {
+        val out = HashMap<String, Int>()
+        reader(file(context, lib)).use { r ->
+            r.beginObject()
+            while (r.hasNext()) {
+                if (r.nextName() == "copies") {
+                    r.beginObject()
+                    while (r.hasNext()) { val t = r.nextName(); out[t] = r.nextInt() }
+                    r.endObject()
+                } else r.skipValue()
+            }
+        }
+        out
+    }.getOrDefault(emptyMap())
+
     fun file(context: Context, lib: String) =
         File(context.filesDir, "libraries/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/" + FILE)
 
@@ -108,7 +176,7 @@ object DevelopStore {
     }
 
     /** Le impostazioni complete di una foto, la sua firma e la sua smart preview (null se non ci sono). */
-    fun entry(context: Context, lib: String, id: Int): Entry? = runCatching {
+    fun entry(context: Context, lib: String, id: Int): Entry? = if (id < 0) virtualEntry(context, lib, id) else runCatching {
         var base: JSONObject? = null
         var sig: String? = null
         var diff: JSONObject? = null
@@ -150,7 +218,11 @@ object DevelopStore {
     }.getOrNull()
 
     /** Come [entry], per molte foto in un passaggio solo (incolla lo sviluppo su una selezione). */
-    fun entries(context: Context, lib: String, ids: Set<Int>): Map<Int, Entry> = runCatching {
+    fun entries(context: Context, lib: String, ids: Set<Int>): Map<Int, Entry> =
+        realEntries(context, lib, ids.filter { it >= 0 }.toSet()) +
+            ids.filter { it < 0 }.mapNotNull { id -> virtualEntry(context, lib, id)?.let { id to it } }
+
+    private fun realEntries(context: Context, lib: String, ids: Set<Int>): Map<Int, Entry> = if (ids.isEmpty()) emptyMap() else runCatching {
         var base: JSONObject? = null
         val raw = HashMap<Int, JSONArray>()
         val smart = HashMap<Int, String>()
@@ -288,7 +360,7 @@ object OriginalCache {
     private fun dir(context: Context) = File(context.cacheDir, "originals")
 
     private fun file(context: Context, lib: String, photo: LibPhoto) = File(dir(context),
-        (lib + "_" + photo.id + "_" + photo.name).replace(Regex("[\\\\/:*?\"<>|]"), "_"))
+        (lib + "_" + (photo.copyOf ?: photo.id) + "_" + photo.name).replace(Regex("[\\\\/:*?\"<>|]"), "_"))
 
     /** Già sul telefono (senza scaricarlo): i byte, o null. */
     fun cached(context: Context, lib: String, photo: LibPhoto): ByteArray? =
@@ -460,6 +532,15 @@ object DevelopPending {
         tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
         tmp.renameTo(f)
         sigFile(context, lib, id).writeText(previewSig.orEmpty())
+    }
+
+    /** La copia in attesa `from` è diventata la copia `to` (creata dal PC): la sua immagine resta finché arriva l'anteprima. */
+    fun move(context: Context, lib: String, from: Int, to: Int) {
+        val f = file(context, lib, from)
+        if (!f.exists()) return
+        val t = file(context, lib, to)
+        if (f.renameTo(t)) sigFile(context, lib, to).writeText("") else f.delete()
+        sigFile(context, lib, from).delete()
     }
 
     fun forget(context: Context, lib: String, ids: Collection<Int>) = ids.forEach {
