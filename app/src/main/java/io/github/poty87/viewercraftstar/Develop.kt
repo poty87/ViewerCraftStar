@@ -361,13 +361,40 @@ object DevelopPending {
     fun file(context: Context, lib: String, id: Int) =
         File(context.filesDir, "libraries/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/develop-pending/$id.jpg")
 
-    fun save(context: Context, lib: String, id: Int, bmp: Bitmap) {
+    /** La firma dell'anteprima del PC quando il telefono ha sviluppato la foto («» = nessuna anteprima). */
+    private fun sigFile(context: Context, lib: String, id: Int) = File(file(context, lib, id).path.removeSuffix(".jpg") + ".sig")
+
+    /** `previewSig`: la firma dell'anteprima del PC in quel momento; l'immagine del telefono resta finché non cambia. */
+    fun save(context: Context, lib: String, id: Int, bmp: Bitmap, previewSig: String?) {
         val f = file(context, lib, id)
         f.parentFile?.mkdirs()
         val tmp = File(f.path + ".tmp")
         tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
         tmp.renameTo(f)
+        sigFile(context, lib, id).writeText(previewSig.orEmpty())
     }
 
-    fun forget(context: Context, lib: String, ids: Collection<Int>) = ids.forEach { file(context, lib, it).delete() }
+    fun forget(context: Context, lib: String, ids: Collection<Int>) = ids.forEach {
+        file(context, lib, it).delete()
+        sigFile(context, lib, it).delete()
+    }
+
+    /**
+     * Le foto il cui sviluppo il PC ha già applicato ma la cui anteprima nuova non è ancora arrivata (il PC la prepara
+     * più tardi): si continua a mostrare quella del telefono. Le altre immagini (anteprima nuova arrivata, foto sparita,
+     * nessuna modifica in attesa) si cancellano.
+     */
+    fun held(context: Context, lib: String, sigs: Map<Int, String>, waiting: Set<Int>, known: Set<Int>): Set<Int> {
+        val dir = file(context, lib, 0).parentFile ?: return emptySet()
+        val out = HashSet<Int>()
+        for (f in dir.listFiles().orEmpty()) {
+            if (!f.name.endsWith(".jpg")) continue
+            val id = f.name.removeSuffix(".jpg").toIntOrNull() ?: continue
+            if (id in waiting) continue
+            val sf = sigFile(context, lib, id)
+            val keep = id in known && sf.exists() && sf.readText() == sigs[id].orEmpty()
+            if (keep) out += id else forget(context, lib, listOf(id))
+        }
+        return out
+    }
 }

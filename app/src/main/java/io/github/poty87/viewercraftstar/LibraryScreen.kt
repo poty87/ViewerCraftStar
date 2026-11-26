@@ -150,6 +150,7 @@ internal fun RemoteImage(lib: LibraryViewModel, photo: LibPhoto, maxSide: Int, m
     }
     // sviluppata sul telefono («Modifica») e non ancora applicata dal PC: si vede il risultato del telefono
     val pendingDev = if (original) null else lib.edits[photo.id]?.develop
+        ?: if (photo.id in lib.heldPending) DevelopEdit("", "held") else null
     // mentre si scorre si prende solo ciò che è già in memoria: la lettura dal disco e la decodifica vanno fuori dal
     // thread che disegna (prima si facevano lì, ed era quello a far impuntare lo scorrimento)
     val bmp by produceState<Bitmap?>(initialValue = if (maxSide <= RemotePreview.THUMB && pendingDev == null)
@@ -499,6 +500,7 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
         // allineati in basso: la matita resta alla stessa altezza che ha sulle foto senza pila (4 dp dal bordo)
         if (c.cover && c.stack != null) Row(Modifier.align(Alignment.BottomEnd).padding(4.dp),
             verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (p.copyOf != null) CopyMark()
             if (p.id in lib.developed) EditedMark()
             Box(Modifier.clip(RoundedCornerShape(4.dp)).background(if (c.open) C.accent else Color(0xCC000000))
                 .clickable { lib.toggle(c.stack) }.padding(horizontal = 7.dp, vertical = 3.dp)) {
@@ -512,7 +514,12 @@ fun LibCell(lib: LibraryViewModel, c: LibraryViewModel.Cell, i: Int, all: List<L
             }
         }
         // ritoccata in LightCraft (l'anteprima è quella sviluppata dal PC)
-        if (p.id in lib.developed && !(c.cover && c.stack != null)) EditedMark(Modifier.align(Alignment.BottomEnd).padding(4.dp))
+        // copia virtuale (due fogli) e ritoccata (matita), affiancate nell'angolo in basso a destra
+        if (!(c.cover && c.stack != null) && (p.copyOf != null || p.id in lib.developed))
+            Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (p.copyOf != null) CopyMark()
+                if (p.id in lib.developed) EditedMark()
+            }
         if (c.cover && c.stack != null && c.stack.restored && c.stack.id !in lib.seenRestored && !c.open)
             Text(L.t("Ripristinate", "Restored"), color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).clip(RoundedCornerShape(8.dp))
@@ -1018,7 +1025,8 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
                 IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, L.t("Indietro", "Back"), tint = C.text)
                 }
-                Text("${pager.currentPage + 1}/${list.size}  ·  ${dateText(p.captured).substringBefore(' ')}", color = C.text,
+                Text("${pager.currentPage + 1}/${list.size}  ·  ${dateText(p.captured).substringBefore(' ')}" +
+                    (if (p.copyOf != null) "  ·  " + p.copyName.ifEmpty { L.t("copia virtuale", "virtual copy") } else ""), color = C.text,
                     fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 // ritoccata in LightCraft: com'è adesso (sviluppata dal PC) o com'era allo scatto
                 if (p.id in lib.developed && !faceMode) Text(if (lib.showOriginal) L.t("Originale", "Original") else L.t("Modificata", "Edited"),
@@ -1159,6 +1167,22 @@ private val FORMAT_NAMES = mapOf("jpg" to "JPEG", "jpeg" to "JPEG", "tif" to "TI
 fun formatBadge(name: String): String? = FORMAT_NAMES[name.substringAfterLast('.', "").lowercase()]
 
 /** La matita «ritoccata in LightCraft»: tondino scuro trasparente in basso a destra della cella. */
+@Composable
+private fun CopyMark(modifier: Modifier = Modifier) {
+    Box(modifier.size(18.dp).clip(CircleShape).background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+        // due fogli sovrapposti: quello dietro solo il bordo, quello davanti pieno
+        androidx.compose.foundation.Canvas(Modifier.size(11.dp)) {
+            val w = size.width
+            val st = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.11f)
+            val r = androidx.compose.ui.geometry.CornerRadius(w * 0.1f)
+            drawRoundRect(Color.White, androidx.compose.ui.geometry.Offset(w * 0.32f, 0f),
+                androidx.compose.ui.geometry.Size(w * 0.66f, w * 0.66f), r, style = st)
+            drawRoundRect(Color.White, androidx.compose.ui.geometry.Offset(0f, w * 0.34f),
+                androidx.compose.ui.geometry.Size(w * 0.66f, w * 0.66f), r)
+        }
+    }
+}
+
 @Composable
 private fun EditedMark(modifier: Modifier = Modifier) {
     Box(modifier.size(18.dp).clip(CircleShape).background(Color(0x99000000)), contentAlignment = Alignment.Center) {

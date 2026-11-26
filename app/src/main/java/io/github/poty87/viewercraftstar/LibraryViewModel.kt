@@ -337,7 +337,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun setDevelop(id: Int, settings: String, base: String, result: Bitmap?) {
         val idx = index ?: return
-        if (result != null) runCatching { DevelopPending.save(getApplication(), idx.library, id, result) }
+        if (result != null) runCatching { DevelopPending.save(getApplication(), idx.library, id, result, previews.sigs[id]) }
         pendingVersion++
         edit(listOf(id)) { it.copy(develop = DevelopEdit(settings, base)) }
     }
@@ -466,7 +466,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         finally { if (h != 0L) DevelopEngine.close(h) }
                     }
                     if (bmp != null && edits[id]?.develop == dev) {
-                        DevelopPending.save(ctx, idx.library, id, bmp)
+                        DevelopPending.save(ctx, idx.library, id, bmp, previews.sigs[id])
                         made++
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { pendingVersion++ }
                     }
@@ -778,6 +778,21 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun showPreviews(p: LibraryStore.Previews) {
         previews = p
         developed = p.sigs.filterKeys { it in p.edited }
+        refreshHeld()
+    }
+
+    /**
+     * Foto sviluppate sul telefono, già applicate dal PC ma senza ancora la sua anteprima nuova: si continua a vedere
+     * l'immagine del telefono (altrimenti per un po' si rivedrebbe la foto com'era prima della modifica).
+     */
+    var heldPending by mutableStateOf<Set<Int>>(emptySet()); private set
+
+    private fun refreshHeld() {
+        val idx = index ?: return
+        val waiting = edits.filterValues { it.develop != null }.keys
+        val held = runCatching { DevelopPending.held(getApplication(), idx.library, previews.sigs, waiting, idx.byId.keys) }
+            .getOrDefault(emptySet())
+        if (held != heldPending) { heldPending = held; pendingVersion++ }
     }
 
     /** Come si vede la galleria (ricordato nelle impostazioni del telefono). */
@@ -823,10 +838,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             ?: (e.trash == false && id in idx.trashById) }
         if (kept.size != stored.size) LibraryEdits.save(getApplication(), idx.library, kept)
         // sviluppo arrivato a casa: la foto sviluppata dal telefono non serve più (arriva l'anteprima del PC)
-        val settled = stored.filter { (id, e) -> e.develop != null && kept[id]?.develop == null }.keys
-        if (settled.isNotEmpty()) { DevelopPending.forget(getApplication(), idx.library, settled); pendingVersion++ }
+        // (l'immagine del telefono resta finché il PC non pubblica l'anteprima nuova: vedi refreshHeld)
         edits = kept
         memo = null
+        refreshHeld()
     }
 
     /**
