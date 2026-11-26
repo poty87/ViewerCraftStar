@@ -56,6 +56,34 @@ pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_open<
     }
 }
 
+/// Apre il file originale di una foto raw (DNG…) decodificandolo con il profilo della fotocamera `dcp` (il file .dcp;
+/// vuoto = nessuno, i colori del file), dentro un quadrato di lato `max_edge`. In LightCraft il profilo DCP si applica
+/// proprio qui, leggendo il raw: le smart preview sono sempre fatte senza (`library.smartPreviews`), quindi per una foto
+/// con un profilo DCP serve l'originale. Torna un riferimento come `open` (0 se il file o il profilo non si leggono).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_openRaw<'a>(
+    env: JNIEnv<'a>, _c: JClass<'a>, bytes: JByteArray<'a>, dcp: JByteArray<'a>, max_edge: jint,
+) -> jlong {
+    let Ok(b) = env.convert_byte_array(&bytes) else { return 0 };
+    let d = if dcp.is_null() { Vec::new() } else { env.convert_byte_array(&dcp).unwrap_or_default() };
+    let profile = if d.is_empty() {
+        None
+    } else {
+        match lightcraft_engine::media::LoadedCameraProfile::parse(&d) {
+            Ok(p) => Some(p),
+            Err(_) => return 0,
+        }
+    };
+    let edge = max_edge.max(16) as usize;
+    match lightcraft_engine::files::load_vec(b, edge, lightcraft_engine::media::RawDecode { dcp: profile.as_ref().map(|p| p.profile.as_ref()), outliers: false }) {
+        Ok((img, info)) => {
+            let p = Photo { src: Arc::new(img), info, cache: Default::default() };
+            Box::into_raw(Box::new(p)) as jlong
+        }
+        Err(_) => 0,
+    }
+}
+
 /// Sviluppa la foto aperta con le impostazioni (JSON di LightCraft) dentro un quadrato di lato `max_edge`;
 /// `apply_crop` falso = la foto intera senza ritaglio né raddrizzamento (mentre si ritaglia, come in LightCraft).
 /// Torna [larghezza, altezza, pixel ARGB…] (null se le impostazioni non si leggono).

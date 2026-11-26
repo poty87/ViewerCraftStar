@@ -1017,17 +1017,17 @@ private fun DevelopCard() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var bytes by remember { mutableStateOf(-1L) }
-    LaunchedEffect(Unit) { bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.size(context) } }
+    LaunchedEffect(Unit) { bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.size(context) + OriginalCache.size(context) } }
     val engine = if (DevelopEngine.available) "LightCraft " + DevelopEngine.version() else L.t("non disponibile", "not available")
-    Text(L.t("Motore di sviluppo: $engine. Le smart preview si scaricano quando apri «Sviluppa» su una foto e restano sul telefono (al massimo circa 1 GB: oltre si tolgono le meno usate).",
-        "Develop engine: $engine. Smart previews are downloaded when you open «Develop» on a photo and stay on the phone (about 1 GB at most: beyond that the least used go)."),
+    Text(L.t("Motore di sviluppo: $engine. Le smart preview si scaricano quando apri «Sviluppa» su una foto e restano sul telefono (al massimo circa 1 GB: oltre si tolgono le meno usate). Per i profili della fotocamera (DCP) serve il file originale: si scarica anche quello (al massimo circa 1 GB in tutto).",
+        "Develop engine: $engine. Smart previews are downloaded when you open «Develop» on a photo and stay on the phone (about 1 GB at most: beyond that the least used go). Camera profiles (DCP) need the original file: that is downloaded too (about 1 GB at most)."),
         color = C.muted, fontSize = 12.sp)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(L.t("Smart preview scaricate: ", "Downloaded smart previews: ") +
+        Text(L.t("Smart preview e originali scaricati: ", "Downloaded smart previews and originals: ") +
             if (bytes < 0) "…" else "%.0f MB".format(bytes / 1_048_576.0), color = C.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
         PillButton(onClick = {
             scope.launch {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.clear(context) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SmartCache.clear(context); OriginalCache.clear(context) }
                 bytes = 0
             }
         }, enabled = bytes > 0) { Text(L.t("Svuota", "Clear")) }

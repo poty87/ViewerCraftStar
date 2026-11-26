@@ -63,6 +63,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -220,6 +221,14 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     var profiles by remember { mutableStateOf<List<DevelopProfiles.Profile>>(emptyList()) }
     var saving by remember { mutableStateOf(false) }
     val handle = remember { longArrayOf(0L) }
+    // profilo della fotocamera (DCP): LightCraft lo applica leggendo il raw, la smart preview è sempre senza. Per una
+    // foto con un profilo DCP si scarica l'originale e lo si decodifica con quel profilo (raw[0], profilo rawProfile)
+    val raw = remember { longArrayOf(0L) }
+    var rawProfile by remember { mutableStateOf<String?>(null) }
+    val originalBytes = remember { arrayOfNulls<ByteArray>(1) }
+    var rawStatus by remember { mutableStateOf<String?>(null) } // «scarico l'originale… 40%», o il motivo se non riesce
+    val sourceTick = remember { MutableStateFlow(0) } // cambia quando la foto da sviluppare cambia (smart preview / originale)
+    val rawLock = remember { kotlinx.coroutines.sync.Mutex() }
     // un solo filo per il motore (la foto aperta non va usata da due sviluppi insieme); conta solo l'ultima richiesta
     val engine = remember { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
     // (impostazioni da mostrare, per il ritaglio, impostazioni dell'altra vista da preparare in sottofondo)
@@ -240,9 +249,11 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     DisposableEffect(Unit) {
         onDispose {
             val h = handle[0]
+            val r = raw[0]
             handle[0] = 0
+            raw[0] = 0
             // si chiude sul filo del motore, dopo l'eventuale sviluppo in corso
-            engine.executor.execute { if (h != 0L) DevelopEngine.close(h) }
+            engine.executor.execute { if (h != 0L) DevelopEngine.close(h); if (r != 0L) DevelopEngine.close(r) }
             (engine.executor as java.util.concurrent.ExecutorService).shutdown()
         }
     }
@@ -266,8 +277,6 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         presets = withContext(Dispatchers.IO) { DevelopPresets.list(context, cfg, lib.libShare, libDir, idx.library) }
         val current = entry.settings.optJSONObject("profile")?.optString("id").orEmpty()
         profiles.firstOrNull { it.id == current }?.let { withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, cfg, lib.libShare, libDir, idx.library, it) } }
-        if (current.startsWith("dcp:")) note = L.t("Profilo della fotocamera (DCP): sul telefono il cambio di profilo è approssimato.",
-            "Camera profile (DCP): changing profile on the phone is approximate.")
         // versione del motore e di LightCraft sul PC: in parallelo, la foto non la aspetta
         launch {
             withContext(Dispatchers.IO) {
@@ -304,15 +313,21 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         }
     }
 
+    /** La foto da sviluppare con queste impostazioni: l'originale decodificato con il loro profilo DCP, se è pronto. */
+    fun handleFor(json: String): Long {
+        val pid = runCatching { JSONObject(json).optJSONObject("profile")?.optString("id") }.getOrNull().orEmpty()
+        return if (pid.startsWith("dcp:") && pid == rawProfile && raw[0] != 0L) raw[0] else handle[0]
+    }
+
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.flow.combine(requests, sharp) { j, s -> j to s }.collectLatest { (req, big) ->
+        kotlinx.coroutines.flow.combine(requests, sharp, sourceTick) { j, s, _ -> j to s }.collectLatest { (req, big) ->
             if (req == null || handle[0] == 0L) return@collectLatest
             val (json, forCrop, other) = req
             // ingrandita: il lato lungo della smart preview (circa 2560 pixel), altrimenti quanto lo schermo
             val full = maxOf(srcSize.first, srcSize.second).toInt()
             val size = if (big && full > edge) full else edge
-            val a = withContext(engine) { DevelopEngine.render(handle[0], json, size, true) } ?: return@collectLatest
+            val a = withContext(engine) { DevelopEngine.render(handleFor(json), json, size, true) } ?: return@collectLatest
             val bmp = DevelopEngine.bitmap(a)
             if (forCrop) cropImage = bmp
             else {
@@ -322,13 +337,69 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
             // poi, se per un attimo non si tocca niente, l'altra vista (ritaglio o foto finita), così passando da una
             // scheda all'altra è già pronta e aggiornata (una nuova modifica annulla questa attesa)
             kotlinx.coroutines.delay(400)
-            val b = withContext(engine) { DevelopEngine.render(handle[0], other, edge, true) } ?: return@collectLatest
+            val b = withContext(engine) { DevelopEngine.render(handleFor(other), other, edge, true) } ?: return@collectLatest
             val ob = DevelopEngine.bitmap(b)
             if (forCrop) {
                 if (before == null) before = ob
                 image = ob
             } else cropImage = ob
         }
+    }
+
+    /** L'originale della foto (scaricato una volta), con l'avanzamento nell'avviso; null se non si riesce. */
+    suspend fun originalFile(): ByteArray? {
+        originalBytes[0]?.let { return it }
+        val got = runCatching {
+            withContext(Dispatchers.IO) {
+                OriginalCache.get(context, lib.settings.nas, idx, photo) { f ->
+                    rawStatus = L.t("Profilo della fotocamera: scarico la foto originale… ${(f * 100).toInt()}%",
+                        "Camera profile: downloading the original photo… ${(f * 100).toInt()}%")
+                }
+            }
+        }.getOrNull()
+        if (got == null) rawStatus = L.t("Originale non raggiungibile: il profilo della fotocamera si vede approssimato.",
+            "Original not reachable: the camera profile is shown approximately.")
+        else rawStatus = null
+        originalBytes[0] = got
+        return got
+    }
+
+    /** Prepara l'originale decodificato con il profilo DCP `pid` (una volta per profilo); poi si sviluppa da quello. */
+    suspend fun prepareRaw(pid: String) = rawLock.withLock {
+        if (rawProfile == pid && raw[0] != 0L) return@withLock
+        val prof = profiles.firstOrNull { it.id == pid }
+        val dcp = prof?.let { withContext(Dispatchers.IO) { DevelopProfiles.dcp(context, lib.settings.nas, lib.libShare, libDir, idx.library, it) } }
+        if (prof == null || dcp == null) {
+            rawStatus = L.t("Profilo della fotocamera non trovato nella libreria: si vede approssimato.",
+                "Camera profile not found in the library: shown approximately.")
+            return@withLock
+        }
+        val bytes = originalFile() ?: return@withLock
+        rawStatus = L.t("Profilo della fotocamera: applico ${prof.name.removePrefix("Camera ")}…", "Camera profile: applying ${prof.name.removePrefix("Camera ")}…")
+        val edgeRaw = maxOf(srcSize.first, srcSize.second).toInt().coerceIn(1024, 2560)
+        val h = withContext(engine) { DevelopEngine.openRaw(bytes, dcp, edgeRaw) }
+        if (h == 0L) {
+            rawStatus = L.t("Originale non leggibile: il profilo della fotocamera si vede approssimato.",
+                "Original can't be read: the camera profile is shown approximately.")
+            return@withLock
+        }
+        val old = raw[0]
+        raw[0] = h
+        rawProfile = pid
+        if (old != 0L) engine.executor.execute { DevelopEngine.close(old) }
+        rawStatus = null
+        // «Prima»: se è il profilo con cui la foto era stata aperta, anche la foto di prima è quella vera
+        original?.takeIf { it.optJSONObject("profile")?.optString("id") == pid }?.let { o ->
+            withContext(engine) { DevelopEngine.render(h, o.toString(), edge, true) }?.let { before = DevelopEngine.bitmap(it) }
+        }
+        sourceTick.value++
+    }
+
+    // il profilo in uso: se è della fotocamera (DCP) si sviluppa dall'originale decodificato con quello
+    val profileInUse = remember(editTick, settings) { settings?.optJSONObject("profile")?.optString("id").orEmpty() }
+    LaunchedEffect(profileInUse, settings != null) {
+        if (settings == null) return@LaunchedEffect
+        if (profileInUse.startsWith("dcp:")) prepareRaw(profileInUse) else if (rawStatus != null && originalBytes[0] != null) rawStatus = null
     }
 
     /** Larghezza e altezza della foto girata come nelle impostazioni (quelle su cui si misura il ritaglio). */
@@ -392,7 +463,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         if (editTick < 0) return false // (letto: i segni si aggiornano a ogni modifica)
         val s = settings ?: return false
         val o = original ?: return false
-        return pathsOf(sec).any { DevelopStore.getPath(s, it)?.toString() != DevelopStore.getPath(o, it)?.toString() }
+        return pathsOf(sec).any { !jsonSame(DevelopStore.getPath(s, it), DevelopStore.getPath(o, it)) }
     }
 
     fun set(c: DevControl, v: Float) {
@@ -404,7 +475,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     }
 
     /** True se la foto aperta ha modifiche rispetto a quando l'hai aperta. */
-    fun dirty(): Boolean = settings != null && settings.toString() != original.toString()
+    fun dirty(): Boolean = settings != null && !jsonSame(settings, original)
 
     /** Salva la foto aperta come «Fatto» (solo se è cambiata): la foto sviluppata dal telefono si mostra finché il PC
      * non applica. Torna la modifica che c'era prima (per «Annulla» dopo uno scorrimento). */
@@ -573,6 +644,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
             if (settings != null) Column(Modifier.fillMaxWidth().background(Color(0xE6141414)).navigationBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
+                rawStatus?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 fun open(sec: DevSection) {
                     if (sec == CROP) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero } // il ritaglio si fa sulla foto intera
                     val wasCrop = section == CROP
@@ -644,23 +716,35 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                     }
                     if (section == PROFILE) {
                         val current = settings?.optJSONObject("profile")?.optString("id").orEmpty()
-                        val shown = profilesFor(profiles, photo.camera)
-                        // le miniature: la foto com'è adesso, con ogni profilo (sviluppate dal motore, una alla volta)
+                        val shown = profilesFor(profiles, photo.camera, isRaw(photo.name))
+                        // le miniature: la foto com'è adesso, con ogni profilo (sviluppate dal motore, una alla volta);
+                        // prima i LUT (dalla smart preview), poi i profili della fotocamera (dall'originale, piccolo)
                         LaunchedEffect(shown, current) {
                             val base = settings?.toString() ?: return@LaunchedEffect
-                            for (p in shown) {
+                            for (p in shown.sortedBy { it.kind == "dcp" }) {
                                 if (thumbs.containsKey(p.id) || handle[0] == 0L) continue
-                                val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
-                                if (!ok) continue
                                 val s = JSONObject(base)
                                 DevelopStore.setPath(s, "profile.id", p.id)
+                                if (p.kind == "dcp") {
+                                    val bytes = originalFile() ?: break
+                                    val dcp = withContext(Dispatchers.IO) { DevelopProfiles.dcp(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) } ?: continue
+                                    withContext(engine) {
+                                        val h = DevelopEngine.openRaw(bytes, dcp, 320)
+                                        try { if (h == 0L) null else DevelopEngine.render(h, s.toString(), 320, true) } finally { if (h != 0L) DevelopEngine.close(h) }
+                                    }?.let { thumbs[p.id] = DevelopEngine.bitmap(it) }
+                                    continue
+                                }
+                                val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
+                                if (!ok) continue
                                 withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 320, true) }
                                     ?.let { thumbs[p.id] = DevelopEngine.bitmap(it) }
                             }
                         }
                         ProfileStrip(shown, profiles, current, thumbs) { p ->
                             scope.launch {
-                                val ok = withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
+                                // un profilo della fotocamera si prepara dall'originale (vedi prepareRaw); un LUT si registra
+                                val ok = p.kind == "dcp" ||
+                                    withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) }
                                 if (ok) { settings?.let { DevelopStore.setPath(it, "profile.id", p.id) }; changed() }
                             }
                         }
@@ -1007,11 +1091,30 @@ private fun UndoIcon(modifier: Modifier, color: Color) {
 }
 
 /** I profili LUT della libreria da proporre: prima (o solo) quelli della fotocamera della foto. */
-private fun profilesFor(profiles: List<DevelopProfiles.Profile>, camera: String): List<DevelopProfiles.Profile> {
+private fun profilesFor(profiles: List<DevelopProfiles.Profile>, camera: String, raw: Boolean): List<DevelopProfiles.Profile> {
+    fun ofCamera(l: List<DevelopProfiles.Profile>) =
+        l.filter { camera.isNotEmpty() && (camera.contains(it.group, ignoreCase = true) || it.group.contains(camera, ignoreCase = true)) }
     val luts = profiles.filter { it.kind == "lut" }
-    val mine = luts.filter { camera.isNotEmpty() && (camera.contains(it.group, ignoreCase = true) || it.group.contains(camera, ignoreCase = true)) }
-    return (mine.ifEmpty { luts }).sortedBy { it.name }
+    // i profili della fotocamera (DCP) valgono solo per i raw della loro fotocamera; prima loro, poi i LUT
+    val dcps = if (raw) ofCamera(profiles.filter { it.kind == "dcp" }).sortedBy { it.name } else emptyList()
+    return dcps + (ofCamera(luts).ifEmpty { luts }).sortedBy { it.name }
 }
+
+/**
+ * Stesso valore nelle impostazioni di sviluppo: i numeri si confrontano come numeri (lo stesso valore può arrivare come
+ * 100 o 100.0, e allora il testo è diverso), oggetti ed elenchi campo per campo.
+ */
+internal fun jsonSame(a: Any?, b: Any?): Boolean = when {
+    a == null || a == JSONObject.NULL -> b == null || b == JSONObject.NULL
+    a is Number && b is Number -> kotlin.math.abs(a.toDouble() - b.toDouble()) < 1e-9
+    a is JSONObject && b is JSONObject -> a.length() == b.length() && a.keys().asSequence().all { k -> b.has(k) && jsonSame(a.opt(k), b.opt(k)) }
+    a is org.json.JSONArray && b is org.json.JSONArray -> a.length() == b.length() && (0 until a.length()).all { jsonSame(a.opt(it), b.opt(it)) }
+    else -> a == b
+}
+
+/** Una foto raw (il profilo della fotocamera si applica leggendo il raw). */
+internal fun isRaw(name: String) = name.substringAfterLast('.', "").lowercase() in
+    setOf("dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf", "pef", "srw", "nrw", "rwl", "3fr", "iiq", "x3f")
 
 /** I profili come miniature della foto sviluppata con ciascuno (nome sotto); acceso quello in uso. */
 @Composable
@@ -1020,7 +1123,7 @@ private fun ProfileStrip(shown: List<DevelopProfiles.Profile>, all: List<Develop
     if (current.isNotEmpty() && shown.none { it.id == current })
         Text(L.t("In uso: ", "In use: ") + (all.firstOrNull { it.id == current }?.name ?: current), color = C.muted, fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 6.dp))
-    if (shown.isEmpty()) Text(L.t("Nessun profilo LUT nella libreria.", "No LUT profiles in the library."), color = C.muted, fontSize = 12.sp)
+    if (shown.isEmpty()) Text(L.t("Nessun profilo nella libreria.", "No profiles in the library."), color = C.muted, fontSize = 12.sp)
     Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         shown.forEach { p ->
             val on = p.id == current
@@ -1036,7 +1139,8 @@ private fun ProfileStrip(shown: List<DevelopProfiles.Profile>, all: List<Develop
                 Text(p.name.removePrefix("Measured ").removePrefix("Camera "), color = if (on) Color.Black else C.text, fontSize = 12.sp,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
-                Text(if (p.name.startsWith("Measured")) L.t("Misurato", "Measured") else L.t("Fotocamera", "Camera"),
+                Text(if (p.kind == "dcp") L.t("Fotocamera · DCP", "Camera · DCP")
+                    else if (p.name.startsWith("Measured")) L.t("Misurato", "Measured") else L.t("Fotocamera", "Camera"),
                     color = if (on) Color(0xCC000000) else C.muted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
             }
         }

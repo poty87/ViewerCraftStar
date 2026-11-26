@@ -24,6 +24,12 @@ object DevelopEngine {
     @JvmStatic external fun registerLut(id: String, cube: String): Boolean
     /** Apre una smart preview (.lcsp): un riferimento, 0 se non si legge. */
     @JvmStatic external fun open(bytes: ByteArray): Long
+    /**
+     * Apre il file originale (raw) decodificandolo con il profilo della fotocamera `dcp` (il file .dcp; null = i colori
+     * del file), dentro `maxEdge` pixel. Serve per i profili DCP: LightCraft li applica leggendo il raw, le smart
+     * preview sono sempre fatte senza. Un riferimento come [open], 0 se non si legge.
+     */
+    @JvmStatic external fun openRaw(bytes: ByteArray, dcp: ByteArray?, maxEdge: Int): Long
     /** Sviluppa: [larghezza, altezza, pixel ARGB…], null se le impostazioni non si leggono. */
     @JvmStatic external fun render(handle: Long, settings: String, maxEdge: Int, applyCrop: Boolean): IntArray?
     @JvmStatic external fun close(handle: Long)
@@ -257,12 +263,62 @@ object SmartCache {
         return bytes
     }
 
-    fun size(context: Context): Long = dir(context).listFiles()?.sumOf { it.length() } ?: 0L
+    fun size(context: Context): Long = dir(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     fun clear(context: Context) = dir(context).deleteRecursively()
 
     private fun trim(context: Context) {
         val files = dir(context).listFiles()?.sortedBy { it.lastModified() } ?: return
+        var total = files.sumOf { it.length() }
+        for (f in files) {
+            if (total <= LIMIT_BYTES) break
+            total -= f.length()
+            f.delete()
+        }
+    }
+}
+
+/**
+ * I file originali (raw) scaricati per i profili della fotocamera (DCP): LightCraft applica un profilo DCP leggendo il
+ * raw, la smart preview non basta. Restano sul telefono fino a circa 1 GB (circa 30 DNG); oltre si tolgono i meno usati.
+ */
+object OriginalCache {
+    const val LIMIT_BYTES = 1L shl 30
+
+    private fun dir(context: Context) = File(context.cacheDir, "originals")
+
+    private fun file(context: Context, lib: String, photo: LibPhoto) = File(dir(context),
+        (lib + "_" + photo.id + "_" + photo.name).replace(Regex("[\\\\/:*?\"<>|]"), "_"))
+
+    /** Già sul telefono (senza scaricarlo): i byte, o null. */
+    fun cached(context: Context, lib: String, photo: LibPhoto): ByteArray? =
+        file(context, lib, photo).takeIf { it.exists() }?.let { f -> f.setLastModified(System.currentTimeMillis()); f.readBytes() }
+
+    /** L'originale della foto: dal telefono, o dal NAS (`progress` da 0 a 1 mentre si scarica). */
+    suspend fun get(context: Context, cfg: NasConfig, idx: LibIndex, photo: LibPhoto, progress: (Float) -> Unit = {}): ByteArray {
+        cached(context, idx.library, photo)?.let { return it }
+        val (share, path) = idx.locate(photo) ?: error("percorso dell'originale non riconosciuto")
+        val f = file(context, idx.library, photo)
+        f.parentFile?.mkdirs()
+        val tmp = File(f.path + ".tmp")
+        val total = Remote.use(cfg, share) { s -> Remote.open(s, path).use { it.size } }
+        tmp.outputStream().use { out ->
+            Remote.download(cfg, share, path) { chunk, at ->
+                out.write(chunk)
+                if (total > 0) progress(at.toFloat() / total)
+            }
+        }
+        tmp.renameTo(f)
+        runCatching { trim(context) }
+        return f.readBytes()
+    }
+
+    fun size(context: Context): Long = dir(context).listFiles()?.sumOf { it.length() } ?: 0L
+
+    fun clear(context: Context) = dir(context).deleteRecursively()
+
+    private fun trim(context: Context) {
+        val files = dir(context).listFiles()?.filter { !it.name.endsWith(".tmp") }?.sortedBy { it.lastModified() } ?: return
         var total = files.sumOf { it.length() }
         for (f in files) {
             if (total <= LIMIT_BYTES) break
@@ -313,6 +369,20 @@ object DevelopProfiles {
             local.writeBytes(bytes)
         }
         return DevelopEngine.registerOnce(profile.id) { runCatching { local.readText() }.getOrNull() }
+    }
+
+    /** Il file .dcp di un profilo della fotocamera (scaricato la prima volta), o null. */
+    suspend fun dcp(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String, profile: Profile): ByteArray? {
+        if (profile.kind != "dcp") return null
+        val local = File(dir(context, lib), profile.file)
+        if (!local.exists()) {
+            val bytes = runCatching {
+                Remote.use(cfg, share) { s -> Remote.open(s, "$libDir\\profiles\\${profile.file}").use { r -> r.read(0, r.size.toInt()) } }
+            }.getOrNull() ?: return null
+            local.parentFile?.mkdirs()
+            local.writeBytes(bytes)
+        }
+        return runCatching { local.readBytes() }.getOrNull()
     }
 }
 

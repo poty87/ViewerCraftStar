@@ -457,11 +457,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val dev = edits[id]?.develop ?: continue
                 val smart = entries[id]?.smart ?: continue
                 runCatching {
-                    val bytes = SmartCache.get(ctx, cfg, share, libDir, smart)
                     val json = org.json.JSONObject(dev.settings)
-                    json.optJSONObject("profile")?.optString("id")?.let { pid -> profiles.firstOrNull { it.id == pid }?.let { DevelopProfiles.ensure(ctx, cfg, share, libDir, idx.library, it) } }
+                    val pid = json.optJSONObject("profile")?.optString("id").orEmpty()
+                    val prof = profiles.firstOrNull { it.id == pid }
+                    prof?.let { DevelopProfiles.ensure(ctx, cfg, share, libDir, idx.library, it) }
+                    // profilo della fotocamera (DCP): dall'originale, se è già sul telefono (qui non si scarica: il PC
+                    // manderà comunque la sua anteprima); altrimenti dalla smart preview, approssimato
+                    val rawBytes = if (pid.startsWith("dcp:")) idx.byId[id]?.let { OriginalCache.cached(ctx, idx.library, it) } else null
+                    val dcp = if (rawBytes != null && prof != null) DevelopProfiles.dcp(ctx, cfg, share, libDir, idx.library, prof) else null
+                    val bytes = if (rawBytes != null && dcp != null) null else SmartCache.get(ctx, cfg, share, libDir, smart)
                     val bmp = kotlinx.coroutines.withContext(engine) {
-                        val h = DevelopEngine.open(bytes)
+                        val h = if (bytes == null) DevelopEngine.openRaw(rawBytes!!, dcp, 2048) else DevelopEngine.open(bytes)
                         try { if (h == 0L) null else DevelopEngine.render(h, dev.settings, 2048, true)?.let { DevelopEngine.bitmap(it) } }
                         finally { if (h != 0L) DevelopEngine.close(h) }
                     }
