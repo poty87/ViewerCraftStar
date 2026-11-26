@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.poty87.viewercraftstar"
         minSdk = 33 // Android 13: permesso READ_MEDIA_IMAGES
         targetSdk = 35
-        versionCode = 67
-        versionName = "0.32.0"
+        versionCode = 68
+        versionName = "0.33.0"
         // librerie native (ONNX Runtime per la ricerca IA): solo telefoni a 64 bit (tutti quelli con Android 13+)
         ndk { abiFilters += listOf("arm64-v8a") }
     }

@@ -225,6 +225,32 @@ pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_lensS
     env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
 
+/// Il colore che una maschera per colore campiona nel punto (x, y) della foto sviluppata con `settings` (`out_w` x
+/// `out_h` pixel, ritagliata): OkLab come lo confronta LightCraft (`color_range_sample`, media di 3 x 3 pixel).
+/// Torna [L, a, b] o null fuori dalla foto.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_colorSample<'a>(
+    mut env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong, settings: JString<'a>, out_w: jint, out_h: jint, x: f64, y: f64,
+) -> jni::sys::jdoubleArray {
+    if handle == 0 {
+        return std::ptr::null_mut();
+    }
+    let photo = unsafe { &*(handle as *const Photo) };
+    let Ok(json) = env.get_string(&settings) else { return std::ptr::null_mut() };
+    let json: String = json.into();
+    let Ok(s) = serde_json::from_str::<lightcraft_develop::DevelopSettings>(&json) else { return std::ptr::null_mut() };
+    let (w, h) = (out_w.max(1) as usize, out_h.max(1) as usize);
+    let frame = lightcraft_pipeline::geometry::Frame::with_lens(photo.src.width, photo.src.height, &s, true, photo.info.lens.as_ref());
+    let p = frame.out_to_norm(w, h).apply(lightcraft_geom::Point::new(x, y));
+    let req = lightcraft_pipeline::RenderRequest::fit(w.max(h), w.max(h));
+    let Some(lab) = lightcraft_pipeline::color_range_sample(&photo.src, &photo.info, &s, &req, p) else { return std::ptr::null_mut() };
+    let Ok(arr) = env.new_double_array(3) else { return std::ptr::null_mut() };
+    if env.set_double_array_region(&arr, 0, &lab).is_err() {
+        return std::ptr::null_mut();
+    }
+    arr.into_raw()
+}
+
 /// Chiude la foto aperta (libera la memoria).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_close<'a>(_env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong) {

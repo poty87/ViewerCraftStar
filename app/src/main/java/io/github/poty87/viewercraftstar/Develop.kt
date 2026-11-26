@@ -32,6 +32,8 @@ object DevelopEngine {
     @JvmStatic external fun openRaw(bytes: ByteArray, dcp: ByteArray?, maxEdge: Int): Long
     /** Dà alla foto aperta la correzione dell'obiettivo dal database di LightCraft (JSON `EmbeddedLens`), se non ha quella del file. */
     @JvmStatic external fun setLens(handle: Long, lens: String): Boolean
+    /** Il colore (OkLab) che una maschera per colore campiona nel punto (x, y) della foto sviluppata (`outW` x `outH`). */
+    @JvmStatic external fun colorSample(handle: Long, settings: String, outW: Int, outH: Int, x: Double, y: Double): DoubleArray?
     /** Da dove viene la correzione dell'obiettivo della foto aperta: "file", "database" o "". */
     @JvmStatic external fun lensSource(handle: Long): String?
     /** Sviluppa: [larghezza, altezza, pixel ARGB…], null se le impostazioni non si leggono. */

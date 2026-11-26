@@ -65,6 +65,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
@@ -228,6 +229,12 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     var maskDragging by remember { mutableStateOf(false) }
     var maskTab by remember { mutableIntStateOf(0) }
     var maskRenaming by remember { mutableStateOf(false) }
+    // pennello: la punta per i prossimi tratti (la dimensione è sullo schermo: segue lo zoom della foto mostrata)
+    var brushSize by remember { mutableStateOf(22f) }
+    var brushFeather by remember { mutableStateOf(50f) }
+    var brushFlow by remember { mutableStateOf(100f) }
+    var brushErase by remember { mutableStateOf(false) }
+    var brushAuto by remember { mutableStateOf(false) }
     val overlayFlow = remember { MutableStateFlow(-1) } // la maschera da disegnare sopra lo sviluppo (-1 = nessuna)
     var section by ui::section
     var category by ui::category
@@ -694,7 +701,48 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         setGeometry(DevelopEngine.cropDrag(start, handleIndex, gx, gy, px, py, w, h, aspect()))
                     })
                 // maschera aperta (lineare o radiale): le sue maniglie sopra la foto
-                if (section == MASKS && !showBefore && shown != null && Masks.editable(Masks.find(settings, maskSel ?: -1))) {
+                val openMask = Masks.find(settings, maskSel ?: -1)
+                if (section == MASKS && !showBefore && shown != null && Masks.editable(openMask) && Masks.kind(openMask) == "brush") {
+                    val bw = shown.width
+                    val bh = shown.height
+                    BrushOverlay(bw, bh, brushSize, brushErase, onDragging = { maskDragging = it }) { pts, rOut ->
+                        val st = settings ?: return@BrushOverlay
+                        val sh = Masks.shape(Masks.find(st, maskSel ?: -1)) ?: return@BrushOverlay
+                        val arr = DoubleArray(pts.size * 2 + 4)
+                        pts.forEachIndexed { i, o -> arr[2 * i] = o.x.toDouble(); arr[2 * i + 1] = o.y.toDouble() }
+                        arr[2 * pts.size] = pts[0].x.toDouble(); arr[2 * pts.size + 1] = pts[0].y.toDouble()
+                        arr[2 * pts.size + 2] = (pts[0].x + rOut).toDouble(); arr[2 * pts.size + 3] = pts[0].y.toDouble()
+                        val mp = DevelopEngine.maskMap(handle[0], st.toString(), true, bw, bh, arr, true) ?: return@BrushOverlay
+                        val (w, h) = dims()
+                        val l = maxOf(w, h).coerceAtLeast(1.0)
+                        val n = 2 * pts.size
+                        // dimensione della punta: in frazioni del lato lungo della foto (come LightCraft)
+                        val size = kotlin.math.hypot((mp[n + 2] - mp[n]) * w / l, (mp[n + 3] - mp[n + 1]) * h / l).coerceIn(0.002, 0.5)
+                        val points = JSONArray()
+                        for (i in pts.indices) points.put(JSONObject().put("x", mp[2 * i]).put("y", mp[2 * i + 1]))
+                        val strokes = sh.optJSONArray("strokes") ?: JSONArray().also { sh.put("strokes", it) }
+                        strokes.put(JSONObject().put("points", points).put("size", size).put("feather", brushFeather.toDouble())
+                            .put("flow", brushFlow.toDouble()).put("density", 100.0).put("erase", brushErase).put("auto_mask", brushAuto))
+                        changed()
+                    }
+                } else if (section == MASKS && !showBefore && shown != null && Masks.editable(openMask) && Masks.kind(openMask) == "colorRange") {
+                    val bw = shown.width
+                    val bh = shown.height
+                    ColorPickOverlay(bw, bh) { o ->
+                        val st = settings ?: return@ColorPickOverlay
+                        val sh = Masks.shape(Masks.find(st, maskSel ?: -1)) ?: return@ColorPickOverlay
+                        val json = st.toString()
+                        scope.launch {
+                            val lab = withContext(engine) { DevelopEngine.colorSample(handleFor(json), json, bw, bh, o.x.toDouble(), o.y.toDouble()) }
+                                ?: return@launch
+                            val samples = sh.optJSONArray("samples") ?: JSONArray().also { sh.put("samples", it) }
+                            if (samples.length() >= 5) samples.remove(0) // al massimo 5, come in LightCraft: si toglie il più vecchio
+                            samples.put(JSONArray().put(lab[0]).put(lab[1]).put(lab[2]))
+                            maskOverlay = true
+                            changed()
+                        }
+                    }
+                } else if (section == MASKS && !showBefore && shown != null && Masks.editable(openMask) && Masks.kind(openMask) in setOf("linear", "radial")) {
                     val bw = shown.width
                     val bh = shown.height
                     MaskOverlay(bw, bh, editTick, mask = { Masks.find(settings, maskSel ?: -1) },
@@ -734,7 +782,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             val img = image ?: return
                             val bw = img.width.toDouble()
                             val bh = img.height.toDouble()
-                            val shape = if (kind == "linear") {
+                            val shape = if (kind == "brush") Masks.brush()
+                            else if (kind == "luminanceRange") Masks.luminance()
+                            else if (kind == "colorRange") Masks.color()
+                            else if (kind == "linear") {
                                 val p = DevelopEngine.maskMap(handle[0], s.toString(), true, img.width, img.height,
                                     doubleArrayOf(bw * 0.5, bh * 0.2, bw * 0.5, bh * 0.55), true) ?: return
                                 Masks.linear(doubleArrayOf(p[0], p[1]), doubleArrayOf(p[2], p[3]))
@@ -777,6 +828,58 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             val kind = Masks.kind(sel)
                             if (!Masks.editable(sel)) MaskHint(L.t("${Masks.kindName(kind)}: forma fatta in LightCraft; qui ne regoli le correzioni, la forma si cambia sul PC.",
                                 "${Masks.kindName(kind)}: shape made in LightCraft; here you adjust its corrections, the shape is changed on the PC."))
+                            val sh = Masks.shape(sel)
+                            if (Masks.editable(sel) && kind == "brush" && sh != null) {
+                                val n = sh.optJSONArray("strokes")?.length() ?: 0
+                                MaskHint(if (n == 0) L.t("Disegna con un dito sulla foto dove vuoi la correzione.", "Paint with a finger on the photo where you want the adjustment.")
+                                    else L.t(if (n == 1) "1 tratto. Con «Cancella» togli la maschera dove passi." else "$n tratti. Con «Cancella» togli la maschera dove passi.",
+                                        if (n == 1) "1 stroke. With «Erase» you remove the mask where you paint." else "$n strokes. With «Erase» you remove the mask where you paint."))
+                                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Pill(L.t("Cancella", "Erase"), brushErase) { brushErase = !brushErase }
+                                    Pill(L.t("Maschera automatica", "Auto mask"), brushAuto) { brushAuto = !brushAuto }
+                                    if (n > 0) Pill(L.t("Annulla tratto", "Undo stroke"), false) {
+                                        sh.optJSONArray("strokes")?.remove(n - 1); resets++; changed()
+                                    }
+                                }
+                                ControlSlider(DevControl("brush.size", "Dimensione", "Size", 6f, 90f, 1f, 0, 22f), brushSize, resets, 22f) { brushSize = it }
+                                ControlSlider(DevControl("brush.feather", "Sfumatura", "Feather", 0f, 100f, 1f, 0, 50f), brushFeather, resets, 50f) { brushFeather = it }
+                                ControlSlider(DevControl("brush.flow", "Flusso", "Flow", 1f, 100f, 1f, 0, 100f), brushFlow, resets, 100f) { brushFlow = it }
+                            }
+                            if (Masks.editable(sel) && kind == "luminanceRange" && sh != null) {
+                                // la striscia dei grigi: dove si trovano «Da» e «A»
+                                Box(Modifier.fillMaxWidth().height(10.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Black, Color.White))))
+                                val startSh = Masks.shape(startMask)
+                                for ((key, names, def) in listOf(Triple("lo", "Da" to "From", 0.6), Triple("hi", "A" to "To", 1.0),
+                                    Triple("lo_feather", "Sfumatura scuri" to "Dark feather", 0.1), Triple("hi_feather", "Sfumatura luci" to "Light feather", 0.1))) {
+                                    val dc = DevControl("mask.$id.$key", names.first, names.second, 0f, 100f, 1f, 0, (def * 100).toFloat())
+                                    androidx.compose.runtime.key(dc.path) {
+                                        ControlSlider(dc, (sh.optDouble(key, def) * 100).toFloat(), resets, ((startSh?.optDouble(key, def) ?: def) * 100).toFloat()) { v ->
+                                            sh.put(key, v.roundToInt() / 100.0); changed()
+                                        }
+                                    }
+                                }
+                            }
+                            if (Masks.editable(sel) && kind == "colorRange" && sh != null) {
+                                val samples = sh.optJSONArray("samples") ?: JSONArray()
+                                MaskHint(if (samples.length() == 0) L.t("Tocca la foto sul colore da scegliere (fino a 5).", "Tap the photo on the colour to pick (up to 5).")
+                                    else L.t("Tocca la foto per aggiungere un colore (fino a 5).", "Tap the photo to add a colour (up to 5)."))
+                                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    for (i in 0 until samples.length()) {
+                                        val c = samples.optJSONArray(i) ?: continue
+                                        Box(Modifier.size(26.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                            .background(Masks.okToColor(c.optDouble(0), c.optDouble(1), c.optDouble(2))))
+                                    }
+                                    if (samples.length() > 0) {
+                                        Pill(L.t("Togli l'ultimo", "Remove last"), false) { samples.remove(samples.length() - 1); changed() }
+                                        Pill(L.t("Togli tutti", "Remove all"), false) { sh.put("samples", JSONArray()); changed() }
+                                    }
+                                }
+                                val dc = DevControl("mask.$id.refine", "Precisione", "Refine", 0f, 100f, 1f, 0, 50f)
+                                ControlSlider(dc, sh.optDouble("refine", 50.0).toFloat(), resets, (Masks.shape(startMask)?.optDouble("refine", 50.0) ?: 50.0).toFloat()) { v ->
+                                    sh.put("refine", v.roundToInt().toDouble()); changed()
+                                }
+                            }
                             fun adjust(): JSONObject = sel.optJSONObject("adjust") ?: JSONObject().also { sel.put("adjust", it) }
                             val all = MASK_GROUPS[maskTab].third + MASK_AMOUNT
                             all.forEachIndexed { i, mc ->

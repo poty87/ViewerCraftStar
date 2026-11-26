@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,7 @@ internal object Masks {
 
     /** Si può cambiare la forma sul telefono (le altre si vedono e se ne regolano le correzioni). */
     fun editable(m: JSONObject?): Boolean =
-        m?.optJSONArray("components")?.length() == 1 && kind(m) in setOf("linear", "radial")
+        m?.optJSONArray("components")?.length() == 1 && kind(m) in setOf("linear", "radial", "brush", "luminanceRange", "colorRange")
 
     fun kindName(kind: String): String = when (kind) {
         "linear" -> L.t("Lineare", "Linear")
@@ -124,6 +125,30 @@ internal object Masks {
 
     fun linear(start: DoubleArray, end: DoubleArray): JSONObject = JSONObject().put("kind", "linear")
         .put("start", point(start[0], start[1])).put("end", point(end[0], end[1]))
+
+    /** Pennello vuoto: i tratti si aggiungono disegnando. */
+    fun brush(): JSONObject = JSONObject().put("kind", "brush").put("strokes", JSONArray())
+
+    /** Luminanza: come la crea LightCraft (le luci, da 0,6 a 1). */
+    fun luminance(): JSONObject = JSONObject().put("kind", "luminanceRange").put("lo", 0.6).put("hi", 1.0)
+        .put("lo_feather", 0.1).put("hi_feather", 0.1)
+
+    /** Colore: i colori si prendono toccando la foto. */
+    fun color(): JSONObject = JSONObject().put("kind", "colorRange").put("samples", JSONArray()).put("refine", 50.0)
+
+    /** Un colore OkLab come colore dello schermo (per il campione nel pannello). */
+    fun okToColor(l: Double, a: Double, b: Double): Color {
+        val l1 = l + 0.3963377774 * a + 0.2158037573 * b
+        val m1 = l - 0.1055613458 * a - 0.0638541728 * b
+        val s1 = l - 0.0894841775 * a - 1.2914855480 * b
+        val (L, M, S) = Triple(l1 * l1 * l1, m1 * m1 * m1, s1 * s1 * s1)
+        // da Rec.2020 lineare (lo spazio di LightCraft) a sRGB lineare, poi la curva sRGB
+        val r20 = 4.0767416621 * L - 3.3077115913 * M + 0.2309699292 * S
+        val g20 = -1.2684380046 * L + 2.6097574011 * M - 0.3413193965 * S
+        val b20 = -0.0041960863 * L - 0.7034186147 * M + 1.7076147010 * S
+        fun enc(v: Double) = (if (v <= 0.0031308) 12.92 * v else 1.055 * Math.pow(v, 1 / 2.4) - 0.055).coerceIn(0.0, 1.0).toFloat()
+        return Color(enc(r20), enc(g20), enc(b20))
+    }
 
     fun radial(cx: Double, cy: Double, rx: Double, ry: Double): JSONObject = JSONObject().put("kind", "radial")
         .put("center", point(cx, cy)).put("rx", rx).put("ry", ry).put("angle", 0.0).put("feather", 50.0).put("invert", false)
@@ -390,6 +415,82 @@ internal fun MaskOverlay(bmpW: Int, bmpH: Int, tick: Int, mask: () -> JSONObject
 
 private fun Pair<Double, Double>.toList() = listOf(first, second)
 
+/** Dove sta la foto (sviluppata, `bmpW` x `bmpH`) dentro un riquadro `box`: intera, al centro. */
+private fun fitRect(box: IntSize, bmpW: Int, bmpH: Int): Rect {
+    if (box.width == 0 || bmpW == 0) return Rect.Zero
+    val k = minOf(box.width.toFloat() / bmpW, box.height.toFloat() / bmpH)
+    val w = bmpW * k
+    val h = bmpH * k
+    return Rect((box.width - w) / 2, (box.height - h) / 2, (box.width + w) / 2, (box.height + h) / 2)
+}
+
+/**
+ * Pennello: un dito disegna sulla foto (un tocco fa un punto solo). Mentre si disegna si vede il tratto (rosso, o
+ * grigio per Cancella) e il cerchio della punta; alla fine `onStroke` riceve i punti in pixel della foto sviluppata e
+ * il raggio della punta negli stessi pixel.
+ */
+@Composable
+internal fun BrushOverlay(bmpW: Int, bmpH: Int, radiusDp: Float, erase: Boolean, onDragging: (Boolean) -> Unit,
+                          onStroke: (List<Offset>, Float) -> Unit) {
+    val density = LocalDensity.current
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val pts = remember { androidx.compose.runtime.mutableStateListOf<Offset>() }
+    var cursor by remember { mutableStateOf<Offset?>(null) }
+    val r by rememberUpdatedState(with(density) { radiusDp.dp.toPx() })
+    val bw by rememberUpdatedState(bmpW)
+    val bh by rememberUpdatedState(bmpH)
+    fun finish() {
+        val rect = fitRect(box, bw, bh)
+        if (pts.isNotEmpty() && rect.width > 0f) {
+            val k = bw / rect.width
+            onStroke(pts.map { Offset((it.x - rect.left) * k, (it.y - rect.top) * k) }, r * k)
+        }
+        pts.clear()
+        cursor = null
+    }
+    Box(Modifier.fillMaxSize().onSizeChanged { box = it }
+        .pointerInput(Unit) { detectTapGestures(onTap = { p -> pts.clear(); pts += p; finish() }) }
+        .pointerInput(Unit) {
+            detectDragGestures(
+                onDragStart = { p -> pts.clear(); pts += p; cursor = p; onDragging(true) },
+                onDragEnd = { onDragging(false); finish() },
+                onDragCancel = { onDragging(false); pts.clear(); cursor = null },
+                onDrag = { change, _ ->
+                    change.consume()
+                    val p = change.position
+                    cursor = p
+                    if ((p - pts.last()).getDistance() >= r * 0.2f) pts += p
+                })
+        }) {
+        Canvas(Modifier.fillMaxSize()) {
+            val col = if (erase) Color(0x99FFFFFF) else Color(0x99EB4034)
+            if (pts.size > 1) {
+                val path = Path().apply { moveTo(pts[0].x, pts[0].y); pts.drop(1).forEach { lineTo(it.x, it.y) } }
+                drawPath(path, col, style = Stroke(r * 2, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+            cursor?.let { c ->
+                drawCircle(Color(0x99000000), r, c, style = Stroke(3.dp.toPx()))
+                drawCircle(Color.White, r, c, style = Stroke(1.5.dp.toPx()))
+            }
+        }
+    }
+}
+
+/** Colore: un tocco sulla foto prende il colore in quel punto (`onPick` riceve il punto in pixel della foto sviluppata). */
+@Composable
+internal fun ColorPickOverlay(bmpW: Int, bmpH: Int, onPick: (Offset) -> Unit) {
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val bw by rememberUpdatedState(bmpW)
+    val bh by rememberUpdatedState(bmpH)
+    Box(Modifier.fillMaxSize().onSizeChanged { box = it }.pointerInput(Unit) {
+        detectTapGestures(onTap = { p ->
+            val rect = fitRect(box, bw, bh)
+            if (rect.contains(p)) onPick(Offset((p.x - rect.left) * bw / rect.width, (p.y - rect.top) * bh / rect.height))
+        })
+    })
+}
+
 /** «Rinomina»: il nome della maschera. */
 @Composable
 internal fun MaskNameDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
@@ -421,6 +522,9 @@ internal fun MaskBar(masks: List<JSONObject>, selected: Int?, overlay: Boolean, 
                 DropdownMenu(open, { open = false }) {
                     DropdownMenuItem({ Text(L.t("Lineare", "Linear"), color = C.text) }, onClick = { open = false; onNew("linear") })
                     DropdownMenuItem({ Text(L.t("Radiale", "Radial"), color = C.text) }, onClick = { open = false; onNew("radial") })
+                    DropdownMenuItem({ Text(L.t("Pennello", "Brush"), color = C.text) }, onClick = { open = false; onNew("brush") })
+                    DropdownMenuItem({ Text(L.t("Luminanza", "Luminance range"), color = C.text) }, onClick = { open = false; onNew("luminanceRange") })
+                    DropdownMenuItem({ Text(L.t("Colore", "Color range"), color = C.text) }, onClick = { open = false; onNew("colorRange") })
                 }
             }
         }
