@@ -546,6 +546,11 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
     if (editing) BlurDialog({ editing = false }) {
         DialogTitle(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos"))
         EditControls(lib, lib.selected, null)
+        // sviluppo copiato in «Sviluppa»: si incolla su tutte le foto scelte
+        if (lib.clipboardLabel.isNotEmpty()) PillButton(onClick = { editing = false; lib.pasteDevelop(lib.selected.toList()) }) {
+            DevelopIcon(Modifier.size(16.dp), C.text)
+            Text("  " + L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}"), maxLines = 1)
+        }
         DialogButtons(L.t("Titolo e parole chiave…", "Title and keywords…") to { editing = false; groupTexts = true },
             main = L.t("Fine", "Done") to { editing = false })
     }

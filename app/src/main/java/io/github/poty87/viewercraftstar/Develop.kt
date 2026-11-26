@@ -143,6 +143,58 @@ object DevelopStore {
         Entry(s, settings, smart)
     }.getOrNull()
 
+    /** Come [entry], per molte foto in un passaggio solo (incolla lo sviluppo su una selezione). */
+    fun entries(context: Context, lib: String, ids: Set<Int>): Map<Int, Entry> = runCatching {
+        var base: JSONObject? = null
+        val raw = HashMap<Int, JSONArray>()
+        val smart = HashMap<Int, String>()
+        val keys = ids.map { it.toString() }.toSet()
+        reader(file(context, lib)).use { r ->
+            r.beginObject()
+            while (r.hasNext()) {
+                when (r.nextName()) {
+                    "base" -> base = readValue(r) as JSONObject
+                    "photos" -> {
+                        r.beginObject()
+                        while (r.hasNext()) {
+                            val k = r.nextName()
+                            if (k in keys) raw[k.toInt()] = readValue(r) as JSONArray else r.skipValue()
+                        }
+                        r.endObject()
+                    }
+                    "smart" -> {
+                        r.beginObject()
+                        while (r.hasNext()) {
+                            val k = r.nextName()
+                            if (k in keys) smart[k.toInt()] = r.nextString() else r.skipValue()
+                        }
+                        r.endObject()
+                    }
+                    else -> r.skipValue()
+                }
+            }
+        }
+        val b = base ?: return emptyMap()
+        raw.mapValues { (id, a) ->
+            val settings = JSONObject(b.toString())
+            a.getJSONObject(1).let { d -> d.keys().forEach { k -> setPath(settings, k, d.get(k)) } }
+            a.optJSONArray(2)?.let { drop -> for (i in 0 until drop.length()) removePath(settings, drop.getString(i)) }
+            Entry(a.getString(0), settings, smart[id])
+        }
+    }.getOrDefault(emptyMap())
+
+    /**
+     * Unisce `partial` (impostazioni parziali di LightCraft: un preset, uno sviluppo copiato) dentro `into`: le sezioni si
+     * uniscono campo per campo, i valori e gli elenchi si sostituiscono. Come fa LightCraft con develop.merge.
+     */
+    fun merge(into: JSONObject, partial: JSONObject) {
+        partial.keys().forEach { k ->
+            val v = partial.get(k)
+            val cur = into.opt(k)
+            if (v is JSONObject && cur is JSONObject) merge(cur, v) else into.put(k, if (v is JSONObject) JSONObject(v.toString()) else v)
+        }
+    }
+
     private fun reader(f: File) = JsonReader(InputStreamReader(GZIPInputStream(f.inputStream().buffered(1 shl 16)), Charsets.UTF_8))
 
     private fun readValue(r: JsonReader): Any = when (r.peek()) {
@@ -253,6 +305,54 @@ object DevelopProfiles {
             local.writeBytes(bytes)
         }
         return DevelopEngine.registerOnce(profile.id) { runCatching { local.readText() }.getOrNull() }
+    }
+}
+
+/** I preset di LightCraft della libreria (presets.json nella cartella di servizio, pubblicato da PresetCraftAppLicator). */
+object DevelopPresets {
+    class Preset(val id: String, val name: String, val group: String, val profileOnly: Boolean, val settings: JSONObject) {
+        val profileId: String get() = settings.optJSONObject("profile")?.optString("id").orEmpty()
+    }
+
+    suspend fun list(context: Context, cfg: NasConfig, share: String, libDir: String, lib: String): List<Preset> {
+        val local = File(context.filesDir, "libraries/" + lib.replace(Regex("[\\\\/:*?\"<>|]"), "_") + "/develop-presets.json")
+        val text = runCatching {
+            Remote.use(cfg, share) { s -> Remote.open(s, "$libDir\\presets.json").use { r -> String(r.read(0, r.size.toInt()), Charsets.UTF_8) } }
+        }.onSuccess { t -> runCatching { local.parentFile?.mkdirs(); local.writeText(t) } }.getOrNull()
+            ?: runCatching { local.readText() }.getOrNull() ?: return emptyList()
+        val a = JSONObject(text).optJSONArray("presets") ?: return emptyList()
+        return (0 until a.length()).map { a.getJSONObject(it) }.mapNotNull { p ->
+            val st = p.optJSONObject("settings") ?: return@mapNotNull null
+            Preset(p.optString("id"), p.optString("name"), p.optString("group"), p.optBoolean("profileOnly"), st)
+        }
+    }
+}
+
+/**
+ * Lo sviluppo copiato («Copia sviluppo»), da incollare su altre foto: le sezioni scelte delle impostazioni di LightCraft.
+ * Resta finché l'app è aperta.
+ */
+object DevelopClipboard {
+    /** I gruppi che si possono copiare: nome e sezioni del JSON di LightCraft; il ritaglio di base non si copia. */
+    val GROUPS = listOf(
+        Triple("Luce" to "Light", listOf("light"), true), Triple("Curva" to "Curve", listOf("curve"), true),
+        Triple("Bilanciamento del bianco" to "White balance", listOf("wb"), true),
+        Triple("Colore" to "Color", listOf("color"), true), Triple("Tinte" to "HSL", listOf("mixer", "bw_mix"), true),
+        Triple("Color grading" to "Color grading", listOf("grading"), true), Triple("Dettaglio" to "Detail", listOf("detail"), true),
+        Triple("Effetti, vignettatura, grana" to "Effects, vignette, grain", listOf("effects", "vignette", "grain"), true),
+        Triple("Ottica e calibrazione" to "Optics and calibration", listOf("optics", "calibration"), true),
+        Triple("Profilo e trattamento" to "Profile and treatment", listOf("profile", "treatment"), true),
+        Triple("Ritaglio e rotazione" to "Crop and rotation", listOf("crop", "orientation"), false),
+    )
+
+    var settings: JSONObject? = null; private set
+    var label: String = ""; private set
+
+    fun copy(from: JSONObject, sections: List<String>, name: String) {
+        val out = JSONObject()
+        sections.forEach { k -> from.opt(k)?.let { v -> out.put(k, if (v is JSONObject) JSONObject(v.toString()) else v) } }
+        settings = out
+        label = name
     }
 }
 

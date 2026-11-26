@@ -344,6 +344,41 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** Cambia quando cambia una foto sviluppata sul telefono (le immagini si ricaricano). */
     var pendingVersion by mutableStateOf(0); private set
 
+    /** C'è uno sviluppo copiato da incollare (cambia quando si copia). */
+    var clipboardLabel by mutableStateOf(""); private set
+
+    fun copyDevelop(from: org.json.JSONObject, sections: List<String>, name: String) {
+        DevelopClipboard.copy(from, sections, name)
+        clipboardLabel = name
+        say("ok", L.t("Sviluppo copiato da $name.", "Develop settings copied from $name."))
+    }
+
+    /**
+     * Incolla lo sviluppo copiato sulle foto indicate: per ognuna le sue impostazioni con sopra quelle copiate, mandate
+     * al PC come le altre modifiche (il telefono non le sviluppa una per una: l'anteprima arriva quando il PC le applica).
+     */
+    fun pasteDevelop(ids: Collection<Int>) {
+        val idx = index ?: return
+        val copied = DevelopClipboard.settings ?: return
+        viewModelScope.launch {
+            val entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                DevelopStore.entries(getApplication(), idx.library, ids.toSet())
+            }
+            var done = 0
+            for (id in ids) {
+                val e = entries[id] ?: continue
+                val merged = org.json.JSONObject(e.settings.toString())
+                DevelopStore.merge(merged, copied)
+                edit(listOf(id)) { it.copy(develop = DevelopEdit(merged.toString(), e.sig)) }
+                done++
+            }
+            val missing = ids.size - done
+            say(if (missing == 0) "ok" else "warn", L.t("Sviluppo incollato su $done foto." +
+                (if (missing > 0) " $missing foto senza impostazioni pubblicate dal PC: saltate." else ""),
+                "Develop settings pasted on $done photos." + (if (missing > 0) " $missing photos without settings published by the PC: skipped." else "")))
+        }
+    }
+
     fun setRating(ids: Collection<Int>, r: Int) = edit(ids) { it.copy(rating = r) }
     fun setFlag(ids: Collection<Int>, f: String) = edit(ids) { it.copy(flag = f) }
     fun setLabel(ids: Collection<Int>, l: String) = edit(ids) { it.copy(label = l) }

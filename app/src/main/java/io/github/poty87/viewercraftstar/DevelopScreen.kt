@@ -94,6 +94,7 @@ private val PROFILE = DevSection("Profilo", "Profile", listOf(
     DevControl("profile.amount", "Intensità", "Amount", 0f, 200f, 1f, 0, 100f),
 ))
 private val CROP = DevSection("Ritaglio", "Crop", emptyList())
+private val PRESETS = DevSection("Preset", "Presets", emptyList())
 
 // seconda fase: i controlli di LightCraft (lightcraft-cli controls), con i nomi del JSON delle impostazioni
 private val CURVE = DevSection("Curva", "Curve", listOf(
@@ -151,6 +152,7 @@ private val CATEGORIES = listOf(
     DevCategory("Dettaglio", "Detail", "detail", listOf(SHARP, NOISE, COLOR_NOISE)),
     DevCategory("Ritaglio", "Crop", "crop", listOf(CROP)),
     DevCategory("Profili", "Profiles", "profiles", listOf(PROFILE)),
+    DevCategory("Preset", "Presets", "presets", listOf(PRESETS)),
 )
 
 /** I colori del mixer (Tinte), con il loro colore per il pallino accanto al nome. */
@@ -177,6 +179,7 @@ private val SWAPS = setOf("Rotate90", "Rotate270", "Transpose", "Transverse")
  * «Modifica»: lo sviluppo della foto sul telefono, con il motore di LightCraft sulla smart preview. «Fatto» manda le
  * impostazioni al PC (come le altre modifiche): finché non le applica, la foto mostra il risultato del telefono.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     val context = LocalContext.current
@@ -200,6 +203,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     var category by remember { mutableStateOf(CATEGORIES[0]) }
     val lastGroup = remember { HashMap<DevCategory, DevSection>() } // la sotto-scheda ricordata per ogni categoria
     val thumbs = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() } // miniature dei profili
+    var presets by remember { mutableStateOf<List<DevelopPresets.Preset>>(emptyList()) }
+    var presetGroup by remember { mutableStateOf("") }
+    val presetThumbs = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() }
+    var copying by remember { mutableStateOf(false) } // la finestra «Copia sviluppo»
     var profiles by remember { mutableStateOf<List<DevelopProfiles.Profile>>(emptyList()) }
     var saving by remember { mutableStateOf(false) }
     val handle = remember { longArrayOf(0L) }
@@ -246,6 +253,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
             return@LaunchedEffect
         }
         profiles = withContext(Dispatchers.IO) { DevelopProfiles.list(context, cfg, lib.libShare, libDir, idx.library) }
+        presets = withContext(Dispatchers.IO) { DevelopPresets.list(context, cfg, lib.libShare, libDir, idx.library) }
         val current = entry.settings.optJSONObject("profile")?.optString("id").orEmpty()
         profiles.firstOrNull { it.id == current }?.let { withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, cfg, lib.libShare, libDir, idx.library, it) } }
         if (current.startsWith("dcp:")) note = L.t("Profilo della fotocamera (DCP): sul telefono il cambio di profilo è approssimato.",
@@ -332,6 +340,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
 
     fun changed() {
         editTick++
+        presetThumbs.clear()
         val s = settings
         requests.value = if (s == null) null
         else if (section == CROP) Triple(frameJson(s), true, s.toString()) else Triple(s.toString(), false, frameJson(s))
@@ -348,6 +357,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         GRADING -> listOf("grading")
         CROP -> listOf("crop", "orientation")
         PROFILE -> listOf("profile")
+        PRESETS -> emptyList()
         WHITE -> listOf("wb")
         else -> sec.controls.map { it.path }
     }
@@ -381,10 +391,40 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                         modifier = Modifier.background(if (showBefore) C.accent else C.card, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
                             .pointerInput(Unit) { detectTapGestures(onPress = { showBefore = true; tryAwaitRelease(); showBefore = false }) }
                             .padding(horizontal = 12.dp, vertical = 7.dp))
-                    Pill(L.t("Ripristina", "Reset"), false) {
-                        settings = original?.let { JSONObject(it.toString()) }
-                        resets++
-                        changed()
+                    // ☰: copia lo sviluppo (per incollarlo su altre foto), incolla quello copiato, ripristina
+                    Box {
+                        var open by remember { mutableStateOf(false) }
+                        Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(C.card)
+                            .clickable { open = true }.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Menu, null, tint = C.text, modifier = Modifier.size(15.dp))
+                        }
+                        androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                            androidx.compose.material3.DropdownMenuItem({ Text(L.t("Copia sviluppo…", "Copy develop settings…"), color = C.text) },
+                                onClick = { open = false; copying = true })
+                            if (lib.clipboardLabel.isNotEmpty()) androidx.compose.material3.DropdownMenuItem(
+                                { Text(L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}"), color = C.text) },
+                                onClick = {
+                                    open = false
+                                    val copied = DevelopClipboard.settings
+                                    val s = settings
+                                    if (copied != null && s != null) scope.launch {
+                                        profiles.firstOrNull { it.id == copied.optJSONObject("profile")?.optString("id") }?.let { prof ->
+                                            withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, prof) }
+                                        }
+                                        DevelopStore.merge(s, copied)
+                                        resets++
+                                        cropTick++
+                                        changed()
+                                    }
+                                })
+                            androidx.compose.material3.DropdownMenuItem({ Text(L.t("Ripristina com'era", "Reset to how it was"), color = C.text) }, onClick = {
+                                open = false
+                                settings = original?.let { JSONObject(it.toString()) }
+                                resets++
+                                cropTick++
+                                changed()
+                            })
+                        }
                     }
                 }
                 PillButton(onClick = {
@@ -480,6 +520,60 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 }
                 // i cursori: sempre la stessa altezza (le schede non saltano), il resto scorre; la foto resta grande
                 Column(Modifier.fillMaxWidth().height((screen.screenHeightDp * 0.27f).dp).verticalScroll(rememberScrollState())) {
+                    if (section == PRESETS) {
+                        val groups = presets.map { it.group }.distinct()
+                        val group = presetGroup.takeIf { it in groups } ?: groups.firstOrNull().orEmpty()
+                        val shownPresets = presets.filter { it.group == group }
+                        if (presets.isEmpty()) Text(L.t("Nessun preset nella libreria.", "No presets in the library."), color = C.muted, fontSize = 12.sp)
+                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            groups.forEach { g -> Pill(g, g == group) { presetGroup = g } }
+                        }
+                        // miniature: la foto com'è adesso con ogni preset sopra (sviluppate dal motore, una alla volta)
+                        LaunchedEffect(group, presets, editTick) {
+                            val base = settings?.toString() ?: return@LaunchedEffect
+                            for (p in shownPresets) {
+                                if (presetThumbs.containsKey(p.id) || handle[0] == 0L) continue
+                                profiles.firstOrNull { it.id == p.profileId }?.let { prof ->
+                                    withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, prof) }
+                                }
+                                val s = JSONObject(base)
+                                DevelopStore.merge(s, p.settings)
+                                withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 320, true) }
+                                    ?.let { presetThumbs[p.id] = DevelopEngine.bitmap(it) }
+                            }
+                        }
+                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            shownPresets.forEach { p ->
+                                Column(Modifier.width(118.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                    .background(C.card).clickable {
+                                        scope.launch {
+                                            profiles.firstOrNull { it.id == p.profileId }?.let { prof ->
+                                                withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, prof) }
+                                            }
+                                            settings?.let { DevelopStore.merge(it, p.settings) }
+                                            resets++
+                                            changed()
+                                        }
+                                    }.padding(3.dp)) {
+                                    Box(Modifier.fillMaxWidth().height(80.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF202020)), contentAlignment = Alignment.Center) {
+                                        val b = presetThumbs[p.id]
+                                        val img = remember(b) { b?.asImageBitmap() }
+                                        if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                        else CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                    }
+                                    Text(p.name, color = C.text, fontSize = 12.sp, maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
+                                    if (p.profileId.startsWith("dcp:")) Text(L.t("profilo DCP: approssimato", "DCP profile: approximate"),
+                                        color = C.muted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
+                                }
+                            }
+                        }
+                        Text(L.t("Un tocco applica il preset sopra lo sviluppo attuale (come in LightCraft); «Prima» e il ↺ dei cursori restano.",
+                            "A tap applies the preset on top of the current settings (as in LightCraft); «Before» and the sliders' ↺ still work."),
+                            color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    }
                     if (section == PROFILE) {
                         val current = settings?.optJSONObject("profile")?.optString("id").orEmpty()
                         val shown = profilesFor(profiles, photo.camera)
@@ -629,6 +723,23 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                         }
                     }
                 }
+            }
+        }
+        if (copying) {
+            val chosen = remember { androidx.compose.runtime.mutableStateMapOf<Int, Boolean>().apply {
+                DevelopClipboard.GROUPS.forEachIndexed { i, g -> put(i, g.third) } } }
+            BlurDialog({ copying = false }) {
+                DialogTitle(L.t("Copia sviluppo", "Copy develop settings"))
+                DialogText(L.t("Scegli cosa copiare. Poi lo incolli su altre foto: da «Sviluppa» (☰) o selezionandole nella galleria (Modifica).",
+                    "Choose what to copy. Then paste it on other photos: from «Develop» (☰) or by selecting them in the gallery (Edit)."))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DevelopClipboard.GROUPS.forEachIndexed { i, g -> Pill(L.t(g.first.first, g.first.second), chosen[i] == true) { chosen[i] = chosen[i] != true } }
+                }
+                DialogButtons(L.t("Annulla", "Cancel") to { copying = false }, main = L.t("Copia", "Copy") to {
+                    copying = false
+                    val sections = DevelopClipboard.GROUPS.filterIndexed { i, _ -> chosen[i] == true }.flatMap { it.second }
+                    settings?.let { lib.copyDevelop(it, sections, photo.name) }
+                })
             }
         }
         if (saving) Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.Center) {
@@ -916,6 +1027,13 @@ private fun CategoryIcon(kind: String, color: Color, modifier: Modifier) {
             "crop" -> { // ritaglio
                 line(0.28f, 0.08f, 0.28f, 0.72f); line(0.28f, 0.72f, 0.92f, 0.72f)
                 line(0.08f, 0.28f, 0.72f, 0.28f); line(0.72f, 0.28f, 0.72f, 0.92f)
+            }
+            "presets" -> { // preset: un elenco
+                for (i in 0..2) {
+                    val y = 0.25f + 0.25f * i
+                    drawCircle(color, w * 0.07f, androidx.compose.ui.geometry.Offset(w * 0.18f, h * y))
+                    line(0.36f, y, 0.9f, y)
+                }
             }
             else -> { // profili: due quadrati sovrapposti
                 drawRoundRect(color, androidx.compose.ui.geometry.Offset(w * 0.3f, h * 0.1f), androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
