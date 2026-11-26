@@ -3,7 +3,7 @@
 <p align="center">
 Review the raw photos on your Android phone, rate and flag them, and send them home — to a Synology NAS and into
 <b>LightCraft</b> — with all your choices.<br>
-<a href="#-italiano">🇮🇹 Italiano</a> · <a href="https://github.com/poty87/ViewerCraftStar/releases/latest">⬇ Download</a> · <a href="https://buymeacoffee.com/poty87">☕ Buy me a coffee</a>
+<a href="#-italiano">🇮🇹 Italiano</a> · <a href="https://github.com/poty87/ViewerCraftStar/releases/latest">⬇ Download</a> · <a href="https://buymeacoffee.com/poty87">☕ Buy me a coffee</a> · <a href="https://paypal.me/poty87">PayPal</a>
 </p>
 
 > ViewerCraftStar is an independent app. It is not made by, affiliated with or endorsed by the authors of
@@ -181,7 +181,7 @@ keyPassword=…
 ## Support the project
 
 ViewerCraftStar is free and will stay free: no subscriptions, no ads, no accounts. If it is useful to you and you would like to
-help me spend more time on it, you can [buy me a coffee](https://buymeacoffee.com/poty87). Thank you! ☕
+help me spend more time on it, you can [buy me a coffee](https://buymeacoffee.com/poty87) or donate with [PayPal](https://paypal.me/poty87). Thank you! ☕
 
 ## Licence
 
@@ -338,4 +338,4 @@ servizi su internet: l'app parla solo con il tuo NAS.
 ### Sostieni il progetto
 
 ViewerCraftStar è gratuita e lo resterà: niente abbonamenti, pubblicità o account. Se ti è utile e vuoi aiutarmi a dedicarci
-più tempo, puoi [offrirmi un caffè](https://buymeacoffee.com/poty87). Grazie! ☕
+più tempo, puoi [offrirmi un caffè](https://buymeacoffee.com/poty87) o fare una donazione con [PayPal](https://paypal.me/poty87). Grazie! ☕
