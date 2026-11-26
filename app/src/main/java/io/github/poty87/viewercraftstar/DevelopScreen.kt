@@ -522,17 +522,16 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         Column(Modifier.fillMaxSize()) {
             // intestazione: chiudi, posizione, «Prima», incolla, ☰, «Fatto»
             Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton(onClick = { requestClose() }, pad = 12.dp) { Text(L.t("Chiudi", "Close")) }
-                Text(position, color = C.muted, fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                HeadButton(L.t("Chiudi", "Close"), onClick = { requestClose() })
+                Text(position, color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
                 // «Prima»: tenendo premuto si vede com'era; «Ripristina» torna alle impostazioni di partenza
                 if (settings != null) {
-                    Text(L.t("Prima", "Before"), color = if (showBefore) Color.Black else C.text, fontSize = 13.sp,
-                        modifier = Modifier.background(if (showBefore) C.accent else C.card, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
-                            .pointerInput(Unit) { detectTapGestures(onPress = { showBefore = true; tryAwaitRelease(); showBefore = false }) }
-                            .padding(horizontal = 12.dp, vertical = 7.dp))
+                    HeadButton(L.t("Prima", "Before"), on = showBefore,
+                        modifier = Modifier.pointerInput(Unit) { detectTapGestures(onPress = { showBefore = true; tryAwaitRelease(); showBefore = false }) })
                     // incolla rapido dello sviluppo copiato (per sviluppare una serie: incolla, scorri, incolla…)
-                    if (lib.clipboardLabel.isNotEmpty()) Pill(L.t("Incolla", "Paste"), false) {
+                    if (lib.clipboardLabel.isNotEmpty()) HeadButton(L.t("Incolla", "Paste"), onClick = {
                         val copied = DevelopClipboard.settings
                         val s = settings
                         if (copied != null && s != null) scope.launch {
@@ -544,13 +543,13 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                             cropTick++
                             changed()
                         }
-                    }
+                    })
                     // ☰: copia lo sviluppo (per incollarlo su altre foto), incolla quello copiato, ripristina
                     Box {
                         var open by remember { mutableStateOf(false) }
-                        Row(Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(C.card)
-                            .clickable { open = true }.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Menu, null, tint = C.text, modifier = Modifier.size(15.dp))
+                        HeadButton(null, onClick = { open = true }) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Menu, L.t("Menu", "Menu"), tint = C.text,
+                                modifier = Modifier.size(18.dp))
                         }
                         androidx.compose.material3.DropdownMenu(open, { open = false }) {
                             androidx.compose.material3.DropdownMenuItem({ Text(L.t("Copia sviluppo…", "Copy develop settings…"), color = C.text) },
@@ -580,14 +579,32 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                 cropTick++
                                 changed()
                             })
+                            // come scattata: com'era all'importazione (il profilo dello stile, nessun ritocco), anche se la
+                            // foto era già stata modificata e salvata; per una copia virtuale, la foto da cui nasce
+                            androidx.compose.material3.DropdownMenuItem({ Text(L.t("Ripristina come scattata", "Reset to as shot"), color = C.text) }, onClick = {
+                                open = false
+                                scope.launch {
+                                    val from = photo.copyOf?.takeIf { photo.id >= 0 } ?: photo.id
+                                    val clean = withContext(Dispatchers.IO) {
+                                        DevelopStore.first(context, idx.library, from) ?: DevelopStore.entry(context, idx.library, from)?.settings
+                                    } ?: return@launch
+                                    clean.optJSONObject("profile")?.optString("id")?.let { pid -> profiles.firstOrNull { it.id == pid } }?.let { prof ->
+                                        withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, prof) }
+                                    }
+                                    settings = JSONObject(clean.toString())
+                                    resets++
+                                    cropTick++
+                                    changed()
+                                }
+                            })
                         }
                     }
                 }
-                PillButton(onClick = {
-                    if (!dirty()) { onClose(); return@PillButton }
+                HeadButton(L.t("Fatto", "Done"), primary = true, enabled = settings != null && !saving, onClick = {
+                    if (!dirty()) { onClose(); return@HeadButton }
                     saving = true
                     scope.launch { save(); onClose() }
-                }, primary = true, enabled = settings != null && !saving, pad = 12.dp) { Text(L.t("Fatto", "Done")) }
+                })
             }
             // la foto (tenendo premuto «Prima» si vede com'era)
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
@@ -1275,6 +1292,28 @@ private fun ProfileStrip(shown: List<DevelopProfiles.Profile>, all: List<Develop
                     color = if (on) Color(0xCC000000) else C.muted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
             }
         }
+    }
+}
+
+/**
+ * Un pulsante dell'intestazione dell'editor: tutti uguali (pillola alta 36 dp, testo 14 sp); `primary` = blu («Fatto»),
+ * `on` = acceso (mentre si tiene premuto «Prima»); senza testo, tondo con il contenuto al centro (☰).
+ */
+@Composable
+private fun HeadButton(text: String?, modifier: Modifier = Modifier, primary: Boolean = false, on: Boolean = false, enabled: Boolean = true,
+                       onClick: (() -> Unit)? = null, content: (@Composable () -> Unit)? = null) {
+    val bg = when {
+        primary -> if (enabled) C.accent else C.accent.copy(alpha = 0.4f)
+        on -> C.accent
+        else -> C.card
+    }
+    val fg = if (primary || on) Color.Black else C.text
+    Box(modifier.height(36.dp).then(if (text == null) Modifier.width(36.dp) else Modifier)
+        .clip(androidx.compose.foundation.shape.RoundedCornerShape(50)).background(bg)
+        .then(if (onClick != null) Modifier.clickable(enabled = enabled) { onClick() } else Modifier)
+        .padding(horizontal = if (text == null) 0.dp else 13.dp), contentAlignment = Alignment.Center) {
+        if (text != null) Text(text, color = fg, fontSize = 14.sp, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+        content?.invoke()
     }
 }
 
