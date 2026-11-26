@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -1005,21 +1006,18 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                     }
                                 }
                                 // colore sovrapposto: la striscia delle tinte sopra il cursore, e il colore scelto
-                                if (mc.key == "color_hue") Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Box(Modifier.weight(1f).height(10.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
-                                        .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                            (0..6).map { Color.hsv(it * 60f % 360f, 1f, 1f) })))
-                                    val h = adjust().optDouble("color_hue", 0.0).toFloat()
-                                    val s = adjust().optDouble("color_sat", 0.0).toFloat()
-                                    Box(Modifier.size(22.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                                        .background(Color.hsv(((h % 360f) + 360f) % 360f, (s / 100f).coerceIn(0f, 1f), 1f)))
-                                }
+                                // (larga quanto la barra del cursore: sotto il pallino c'è la tinta scelta)
+                                if (mc.key == "color_hue") Box(Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp, end = 2.dp).height(10.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient((0..6).map { Color.hsv(it * 60f % 360f, 1f, 1f) })))
                                 val dc = DevControl("mask.$id.${mc.key}", mc.it, mc.en, mc.min, mc.max, mc.step, mc.decimals, mc.default)
                                 val now = adjust().optDouble(mc.key, mc.default.toDouble()).toFloat()
                                 val was = (startMask?.optJSONObject("adjust")?.optDouble(mc.key, mc.default.toDouble()) ?: mc.default.toDouble()).toFloat()
                                 androidx.compose.runtime.key(dc.path) {
-                                    ControlSlider(dc, now, resets, was) { v ->
+                                    // il colore sovrapposto scelto, nel pallino accanto al nome
+                                    val dot = if (mc.key == "color_hue") Color.hsv(((now % 360f) + 360f) % 360f,
+                                        (adjust().optDouble("color_sat", 0.0).toFloat() / 100f).coerceIn(0f, 1f), 1f) else null
+                                    ControlSlider(dc, now, resets, was, dot = dot) { v ->
                                         val r = if (mc.decimals == 0) v.roundToInt().toDouble() else (v / mc.step).roundToInt() * mc.step.toDouble()
                                         adjust().put(mc.key, r)
                                         changed()
@@ -1483,7 +1481,9 @@ private fun ControlSlider(c: DevControl, value: Float, resets: Int, reset: Float
             }
         }
         Slider(value = v, onValueChange = { onActive(true); v = it; onChange(it) }, onValueChangeFinished = { onActive(false) },
-            valueRange = c.min..c.max, modifier = Modifier.height(30.dp),
+            // i cursori che partono da 0 hanno il pallino sul bordo sinistro dello schermo, dove Android ha il gesto
+            // «indietro»: lì il trascinamento va al cursore, non al gesto
+            valueRange = c.min..c.max, modifier = Modifier.height(30.dp).systemGestureExclusion(),
             colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.card))
     }
 }
