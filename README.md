@@ -3,7 +3,7 @@
 <p align="center">
 Review the raw photos on your Android phone, rate and flag them, and send them home — to a Synology NAS and into
 <b>LightCraft</b> — with all your choices.<br>
-<a href="#-italiano">🇮🇹 Italiano</a> · <a href="https://github.com/poty87/ViewerCraftStar/releases/latest">⬇ Download</a>
+<a href="#-italiano">🇮🇹 Italiano</a> · <a href="https://github.com/poty87/ViewerCraftStar/releases/latest">⬇ Download</a> · <a href="https://buymeacoffee.com/poty87">☕ Buy me a coffee</a>
 </p>
 
 > ViewerCraftStar is an independent app. It is not made by, affiliated with or endorsed by the authors of
@@ -178,6 +178,11 @@ keyAlias=viewercraftstar
 keyPassword=…
 ```
 
+## Support the project
+
+ViewerCraftStar is free and will stay free: no subscriptions, no ads, no accounts. If it is useful to you and you would like to
+help me spend more time on it, you can [buy me a coffee](https://buymeacoffee.com/poty87). Thank you! ☕
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Uses [smbj](https://github.com/hierynomus/smbj) (Apache 2.0), Jetpack Compose (Apache 2.0)
@@ -329,3 +334,8 @@ servizi su internet: l'app parla solo con il tuo NAS.
 **Licenza**: MIT — vedi [LICENSE](LICENSE). I file in `de/blinkt/openvpn/api` sono l'API pubblica di
 [OpenVPN for Android](https://github.com/schwabe/ics-openvpn) di Arne Schwabe (Apache 2.0); l'app OpenVPN for Android
 è separata e non inclusa.
+
+### Sostieni il progetto
+
+ViewerCraftStar è gratuita e lo resterà: niente abbonamenti, pubblicità o account. Se ti è utile e vuoi aiutarmi a dedicarci
+più tempo, puoi [offrirmi un caffè](https://buymeacoffee.com/poty87). Grazie! ☕
