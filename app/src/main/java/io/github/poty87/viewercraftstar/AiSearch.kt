@@ -145,7 +145,7 @@ object AiStore {
             RandomAccessFile(part, "rw").use { out ->
                 val start = minOf(part.length(), size)
                 out.seek(start)
-                Remote.download(cfg, share, join(folder, lib, "ia", "telefono", name), start) { chunk, at ->
+                Remote.download(cfg, share, modelPath(folder, lib, ph, name), start) { chunk, at ->
                     out.write(chunk)
                     progress(before + at, total)
                 }
@@ -161,6 +161,18 @@ object AiStore {
         File(dir, "ok").writeText("ok")
         // modelli vecchi (altre versioni) non più usati: spazio liberato
         modelRoot(context).listFiles()?.filter { it.isDirectory && it != dir }?.forEach { it.deleteRecursively() }
+    }
+
+    /**
+     * Dove sta sul NAS un file del modello: nella cartella condivisa da tutte le librerie (`phone.shared`, da
+     * PresetCraftAppLicator 1.30.2: <cartella di servizio>/models/…) o, prima, in <libreria>/ia/telefono.
+     */
+    private fun modelPath(folder: String, lib: String, ph: JSONObject, name: String): String {
+        val shared = ph.optString("shared")
+        if (shared.isEmpty()) return join(folder, lib, "ia", "telefono", name)
+        val f = folder.trimEnd('\\')
+        val root = if (f.endsWith("libraries", ignoreCase = true)) f.substringBeforeLast('\\', "") else f
+        return join(root, shared.replace('/', '\\'), name)
     }
 
     fun deleteModels(context: Context) {
