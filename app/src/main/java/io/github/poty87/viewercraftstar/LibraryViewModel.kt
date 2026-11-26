@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -354,8 +355,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Incolla lo sviluppo copiato sulle foto indicate: per ognuna le sue impostazioni con sopra quelle copiate, mandate
-     * al PC come le altre modifiche (il telefono non le sviluppa una per una: l'anteprima arriva quando il PC le applica).
+     * Incolla lo sviluppo copiato sulle foto indicate: per ognuna le sue impostazioni (quelle modificate sul telefono e non
+     * ancora applicate, se ci sono; altrimenti quelle del PC) con sopra quelle copiate, mandate al PC come le altre
+     * modifiche. Poi, in sottofondo, il telefono le sviluppa una per una, così nella galleria si vede subito il risultato.
      */
     fun pasteDevelop(ids: Collection<Int>) {
         val idx = index ?: return
@@ -364,18 +366,112 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 DevelopStore.entries(getApplication(), idx.library, ids.toSet())
             }
-            var done = 0
+            val done = ArrayList<Int>()
             for (id in ids) {
                 val e = entries[id] ?: continue
-                val merged = org.json.JSONObject(e.settings.toString())
+                val pending = edits[id]?.develop
+                val merged = org.json.JSONObject(pending?.settings ?: e.settings.toString())
                 DevelopStore.merge(merged, copied)
-                edit(listOf(id)) { it.copy(develop = DevelopEdit(merged.toString(), e.sig)) }
-                done++
+                edit(listOf(id)) { it.copy(develop = DevelopEdit(merged.toString(), pending?.base ?: e.sig)) }
+                done += id
             }
-            val missing = ids.size - done
-            say(if (missing == 0) "ok" else "warn", L.t("Sviluppo incollato su $done foto." +
+            val missing = ids.size - done.size
+            say(if (missing == 0) "ok" else "warn", L.t("Sviluppo incollato su ${done.size} foto." +
                 (if (missing > 0) " $missing foto senza impostazioni pubblicate dal PC: saltate." else ""),
-                "Develop settings pasted on $done photos." + (if (missing > 0) " $missing photos without settings published by the PC: skipped." else "")))
+                "Develop settings pasted on ${done.size} photos." + (if (missing > 0) " $missing photos without settings published by the PC: skipped." else "")))
+            renderPending(done, entries)
+        }
+    }
+
+    /** Copia lo sviluppo di una foto della galleria (senza aprire l'editor): quello in attesa sul telefono o quello del PC. */
+    fun copyDevelopFrom(id: Int, sections: List<String>) {
+        val idx = index ?: return
+        val p = idx.byId[id] ?: return
+        viewModelScope.launch {
+            val settings = edits[id]?.develop?.let { runCatching { org.json.JSONObject(it.settings) }.getOrNull() }
+                ?: kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DevelopStore.entry(getApplication(), idx.library, id)?.settings }
+            if (settings == null) {
+                say("warn", L.t("Impostazioni di sviluppo di questa foto non ancora pubblicate dal PC.", "This photo's develop settings aren't published by the PC yet."))
+                return@launch
+            }
+            copyDevelop(settings, sections, p.name)
+        }
+    }
+
+    /**
+     * Toglie le modifiche di sviluppo fatte sul telefono. Se non sono ancora partite si cancellano e basta; se sono già sul
+     * NAS si manda al PC lo sviluppo che aveva la foto (quello del PC), che prende il posto della modifica.
+     */
+    fun discardDevelop(ids: Collection<Int>) {
+        val idx = index ?: return
+        viewModelScope.launch {
+            val entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                DevelopStore.entries(getApplication(), idx.library, ids.toSet())
+            }
+            for (id in ids) {
+                val e = edits[id] ?: continue
+                if (e.develop == null) continue
+                val home = entries[id]
+                if (e.sent == 0L || home == null) edit(listOf(id)) { it.copy(develop = null) }
+                else edit(listOf(id)) { it.copy(develop = DevelopEdit(home.settings.toString(), home.sig)) }
+            }
+            DevelopPending.forget(getApplication(), idx.library, ids)
+            pendingVersion++
+            say("ok", L.t("Modifiche di sviluppo del telefono tolte da ${ids.size} foto.", "The phone's develop changes removed from ${ids.size} photos."))
+        }
+    }
+
+    /** «Annulla» dopo uno scorrimento nell'editor: la modifica della foto torna com'era (null = nessuna). */
+    fun restoreEdit(id: Int, before: LibEdit?) {
+        val idx = index ?: return
+        if (before?.develop == null) {
+            // prima non c'era uno sviluppo dal telefono: si toglie quello appena salvato
+            discardDevelop(listOf(id))
+            return
+        }
+        edit(listOf(id)) { it.copy(develop = before.develop) }
+        DevelopPending.forget(getApplication(), idx.library, listOf(id))
+        pendingVersion++
+        renderPending(listOf(id), emptyMap())
+    }
+
+    /** Un solo filo per il motore di sviluppo fuori dall'editor (le foto incollate). */
+    private val engine = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+
+    /**
+     * Sviluppa sul telefono, una per una, le foto con una modifica di sviluppo in attesa e senza ancora l'immagine del
+     * risultato (foto incollate): smart preview dal NAS, motore di LightCraft, 2048 pixel.
+     */
+    private fun renderPending(ids: List<Int>, known: Map<Int, DevelopStore.Entry>) {
+        val idx = index ?: return
+        if (ids.isEmpty() || !configured || !DevelopEngine.available) return
+        val ctx: android.content.Context = getApplication()
+        val cfg = settings.nas
+        val share = libShare
+        val libDir = listOf(libRoot, current).joinToString("\\")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val profiles = runCatching { DevelopProfiles.list(ctx, cfg, share, libDir, idx.library) }.getOrDefault(emptyList())
+            val entries = known.ifEmpty { DevelopStore.entries(ctx, idx.library, ids.toSet()) }
+            var made = 0
+            for (id in ids) {
+                val dev = edits[id]?.develop ?: continue
+                val smart = entries[id]?.smart ?: continue
+                runCatching {
+                    val bytes = SmartCache.get(ctx, cfg, share, libDir, smart)
+                    val json = org.json.JSONObject(dev.settings)
+                    json.optJSONObject("profile")?.optString("id")?.let { pid -> profiles.firstOrNull { it.id == pid }?.let { DevelopProfiles.ensure(ctx, cfg, share, libDir, idx.library, it) } }
+                    val bmp = kotlinx.coroutines.withContext(engine) {
+                        val h = DevelopEngine.open(bytes)
+                        try { if (h == 0L) null else DevelopEngine.render(h, dev.settings, 2048, true)?.let { DevelopEngine.bitmap(it) } }
+                        finally { if (h != 0L) DevelopEngine.close(h) }
+                    }
+                    if (bmp != null && edits[id]?.develop == dev) {
+                        DevelopPending.save(ctx, idx.library, id, bmp)
+                        made++
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { pendingVersion++ }
+                    }
+                }
+            }
         }
     }
 

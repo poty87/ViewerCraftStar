@@ -541,16 +541,14 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
     var trashing by remember { mutableStateOf(false) }
     var groupTexts by remember { mutableStateOf(false) }
     if (groupTexts) GroupTextsDialog(lib, lib.selected) { groupTexts = false }
+    // «Copia sviluppo…» di una foto scelta nella galleria (senza aprire l'editor)
+    var copyingFrom by remember { mutableStateOf<Int?>(null) }
+    copyingFrom?.let { id -> CopyDevelopDialog({ copyingFrom = null }) { sections -> copyingFrom = null; lib.copyDevelopFrom(id, sections) } }
     if (asking) DownloadDialog(lib.selected.size, onDismiss = { asking = false }) { jpeg -> asking = false; lib.download(lib.selected, jpeg) }
     if (trashing) TrashDialog(lib.selected.size, onDismiss = { trashing = false }) { trashing = false; lib.trash(lib.selected) }
     if (editing) BlurDialog({ editing = false }) {
         DialogTitle(L.t("Modifica ${lib.selected.size} foto", "Edit ${lib.selected.size} photos"))
         EditControls(lib, lib.selected, null)
-        // sviluppo copiato in «Sviluppa»: si incolla su tutte le foto scelte
-        if (lib.clipboardLabel.isNotEmpty()) PillButton(onClick = { editing = false; lib.pasteDevelop(lib.selected.toList()) }) {
-            DevelopIcon(Modifier.size(16.dp), C.text)
-            Text("  " + L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}"), maxLines = 1)
-        }
         DialogButtons(L.t("Titolo e parole chiave…", "Title and keywords…") to { editing = false; groupTexts = true },
             main = L.t("Fine", "Done") to { editing = false })
     }
@@ -563,9 +561,28 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val w = Modifier.weight(1f)
             PillButton(onClick = { editing = true }, modifier = w, pad = 6.dp) { Text(L.t("Modifica", "Edit"), maxLines = 1) }
-            PillButton(onClick = { asking = true }, modifier = w, pad = 6.dp) { Text(L.t("Scarica", "Download"), maxLines = 1) }
-            // pila: un menu a tendina con le azioni che valgono per la selezione (crea, unisci, copertina, togli)
+            PillButton(onClick = { asking = true }, pad = 12.dp) { DownloadIcon(Modifier.size(20.dp), C.text) }
             val sel = lib.selected
+            // sviluppo: incolla quello copiato, copia (una foto sola), togli le modifiche di sviluppo in attesa
+            val pendingDev = sel.filter { lib.edits[it]?.develop != null }
+            val devActions = buildList {
+                if (lib.clipboardLabel.isNotEmpty()) add(L.t("Incolla lo sviluppo di ${lib.clipboardLabel}", "Paste develop settings from ${lib.clipboardLabel}") to { lib.pasteDevelop(sel.toList()) })
+                if (sel.size == 1) add(L.t("Copia sviluppo…", "Copy develop settings…") to { copyingFrom = sel.first() })
+                if (pendingDev.isNotEmpty()) add(L.t("Togli le modifiche del telefono (${pendingDev.size})", "Remove the phone's changes (${pendingDev.size})") to { lib.discardDevelop(pendingDev) })
+            }
+            Box(w) {
+                var open by remember { mutableStateOf(false) }
+                PillButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth(), pad = 6.dp, enabled = devActions.isNotEmpty()) {
+                    Icon(Icons.Filled.Menu, null, modifier = Modifier.size(15.dp))
+                    Text(" " + L.t("Sviluppo", "Develop"), maxLines = 1)
+                }
+                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                    devActions.forEach { (label, act) ->
+                        androidx.compose.material3.DropdownMenuItem({ Text(label, color = C.text) }, onClick = { open = false; act() })
+                    }
+                }
+            }
+            // pila: un menu a tendina con le azioni che valgono per la selezione (crea, unisci, copertina, togli)
             val stackActions = buildList {
                 if (lib.canMerge(sel)) add(L.t("Unisci le pile", "Merge stacks") to { lib.mergeStacks(sel) })
                 else if (sel.size >= 2) add(L.t("Crea una pila", "Create a stack") to { lib.stack(sel) })
@@ -584,7 +601,7 @@ fun LibrarySelectionBar(lib: LibraryViewModel, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            PillButton(onClick = { trashing = true }, modifier = w, pad = 6.dp, content = Color(0xFFF87171)) { Text(L.t("Cestino", "Trash"), maxLines = 1) }
+            PillButton(onClick = { trashing = true }, pad = 12.dp) { Icon(Icons.Filled.Delete, L.t("Cestino", "Trash"), tint = Color(0xFFF87171), modifier = Modifier.size(20.dp)) }
         }
     }
 }
@@ -896,14 +913,42 @@ fun LibraryViewer(lib: LibraryViewModel, list: List<LibPhoto>, start: Int, onBac
     var naming by remember { mutableStateOf<LibFace?>(null) }
     // «Sviluppa»: la foto aperta nell'editor (id), a tutto schermo sopra il visualizzatore
     var developing by remember { mutableStateOf<Int?>(null) }
+    val developUi = remember { DevelopUi() }
+    // dopo uno scorrimento che ha salvato: la foto e la modifica di prima, per «Annulla» (qualche secondo)
+    var undo by remember { mutableStateOf<Pair<Int, LibEdit?>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4500); undo = null } }
     val p = lib.effective(list[pager.currentPage.coerceIn(0, list.size - 1)])
     // l'editor prende il posto del visualizzatore (nella finestra dell'app: i margini delle barre di Android valgono
     // come nel resto dell'app; in un dialog il pannello finiva sotto la barra di navigazione)
     developing?.let { id ->
-        val photo = list.firstOrNull { it.id == id }
-        if (photo != null) {
-            androidx.activity.compose.BackHandler { developing = null }
-            DevelopEditor(lib, photo) { developing = null }
+        val at = list.indexOfFirst { it.id == id }
+        if (at >= 0) {
+            val photo = list[at]
+            Box(Modifier.fillMaxSize()) {
+                androidx.compose.runtime.key(photo.id) {
+                    DevelopEditor(lib, photo, developUi, "${at + 1} / ${list.size}",
+                        neighbors = listOfNotNull(list.getOrNull(at + 1), list.getOrNull(at - 1)),
+                        onNavigate = { delta, before ->
+                            if (before != null) undo = photo.id to before.takeIf { it != LibEdit() }
+                            list.getOrNull(at + delta)?.let { developing = it.id }
+                        },
+                        onClose = { developing = null })
+                }
+                // «Salvata · Annulla» dopo uno scorrimento
+                undo?.let { (uid, before) ->
+                    Row(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp)
+                        .clip(RoundedCornerShape(20.dp)).background(Color(0xF0202020)).padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(L.t("Salvata", "Saved"), color = C.text, fontSize = 13.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(L.t("Annulla", "Undo"), color = C.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { lib.restoreEdit(uid, before); undo = null }
+                                .padding(horizontal = 10.dp, vertical = 6.dp))
+                    }
+                }
+            }
+            // tornando al visualizzatore si è sulla foto sviluppata per ultima
+            LaunchedEffect(at) { pager.scrollToPage(at) }
             return
         }
     }

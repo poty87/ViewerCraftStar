@@ -69,10 +69,10 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /** Un cursore dello sviluppo: il campo del JSON di LightCraft e i limiti di LightCraft (`lightcraft-cli controls`). */
-private class DevControl(val path: String, val it: String, val en: String, val min: Float, val max: Float, val step: Float,
+internal class DevControl(val path: String, val it: String, val en: String, val min: Float, val max: Float, val step: Float,
                       val decimals: Int, val default: Float)
 
-private class DevSection(val it: String, val en: String, val controls: List<DevControl>)
+internal class DevSection(val it: String, val en: String, val controls: List<DevControl>)
 
 private val LIGHT = DevSection("Base", "Basic", listOf(
     DevControl("light.exposure", "Esposizione", "Exposure", -5f, 5f, 0.01f, 2, 0f),
@@ -143,7 +143,7 @@ private val GRAIN = DevSection("Grana", "Grain", listOf(
 ))
 
 /** Le categorie della barra in basso (come nei programmi di sviluppo per telefono), ognuna con le sue sotto-schede. */
-private class DevCategory(val it: String, val en: String, val icon: String, val groups: List<DevSection>)
+internal class DevCategory(val it: String, val en: String, val icon: String, val groups: List<DevSection>)
 
 private val CATEGORIES = listOf(
     DevCategory("Luce", "Light", "light", listOf(LIGHT, CURVE)),
@@ -175,13 +175,21 @@ private val ASPECTS = listOf("1:1" to (1 to 1), "4:5" to (4 to 5), "5:4" to (5 t
 private val TURNS = listOf("Normal", "Rotate90", "Rotate180", "Rotate270")
 private val SWAPS = setOf("Rotate90", "Rotate270", "Transpose", "Transverse")
 
+/** Ciò che resta uguale scorrendo da una foto all'altra nell'editor: categoria e sotto-scheda aperte. */
+class DevelopUi {
+    internal var section by mutableStateOf(LIGHT)
+    internal var category by mutableStateOf(CATEGORIES[0])
+    internal val lastGroup = HashMap<DevCategory, DevSection>()
+}
+
 /**
  * «Modifica»: lo sviluppo della foto sul telefono, con il motore di LightCraft sulla smart preview. «Fatto» manda le
  * impostazioni al PC (come le altre modifiche): finché non le applica, la foto mostra il risultato del telefono.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
+fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, position: String, neighbors: List<LibPhoto>,
+                  onNavigate: (Int, LibEdit?) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val idx = lib.index ?: return
@@ -199,9 +207,11 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     var straightening by remember { mutableStateOf(false) } // dito sul cursore Raddrizza: griglia fitta
     var before by remember { mutableStateOf<Bitmap?>(null) }
     var showBefore by remember { mutableStateOf(false) }
-    var section by remember { mutableStateOf(LIGHT) }
-    var category by remember { mutableStateOf(CATEGORIES[0]) }
-    val lastGroup = remember { HashMap<DevCategory, DevSection>() } // la sotto-scheda ricordata per ogni categoria
+    var section by ui::section
+    var category by ui::category
+    val lastGroup = ui.lastGroup // la sotto-scheda ricordata per ogni categoria (anche passando ad altre foto)
+    var swipe by remember { mutableStateOf(0f) } // lo scorrimento in corso verso un'altra foto
+    var confirmClose by remember { mutableStateOf(false) }
     val thumbs = remember { androidx.compose.runtime.mutableStateMapOf<String, Bitmap>() } // miniature dei profili
     var presets by remember { mutableStateOf<List<DevelopPresets.Preset>>(emptyList()) }
     var presetGroup by remember { mutableStateOf("") }
@@ -273,10 +283,23 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         if (h == 0L) { error = L.t("Smart preview non leggibile.", "Smart preview can't be read."); return@LaunchedEffect }
         handle[0] = h
         DevelopEngine.size(h)?.let { srcSize = it[0].toDouble() to it[1].toDouble() }
-        base = entry.sig
-        original = JSONObject(entry.settings.toString())
-        settings = entry.settings
-        requests.value = Triple(entry.settings.toString(), false, frameJson(entry.settings))
+        // se sul telefono c'è già una modifica di questa foto non ancora applicata dal PC, si riparte da quella (prima si
+        // ripartiva dalle impostazioni del PC: si vedeva, e si copiava, lo sviluppo di prima)
+        val pending = lib.edits[photo.id]?.develop
+        val start = pending?.let { runCatching { JSONObject(it.settings) }.getOrNull() } ?: entry.settings
+        base = pending?.base ?: entry.sig
+        start.optJSONObject("profile")?.optString("id")?.let { id ->
+            profiles.firstOrNull { it.id == id }?.let { withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, cfg, lib.libShare, libDir, idx.library, it) } }
+        }
+        original = JSONObject(start.toString())
+        settings = start
+        requests.value = Triple(start.toString(), false, frameJson(start))
+        // le foto accanto: smart preview scaricate in anticipo, così scorrendo non si aspetta il NAS
+        withContext(Dispatchers.IO) {
+            for (n in neighbors) runCatching {
+                DevelopStore.entry(context, idx.library, n.id)?.smart?.let { SmartCache.get(context, cfg, lib.libShare, libDir, it) }
+            }
+        }
     }
 
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
@@ -378,19 +401,59 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         changed()
     }
 
+    /** True se la foto aperta ha modifiche rispetto a quando l'hai aperta. */
+    fun dirty(): Boolean = settings != null && settings.toString() != original.toString()
+
+    /** Salva la foto aperta come «Fatto» (solo se è cambiata): la foto sviluppata dal telefono si mostra finché il PC
+     * non applica. Torna la modifica che c'era prima (per «Annulla» dopo uno scorrimento). */
+    suspend fun save(): LibEdit? {
+        val s = settings ?: return null
+        val before = lib.edits[photo.id]
+        val big = withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 2048, true) }?.let { DevelopEngine.bitmap(it) }
+        lib.setDevelop(photo.id, s.toString(), base, big)
+        return before
+    }
+
+    fun navigate(delta: Int) {
+        if (saving) return
+        if (!dirty()) { onNavigate(delta, null); return }
+        saving = true
+        scope.launch {
+            val before = save()
+            onNavigate(delta, before ?: LibEdit())
+        }
+    }
+
+    fun requestClose() { if (dirty()) confirmClose = true else onClose() }
+    androidx.activity.compose.BackHandler { requestClose() }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Column(Modifier.fillMaxSize()) {
-            // intestazione: chiudi senza salvare, titolo, «Fatto»
+            // intestazione: chiudi, posizione, «Prima», incolla, ☰, «Fatto»
             Row(Modifier.fillMaxWidth().background(Color(0xB3000000)).statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton(onClick = onClose, pad = 14.dp) { Text(L.t("Annulla", "Cancel")) }
-                Spacer(Modifier.weight(1f))
+                PillButton(onClick = { requestClose() }, pad = 12.dp) { Text(L.t("Chiudi", "Close")) }
+                Text(position, color = C.muted, fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f))
                 // «Prima»: tenendo premuto si vede com'era; «Ripristina» torna alle impostazioni di partenza
                 if (settings != null) {
                     Text(L.t("Prima", "Before"), color = if (showBefore) Color.Black else C.text, fontSize = 13.sp,
                         modifier = Modifier.background(if (showBefore) C.accent else C.card, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
                             .pointerInput(Unit) { detectTapGestures(onPress = { showBefore = true; tryAwaitRelease(); showBefore = false }) }
                             .padding(horizontal = 12.dp, vertical = 7.dp))
+                    // incolla rapido dello sviluppo copiato (per sviluppare una serie: incolla, scorri, incolla…)
+                    if (lib.clipboardLabel.isNotEmpty()) Pill(L.t("Incolla", "Paste"), false) {
+                        val copied = DevelopClipboard.settings
+                        val s = settings
+                        if (copied != null && s != null) scope.launch {
+                            profiles.firstOrNull { it.id == copied.optJSONObject("profile")?.optString("id") }?.let { prof ->
+                                withContext(Dispatchers.IO) { DevelopProfiles.ensure(context, lib.settings.nas, lib.libShare, libDir, idx.library, prof) }
+                            }
+                            DevelopStore.merge(s, copied)
+                            resets++
+                            cropTick++
+                            changed()
+                        }
+                    }
                     // ☰: copia lo sviluppo (per incollarlo su altre foto), incolla quello copiato, ripristina
                     Box {
                         var open by remember { mutableStateOf(false) }
@@ -428,16 +491,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                     }
                 }
                 PillButton(onClick = {
-                    val s = settings ?: return@PillButton
-                    if (s.toString() == original.toString()) { onClose(); return@PillButton }
+                    if (!dirty()) { onClose(); return@PillButton }
                     saving = true
-                    scope.launch {
-                        // la foto sviluppata dal telefono, da mostrare finché il PC non applica (2048 pixel)
-                        val big = withContext(engine) { DevelopEngine.render(handle[0], s.toString(), 2048, true) }?.let { DevelopEngine.bitmap(it) }
-                        lib.setDevelop(photo.id, s.toString(), base, big)
-                        onClose()
-                    }
-                }, primary = true, enabled = settings != null && !saving, pad = 14.dp) { Text(L.t("Fatto", "Done")) }
+                    scope.launch { save(); onClose() }
+                }, primary = true, enabled = settings != null && !saving, pad = 12.dp) { Text(L.t("Fatto", "Done")) }
             }
             // la foto (tenendo premuto «Prima» si vede com'era)
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
@@ -472,22 +529,31 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
+                                var multi = false
                                 do {
                                     val ev = awaitPointerEvent()
                                     val fingers = ev.changes.count { it.pressed }
                                     if (fingers >= 2) {
+                                        multi = true
+                                        swipe = 0f
                                         zoom = (zoom * ev.calculateZoom()).coerceIn(1f, MAX_ZOOM)
                                         pan = clampPan(pan + ev.calculatePan(), zoom, size)
                                         ev.changes.forEach { it.consume() }
                                     } else if (fingers == 1 && zoom > 1.001f) {
                                         pan = clampPan(pan + ev.calculatePan(), zoom, size)
                                         ev.changes.forEach { it.consume() }
+                                    } else if (fingers == 1 && !multi) {
+                                        // a 1×: la foto segue il dito, verso la successiva o la precedente
+                                        swipe += ev.calculatePan().x
                                     }
                                 } while (ev.changes.any { it.pressed })
                                 if (zoom < 1.02f) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }
+                                val far = kotlin.math.abs(swipe) > size.width * 0.22f
+                                if (far && !multi) navigate(if (swipe < 0) 1 else -1)
+                                swipe = 0f
                             }
                         }
-                        .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y },
+                        .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x + swipe; translationY = pan.y },
                         contentScale = ContentScale.Fit)
                 }
                 else if (error == null) CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
@@ -725,22 +791,18 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 }
             }
         }
-        if (copying) {
-            val chosen = remember { androidx.compose.runtime.mutableStateMapOf<Int, Boolean>().apply {
-                DevelopClipboard.GROUPS.forEachIndexed { i, g -> put(i, g.third) } } }
-            BlurDialog({ copying = false }) {
-                DialogTitle(L.t("Copia sviluppo", "Copy develop settings"))
-                DialogText(L.t("Scegli cosa copiare. Poi lo incolli su altre foto: da «Sviluppa» (☰) o selezionandole nella galleria (Modifica).",
-                    "Choose what to copy. Then paste it on other photos: from «Develop» (☰) or by selecting them in the gallery (Edit)."))
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DevelopClipboard.GROUPS.forEachIndexed { i, g -> Pill(L.t(g.first.first, g.first.second), chosen[i] == true) { chosen[i] = chosen[i] != true } }
-                }
-                DialogButtons(L.t("Annulla", "Cancel") to { copying = false }, main = L.t("Copia", "Copy") to {
-                    copying = false
-                    val sections = DevelopClipboard.GROUPS.filterIndexed { i, _ -> chosen[i] == true }.flatMap { it.second }
-                    settings?.let { lib.copyDevelop(it, sections, photo.name) }
-                })
-            }
+        if (copying) CopyDevelopDialog({ copying = false }) { sections ->
+            copying = false
+            settings?.let { lib.copyDevelop(it, sections, photo.name) }
+        }
+        if (confirmClose) BlurDialog({ confirmClose = false }) {
+            DialogTitle(L.t("Scartare le modifiche?", "Discard the changes?"))
+            DialogText(L.t("Le modifiche a questa foto non sono salvate. Quelle salvate scorrendo tra le foto restano.",
+                "The changes to this photo aren't saved. The ones saved while swiping between photos stay."))
+            DialogButtons(L.t("Continua", "Keep editing") to { confirmClose = false }, main = L.t("Scarta", "Discard") to {
+                confirmClose = false
+                onClose()
+            }, danger = true)
         }
         if (saving) Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = C.accent, strokeWidth = 2.dp)
@@ -866,6 +928,27 @@ private fun frameJson(s: JSONObject): String {
     val view = JSONObject(s.toString())
     DevelopStore.setPath(view, "crop.geometry", unitGeometry(0.0))
     return view.toString()
+}
+
+/**
+ * «Copia sviluppo»: scegli i gruppi da copiare (pillole; il ritaglio di base spento). Usata dall'editor e dalla galleria.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun CopyDevelopDialog(onDismiss: () -> Unit, onCopy: (List<String>) -> Unit) {
+    val chosen = remember { androidx.compose.runtime.mutableStateMapOf<Int, Boolean>().apply {
+        DevelopClipboard.GROUPS.forEachIndexed { i, g -> put(i, g.third) } } }
+    BlurDialog(onDismiss) {
+        DialogTitle(L.t("Copia sviluppo", "Copy develop settings"))
+        DialogText(L.t("Scegli cosa copiare. Poi lo incolli su altre foto: in «Sviluppa» (Incolla) o selezionandole nella galleria (☰ Sviluppo).",
+            "Choose what to copy. Then paste it on other photos: in «Develop» (Paste) or by selecting them in the gallery (☰ Develop)."))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            DevelopClipboard.GROUPS.forEachIndexed { i, g -> Pill(L.t(g.first.first, g.first.second), chosen[i] == true) { chosen[i] = chosen[i] != true } }
+        }
+        DialogButtons(L.t("Annulla", "Cancel") to onDismiss, main = L.t("Copia", "Copy") to {
+            onCopy(DevelopClipboard.GROUPS.filterIndexed { i, _ -> chosen[i] == true }.flatMap { it.second })
+        })
+    }
 }
 
 /** La geometria di un ritaglio che prende tutta la foto, girata di `angle` gradi. */
