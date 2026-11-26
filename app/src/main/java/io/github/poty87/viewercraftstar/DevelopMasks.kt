@@ -210,15 +210,29 @@ internal val MASK_GROUPS = listOf(
         MaskControl("temp", "Temperatura", "Temperature", -100f, 100f),
         MaskControl("tint", "Tinta", "Tint", -100f, 100f),
         MaskControl("saturation", "Saturazione", "Saturation", -100f, 100f),
-        MaskControl("hue", "Tonalità", "Hue", -100f, 100f))),
+        MaskControl("hue", "Tonalità", "Hue", -100f, 100f),
+        // colore sovrapposto: una tinta sulla zona della maschera (intensità 0 = nessuna)
+        MaskControl("color_hue", "Colore sovrapposto", "Color overlay", 0f, 360f),
+        MaskControl("color_sat", "Intensità del colore", "Color strength", 0f, 100f))),
     Triple("Effetti", "Effects", listOf(
         MaskControl("texture", "Texture", "Texture", -100f, 100f),
         MaskControl("clarity", "Chiarezza", "Clarity", -100f, 100f),
         MaskControl("dehaze", "Foschia", "Dehaze", -100f, 100f))),
     Triple("Dettaglio", "Detail", listOf(
         MaskControl("sharpness", "Nitidezza", "Sharpness", -100f, 100f),
-        MaskControl("noise", "Rumore", "Noise", -100f, 100f))),
+        MaskControl("noise", "Rumore", "Noise", -100f, 100f),
+        MaskControl("moire", "Moiré", "Moiré", -100f, 100f),
+        MaskControl("defringe", "Frangia", "Defringe", -100f, 100f))),
+    // sfocatura obiettivo dentro la maschera (o fuori, con «Sfoca fuori dalla maschera»): bokeh che segue la maschera
+    Triple("Sfocatura", "Lens blur", listOf(
+        MaskControl("lens_blur", "Sfocatura", "Blur amount", 0f, 100f),
+        MaskControl("lens_blur_boost", "Luci (bokeh)", "Bokeh highlights", 0f, 100f),
+        MaskControl("lens_blur_transition", "Transizione", "Transition", 0f, 100f))),
 )
+
+/** Gli interruttori del gruppo Sfocatura: chiave in `adjust` e nome. */
+internal val MASK_BLUR_TOGGLES = listOf("lens_blur_outside" to ("Sfoca fuori dalla maschera" to "Blur outside the mask"),
+    "lens_blur_off" to ("Spenta" to "Off"))
 
 /**
  * Le maniglie della maschera aperta sopra la foto (sviluppata, `bmpW` x `bmpH`, mostrata intera al centro del riquadro):

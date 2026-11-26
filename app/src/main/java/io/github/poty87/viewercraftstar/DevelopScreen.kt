@@ -989,9 +989,31 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                     horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                     MASK_GROUPS.forEachIndexed { gi, g ->
                                         val ch = g.third.any { c -> kotlin.math.abs((adjust().optDouble(c.key, c.default.toDouble())) -
-                                            (startMask?.optJSONObject("adjust")?.optDouble(c.key, c.default.toDouble()) ?: c.default.toDouble())) > 1e-9 }
+                                            (startMask?.optJSONObject("adjust")?.optDouble(c.key, c.default.toDouble()) ?: c.default.toDouble())) > 1e-9 } ||
+                                            (g.first == "Sfocatura" && MASK_BLUR_TOGGLES.any { (k, _) -> adjust().optBoolean(k) !=
+                                                (startMask?.optJSONObject("adjust")?.optBoolean(k) ?: false) })
                                         SubTab(L.t(g.first, g.second), gi == maskTab, ch) { maskTab = gi }
                                     }
+                                }
+                                // Sfocatura: dentro o fuori dalla maschera, accesa o spenta (i valori restano)
+                                if (i == 0 && MASK_GROUPS[maskTab].first == "Sfocatura") Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    for ((k, names) in MASK_BLUR_TOGGLES) Pill(L.t(names.first, names.second), adjust().optBoolean(k)) {
+                                        if (adjust().optBoolean(k)) adjust().remove(k) else adjust().put(k, true)
+                                        resets++
+                                        changed()
+                                    }
+                                }
+                                // colore sovrapposto: la striscia delle tinte sopra il cursore, e il colore scelto
+                                if (mc.key == "color_hue") Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Box(Modifier.weight(1f).height(10.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(5.dp))
+                                        .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                            (0..6).map { Color.hsv(it * 60f % 360f, 1f, 1f) })))
+                                    val h = adjust().optDouble("color_hue", 0.0).toFloat()
+                                    val s = adjust().optDouble("color_sat", 0.0).toFloat()
+                                    Box(Modifier.size(22.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(Color.hsv(((h % 360f) + 360f) % 360f, (s / 100f).coerceIn(0f, 1f), 1f)))
                                 }
                                 val dc = DevControl("mask.$id.${mc.key}", mc.it, mc.en, mc.min, mc.max, mc.step, mc.decimals, mc.default)
                                 val now = adjust().optDouble(mc.key, mc.default.toDouble()).toFloat()
