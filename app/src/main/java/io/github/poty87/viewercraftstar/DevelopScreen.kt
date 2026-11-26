@@ -126,6 +126,18 @@ private val COLOR_NOISE = DevSection("Disturbo colore", "Color noise", listOf(
     DevControl("detail.nr_color_detail", "Dettagli", "Detail", 0f, 100f, 1f, 0, 50f),
     DevControl("detail.nr_color_smoothness", "Uniformità", "Smoothness", 0f, 100f, 1f, 0, 50f),
 ))
+/** Ottica (come in Lightroom Mobile): i due interruttori sono disegnati a parte, sopra i cursori. */
+private val OPTICS = DevSection("Ottica", "Optics", listOf(
+    DevControl("optics.profile_distortion", "Distorsione (profilo)", "Distortion (profile)", 0f, 200f, 1f, 0, 100f),
+    DevControl("optics.profile_vignetting", "Vignettatura (profilo)", "Vignetting (profile)", 0f, 200f, 1f, 0, 100f),
+    DevControl("optics.distortion", "Distorsione", "Distortion", -100f, 100f, 1f, 0, 0f),
+    DevControl("optics.vignetting", "Vignettatura obiettivo", "Lens vignetting", -100f, 100f, 1f, 0, 0f),
+    DevControl("optics.vignetting_midpoint", "Punto medio", "Midpoint", 0f, 100f, 1f, 0, 50f),
+    DevControl("optics.ca_red", "Frange rosso/ciano", "Red/cyan fringe", -100f, 100f, 1f, 0, 0f),
+    DevControl("optics.ca_blue", "Frange blu/giallo", "Blue/yellow fringe", -100f, 100f, 1f, 0, 0f),
+    DevControl("optics.defringe_purple_amount", "Frange viola", "Purple fringe", 0f, 20f, 1f, 0, 0f),
+    DevControl("optics.defringe_green_amount", "Frange verdi", "Green fringe", 0f, 20f, 1f, 0, 0f),
+))
 private val EFFECTS = DevSection("Effetti", "Effects", listOf(
     DevControl("effects.texture", "Texture", "Texture", -100f, 100f, 1f, 0, 0f),
     DevControl("effects.clarity", "Chiarezza", "Clarity", -100f, 100f, 1f, 0, 0f),
@@ -151,7 +163,7 @@ private val CATEGORIES = listOf(
     DevCategory("Luce", "Light", "light", listOf(LIGHT, CURVE)),
     DevCategory("Colore", "Color", "color", listOf(WHITE, COLOR, MIXER, GRADING)),
     DevCategory("Effetti", "Effects", "effects", listOf(EFFECTS, VIGNETTE, GRAIN)),
-    DevCategory("Dettaglio", "Detail", "detail", listOf(SHARP, NOISE, COLOR_NOISE)),
+    DevCategory("Dettaglio", "Detail", "detail", listOf(SHARP, NOISE, COLOR_NOISE, OPTICS)),
     DevCategory("Maschere", "Masks", "masks", listOf(MASKS)),
     DevCategory("Ritaglio", "Crop", "crop", listOf(CROP)),
     DevCategory("Profili", "Profiles", "profiles", listOf(PROFILE)),
@@ -231,6 +243,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
     var profiles by remember { mutableStateOf<List<DevelopProfiles.Profile>>(emptyList()) }
     var saving by remember { mutableStateOf(false) }
     val handle = remember { longArrayOf(0L) }
+    var lensFrom by remember { mutableStateOf("") } // correzione dell'obiettivo: "file", "database" o "" (nessun profilo)
     // profilo della fotocamera (DCP): LightCraft lo applica leggendo il raw, la smart preview è sempre senza. Per una
     // foto con un profilo DCP si scarica l'originale e lo si decodifica con quel profilo (raw[0], profilo rawProfile)
     val raw = remember { longArrayOf(0L) }
@@ -300,9 +313,10 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                     "Phone engine $mine, LightCraft on the PC $pc: the result may differ slightly. Update ViewerCraftStar.")
             }
         }
-        val h = withContext(engine) { DevelopEngine.open(bytes) }
+        val h = withContext(engine) { DevelopEngine.open(bytes).also { DevelopStore.applyLens(context, idx.library, photo.id, it) } }
         if (h == 0L) { error = L.t("Smart preview non leggibile.", "Smart preview can't be read."); return@LaunchedEffect }
         handle[0] = h
+        lensFrom = DevelopEngine.lensSource(h).orEmpty()
         DevelopEngine.size(h)?.let { srcSize = it[0].toDouble() to it[1].toDouble() }
         // se sul telefono c'è già una modifica di questa foto non ancora applicata dal PC, si riparte da quella (prima si
         // ripartiva dalle impostazioni del PC: si vedeva, e si copiava, lo sviluppo di prima)
@@ -394,7 +408,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         val bytes = originalFile() ?: return@withLock
         rawStatus = L.t("Profilo della fotocamera: applico ${prof.name.removePrefix("Camera ")}…", "Camera profile: applying ${prof.name.removePrefix("Camera ")}…")
         val edgeRaw = maxOf(srcSize.first, srcSize.second).toInt().coerceIn(1024, 2560)
-        val h = withContext(engine) { DevelopEngine.openRaw(bytes, dcp, edgeRaw) }
+        val h = withContext(engine) { DevelopEngine.openRaw(bytes, dcp, edgeRaw).also { DevelopStore.applyLens(context, idx.library, photo.id, it) } }
         if (h == 0L) {
             rawStatus = L.t("Originale non leggibile: il profilo della fotocamera si vede approssimato.",
                 "Original can't be read: the camera profile is shown approximately.")
@@ -472,6 +486,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
         PROFILE -> listOf("profile")
         PRESETS -> emptyList()
         MASKS -> listOf("masks")
+        OPTICS -> listOf("optics")
         WHITE -> listOf("wb")
         else -> sec.controls.map { it.path }
     }
@@ -876,7 +891,7 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                     val bytes = originalFile() ?: break
                                     val dcp = withContext(Dispatchers.IO) { DevelopProfiles.dcp(context, lib.settings.nas, lib.libShare, libDir, idx.library, p) } ?: continue
                                     withContext(engine) {
-                                        val h = DevelopEngine.openRaw(bytes, dcp, 320)
+                                        val h = DevelopEngine.openRaw(bytes, dcp, 320).also { DevelopStore.applyLens(context, idx.library, photo.id, it) }
                                         try { if (h == 0L) null else DevelopEngine.render(h, s.toString(), 320, true) } finally { if (h != 0L) DevelopEngine.close(h) }
                                     }?.let { thumbs[p.id] = DevelopEngine.bitmap(it) }
                                     continue
@@ -911,7 +926,30 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         if (!kelvin) Text(L.t("Foto non raw: temperatura e tinta sono relative allo scatto.", "Not a raw photo: temperature and tint are relative to the shot."),
                             color = C.muted, fontSize = 12.sp)
                     }
-                    section.controls.forEach { c -> ControlSlider(c, value(c), resets, start(c)) { set(c, it) } }
+                    if (section == OPTICS) {
+                        val s = settings
+                        fun flag(path: String) = s?.let { DevelopStore.getPath(it, path) } == true
+                        fun toggle(path: String) {
+                            val x = settings ?: return
+                            DevelopStore.setPath(x, path, !flag(path))
+                            changed()
+                        }
+                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Pill(L.t("Rimuovi aberrazione cromatica", "Remove chromatic aberration"), flag("optics.remove_ca")) { toggle("optics.remove_ca") }
+                            Pill(L.t("Attiva correzioni obiettivo", "Enable lens corrections"), flag("optics.lens_profile")) { toggle("optics.lens_profile") }
+                        }
+                        val lensName = photo.lens.ifEmpty { photo.camera }
+                        Text(when (lensFrom) {
+                            "file" -> L.t("Correzioni dell'obiettivo: dal file", "Lens corrections: from the file") + (if (lensName.isNotEmpty()) " ($lensName)" else "")
+                            "database" -> L.t("Correzioni dell'obiettivo: profilo $lensName dal database di LightCraft", "Lens corrections: $lensName profile from LightCraft's database")
+                            else -> L.t("Nessun profilo per questo obiettivo" + (if (lensName.isNotEmpty()) " ($lensName)" else "") + ": le correzioni del profilo non cambiano nulla.",
+                                "No profile for this lens" + (if (lensName.isNotEmpty()) " ($lensName)" else "") + ": profile corrections change nothing.")
+                        }, color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+                    }
+                    // le correzioni del profilo contano solo con «Attiva correzioni obiettivo»
+                    section.controls.filter { c -> section != OPTICS || !c.path.startsWith("optics.profile_") ||
+                        settings?.let { DevelopStore.getPath(it, "optics.lens_profile") } == true }
+                        .forEach { c -> androidx.compose.runtime.key(c.path) { ControlSlider(c, value(c), resets, start(c)) { set(c, it) } } }
                     if (section == MIXER) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)) {
                             listOf("hue" to ("Tinta" to "Hue"), "sat" to ("Saturazione" to "Saturation"), "lum" to ("Luminanza" to "Luminance"))

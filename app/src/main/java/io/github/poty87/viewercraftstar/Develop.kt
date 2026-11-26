@@ -30,6 +30,10 @@ object DevelopEngine {
      * preview sono sempre fatte senza. Un riferimento come [open], 0 se non si legge.
      */
     @JvmStatic external fun openRaw(bytes: ByteArray, dcp: ByteArray?, maxEdge: Int): Long
+    /** Dà alla foto aperta la correzione dell'obiettivo dal database di LightCraft (JSON `EmbeddedLens`), se non ha quella del file. */
+    @JvmStatic external fun setLens(handle: Long, lens: String): Boolean
+    /** Da dove viene la correzione dell'obiettivo della foto aperta: "file", "database" o "". */
+    @JvmStatic external fun lensSource(handle: Long): String?
     /** Sviluppa: [larghezza, altezza, pixel ARGB…], null se le impostazioni non si leggono. */
     @JvmStatic external fun render(handle: Long, settings: String, maxEdge: Int, applyCrop: Boolean): IntArray?
     /** Come [render], con la maschera `maskId` disegnata sopra in rosso (come in LightCraft); < 0 = nessuna. */
@@ -91,6 +95,38 @@ object DevelopStore {
         val (parent, token) = virtual[id] ?: return null
         val e = entry(context, lib, parent) ?: return null
         return Entry("copy:$token", first(context, lib, parent) ?: e.settings, e.smart)
+    }
+
+    /**
+     * La correzione dell'obiettivo che LightCraft ha trovato nel suo database per la foto (JSON `EmbeddedLens`,
+     * «lenses»/«lens» da PresetCraftAppLicator 1.31), o null: le smart preview hanno solo quella scritta nel file.
+     */
+    fun lens(context: Context, lib: String, id: Int): String? = runCatching {
+        val pid = if (id < 0) virtual[id]?.first ?: return null else id
+        val key = pid.toString()
+        var at: Int? = null
+        var table: JSONArray? = null
+        reader(file(context, lib)).use { r ->
+            r.beginObject()
+            while (r.hasNext()) {
+                when (r.nextName()) {
+                    "lens" -> {
+                        r.beginObject()
+                        while (r.hasNext()) if (r.nextName() == key) at = r.nextInt() else r.skipValue()
+                        r.endObject()
+                    }
+                    "lenses" -> table = readValue(r) as JSONArray
+                    else -> r.skipValue()
+                }
+            }
+        }
+        at?.let { table?.optJSONObject(it)?.toString() }
+    }.getOrNull()
+
+    /** Apre-e-completa: dopo `open`/`openRaw`, la correzione dell'obiettivo dal database (se la foto ne ha una). */
+    fun applyLens(context: Context, lib: String, id: Int, handle: Long) {
+        if (handle == 0L) return
+        lens(context, lib, id)?.let { DevelopEngine.setLens(handle, it) }
     }
 
     /** Il file ha le informazioni per le copie dal telefono («first», da PresetCraftAppLicator 1.30). */

@@ -183,6 +183,48 @@ pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_maskM
     arr.into_raw()
 }
 
+/// Dà alla foto aperta la correzione dell'obiettivo trovata da LightCraft nel suo database (JSON di `EmbeddedLens`,
+/// pubblicato da PresetCraftAppLicator): le smart preview hanno solo quella scritta nel file. Non tocca una foto che ha
+/// già la correzione del file. True se ora la foto ha una correzione.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_setLens<'a>(
+    mut env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong, lens: JString<'a>,
+) -> jboolean {
+    if handle == 0 {
+        return 0;
+    }
+    let photo = unsafe { &mut *(handle as *mut Photo) };
+    if photo.info.lens.is_some() {
+        return 1;
+    }
+    let Ok(text) = env.get_string(&lens) else { return 0 };
+    let text: String = text.into();
+    match serde_json::from_str::<lightcraft_develop::EmbeddedLens>(&text) {
+        Ok(l) => {
+            photo.info.lens = Some(l);
+            photo.cache = Default::default(); // la geometria cambia: le fasi in memoria non valgono più
+            1
+        }
+        Err(_) => 0,
+    }
+}
+
+/// Da dove viene la correzione dell'obiettivo della foto aperta: "file", "database" o "" (nessuna).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_lensSource<'a>(env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong) -> jstring {
+    let s = if handle == 0 {
+        ""
+    } else {
+        let photo = unsafe { &*(handle as *const Photo) };
+        match &photo.info.lens {
+            Some(l) if l.source == lightcraft_develop::LensSource::Database => "database",
+            Some(_) => "file",
+            None => "",
+        }
+    };
+    env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
 /// Chiude la foto aperta (libera la memoria).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_poty87_viewercraftstar_DevelopEngine_close<'a>(_env: JNIEnv<'a>, _c: JClass<'a>, handle: jlong) {

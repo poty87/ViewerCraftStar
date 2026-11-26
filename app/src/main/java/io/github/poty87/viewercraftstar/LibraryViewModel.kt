@@ -470,6 +470,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val bytes = if (rawBytes != null && dcp != null) null else SmartCache.get(ctx, cfg, share, libDir, smart)
                     val bmp = kotlinx.coroutines.withContext(engine) {
                         val h = if (bytes == null) DevelopEngine.openRaw(rawBytes!!, dcp, 2048) else DevelopEngine.open(bytes)
+                        DevelopStore.applyLens(ctx, idx.library, id, h)
                         try { if (h == 0L) null else DevelopEngine.render(h, dev.settings, 2048, true)?.let { DevelopEngine.bitmap(it) } }
                         finally { if (h != 0L) DevelopEngine.close(h) }
                     }
