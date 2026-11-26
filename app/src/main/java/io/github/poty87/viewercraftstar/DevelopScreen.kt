@@ -777,12 +777,33 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                     if (section == MASKS) {
                         val ms = remember(editTick, settings) { Masks.all(settings) }
                         val sel = maskSel?.let { id -> ms.firstOrNull { it.optInt("id") == id } }
+                        /** Una forma nuova di questo tipo, al centro della foto mostrata. */
+                        fun makeShape(kind: String): JSONObject? {
+                            val s = settings ?: return null
+                            val img = image ?: return null
+                            val bw = img.width.toDouble()
+                            val bh = img.height.toDouble()
+                            return if (kind in setOf("sky", "subject", "background")) Masks.auto(kind)
+                            else if (kind == "brush") Masks.brush()
+                            else if (kind == "luminanceRange") Masks.luminance()
+                            else if (kind == "colorRange") Masks.color()
+                            else if (kind == "linear") {
+                                val p = DevelopEngine.maskMap(handle[0], s.toString(), true, img.width, img.height,
+                                    doubleArrayOf(bw * 0.5, bh * 0.2, bw * 0.5, bh * 0.55), true) ?: return null
+                                Masks.linear(doubleArrayOf(p[0], p[1]), doubleArrayOf(p[2], p[3]))
+                            } else {
+                                val p = DevelopEngine.maskMap(handle[0], s.toString(), true, img.width, img.height,
+                                    doubleArrayOf(bw * 0.5, bh * 0.5), true) ?: return null
+                                Masks.radial(p[0], p[1], 0.18, 0.13)
+                            }
+                        }
                         fun newMask(kind: String) {
                             val s = settings ?: return
                             val img = image ?: return
                             val bw = img.width.toDouble()
                             val bh = img.height.toDouble()
-                            val shape = if (kind == "brush") Masks.brush()
+                            val shape = if (kind in setOf("sky", "subject", "background")) Masks.auto(kind)
+                            else if (kind == "brush") Masks.brush()
                             else if (kind == "luminanceRange") Masks.luminance()
                             else if (kind == "colorRange") Masks.color()
                             else if (kind == "linear") {
@@ -795,13 +816,14 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                                 Masks.radial(p[0], p[1], 0.18, 0.13)
                             }
                             maskSel = Masks.add(s, shape)
+                            Masks.part = 0
                             maskOverlay = true
                             maskTab = 0
                             resets++
                             changed()
                         }
                         MaskBar(ms, maskSel, maskOverlay, onOverlay = { maskOverlay = !maskOverlay },
-                            onSelect = { id -> maskSel = if (maskSel == id) null else id; resets++ },
+                            onSelect = { id -> maskSel = if (maskSel == id) null else id; Masks.part = 0; resets++ },
                             onNew = { newMask(it) },
                             onMenu = { key ->
                                 val s = settings
@@ -825,7 +847,20 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         if (sel != null) {
                             val id = sel.optInt("id")
                             val startMask = Masks.find(original, id)
+                            // le forme della maschera: + / − / ∩, la forma aperta, «+ Forma»
+                            val kindsForParts = listOf("linear" to L.t("Lineare", "Linear"), "radial" to L.t("Radiale", "Radial"),
+                                "brush" to L.t("Pennello", "Brush"), "luminanceRange" to L.t("Luminanza", "Luminance range"),
+                                "colorRange" to L.t("Colore", "Color range"), "sky" to L.t("Cielo", "Sky"), "subject" to L.t("Soggetto", "Subject"),
+                                "background" to L.t("Sfondo", "Background"))
+                            MaskParts(sel, Masks.part, kindsForParts,
+                                onOpen = { i -> Masks.part = i; resets++; editTick++ },
+                                onAdd = { op, k -> makeShape(k)?.let { sh -> Masks.part = Masks.addComponent(sel, op, sh); maskOverlay = true; resets++; changed() } },
+                                onInvert = { Masks.components(sel).getOrNull(Masks.part)?.let { c -> c.put("invert", !c.optBoolean("invert")); changed() } },
+                                onRemove = { Masks.removeComponent(sel, Masks.part); Masks.part = 0; resets++; changed() })
                             val kind = Masks.kind(sel)
+                            if (kind in setOf("sky", "subject", "background")) MaskHint(L.t(
+                                "${Masks.kindName(kind)}: lo trova LightCraft, dalle maschere salvate nel file quando ci sono (per esempio iPhone ProRAW), altrimenti con una stima; sul PC viene uguale.",
+                                "${Masks.kindName(kind)}: found by LightCraft, from the masks stored in the file when there are any (for example iPhone ProRAW), otherwise by estimate; the PC gives the same result."))
                             if (!Masks.editable(sel)) MaskHint(L.t("${Masks.kindName(kind)}: forma fatta in LightCraft; qui ne regoli le correzioni, la forma si cambia sul PC.",
                                 "${Masks.kindName(kind)}: shape made in LightCraft; here you adjust its corrections, the shape is changed on the PC."))
                             val sh = Masks.shape(sel)

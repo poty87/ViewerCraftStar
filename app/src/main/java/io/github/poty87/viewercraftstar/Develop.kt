@@ -546,6 +546,8 @@ object DevelopClipboard {
         Triple("Ottica e calibrazione" to "Optics and calibration", listOf("optics", "calibration"), true),
         Triple("Profilo e trattamento" to "Profile and treatment", listOf("profile", "treatment"), true),
         Triple("Ritaglio e rotazione" to "Crop and rotation", listOf("crop", "orientation"), false),
+        // le maschere dipendono dalla foto (dove stanno le cose): spente di base, come il ritaglio
+        Triple("Maschere" to "Masks", listOf("masks"), false),
     )
 
     var settings: JSONObject? = null; private set

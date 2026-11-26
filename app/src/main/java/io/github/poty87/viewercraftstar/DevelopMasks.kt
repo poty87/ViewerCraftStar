@@ -70,13 +70,47 @@ internal object Masks {
     fun find(s: JSONObject?, id: Int): JSONObject? = all(s).firstOrNull { it.optInt("id", -1) == id }
 
     /** La forma della maschera (la prima: le maschere fatte sul telefono ne hanno una). */
-    fun shape(m: JSONObject?): JSONObject? = m?.optJSONArray("components")?.optJSONObject(0)?.optJSONObject("shape")
+    /**
+     * La forma aperta della maschera aperta (una maschera può unirne più d'una: aggiungi, sottrai, interseca). L'editor
+     * la imposta quando si sceglie una forma; le funzioni qui sotto lavorano su quella.
+     */
+    @Volatile var part = 0
 
-    fun kind(m: JSONObject?): String = shape(m)?.optString("kind").orEmpty()
+    fun components(m: JSONObject?): List<JSONObject> {
+        val a = m?.optJSONArray("components") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+    }
+
+    /** La forma `i` della maschera (di base quella aperta; la prima se non c'è). */
+    fun shape(m: JSONObject?, i: Int = part): JSONObject? {
+        val c = components(m)
+        return (c.getOrNull(i) ?: c.firstOrNull())?.optJSONObject("shape")
+    }
+
+    fun kind(m: JSONObject?, i: Int = part): String = shape(m, i)?.optString("kind").orEmpty()
 
     /** Si può cambiare la forma sul telefono (le altre si vedono e se ne regolano le correzioni). */
-    fun editable(m: JSONObject?): Boolean =
-        m?.optJSONArray("components")?.length() == 1 && kind(m) in setOf("linear", "radial", "brush", "luminanceRange", "colorRange")
+    fun editable(m: JSONObject?, i: Int = part): Boolean = kind(m, i) in EDITABLE
+
+    val EDITABLE = setOf("linear", "radial", "brush", "luminanceRange", "colorRange", "sky", "subject", "background")
+
+    /** Aggiunge alla maschera una forma con `op` (add, subtract, intersect); torna il suo indice. */
+    fun addComponent(m: JSONObject, op: String, shape: JSONObject): Int {
+        val a = m.optJSONArray("components") ?: JSONArray().also { m.put("components", it) }
+        a.put(JSONObject().put("op", op).put("invert", false).put("shape", shape))
+        return a.length() - 1
+    }
+
+    fun removeComponent(m: JSONObject, i: Int) {
+        val keep = components(m).filterIndexed { k, _ -> k != i }
+        m.put("components", JSONArray().apply { keep.forEach { put(it) } })
+    }
+
+    /** Come si scrive l'unione di una forma: aggiungi (+), sottrai (−), interseca (∩). */
+    fun opSymbol(op: String) = when (op) { "subtract" -> "− "; "intersect" -> "∩ "; else -> "" }
+
+    /** Cielo, soggetto, sfondo: li trova LightCraft (dalle maschere salvate nel file, se ci sono, o con una stima). */
+    fun auto(kind: String): JSONObject = JSONObject().put("kind", kind)
 
     fun kindName(kind: String): String = when (kind) {
         "linear" -> L.t("Lineare", "Linear")
@@ -525,6 +559,9 @@ internal fun MaskBar(masks: List<JSONObject>, selected: Int?, overlay: Boolean, 
                     DropdownMenuItem({ Text(L.t("Pennello", "Brush"), color = C.text) }, onClick = { open = false; onNew("brush") })
                     DropdownMenuItem({ Text(L.t("Luminanza", "Luminance range"), color = C.text) }, onClick = { open = false; onNew("luminanceRange") })
                     DropdownMenuItem({ Text(L.t("Colore", "Color range"), color = C.text) }, onClick = { open = false; onNew("colorRange") })
+                    DropdownMenuItem({ Text(L.t("Cielo", "Sky"), color = C.text) }, onClick = { open = false; onNew("sky") })
+                    DropdownMenuItem({ Text(L.t("Soggetto", "Subject"), color = C.text) }, onClick = { open = false; onNew("subject") })
+                    DropdownMenuItem({ Text(L.t("Sfondo", "Background"), color = C.text) }, onClick = { open = false; onNew("background") })
                 }
             }
         }
@@ -565,6 +602,40 @@ private fun EyeIcon(modifier: Modifier, color: Color) {
         }
         drawPath(p, color, style = st)
         drawCircle(color, w * 0.14f, Offset(w * 0.5f, h * 0.5f))
+    }
+}
+
+/**
+ * Le forme della maschera aperta (con + / − / ∩ davanti), accesa quella aperta, e «+ Forma»: prima come unirla
+ * (Aggiungi, Sottrai, Interseca), poi quale forma. Per la forma aperta, quando ce n'è più d'una: Inverti, Togli.
+ */
+@Composable
+internal fun MaskParts(m: JSONObject, open: Int, kinds: List<Pair<String, String>>, onOpen: (Int) -> Unit, onAdd: (String, String) -> Unit,
+                       onInvert: () -> Unit, onRemove: () -> Unit) {
+    val parts = Masks.components(m)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        parts.forEachIndexed { i, c ->
+            val k = c.optJSONObject("shape")?.optString("kind").orEmpty()
+            val label = Masks.opSymbol(c.optString("op")) + Masks.kindName(k) + (if (c.optBoolean("invert")) L.t(" (inv.)", " (inv.)") else "")
+            Pill(label, parts.size > 1 && i == open) { onOpen(i) }
+        }
+        Box {
+            var step by remember { mutableStateOf(0) } // 0 chiuso, 1 come unirla, 2 quale forma
+            var op by remember { mutableStateOf("add") }
+            Pill(L.t("+ Forma", "+ Shape"), false) { step = 1 }
+            DropdownMenu(step == 1, { step = 0 }) {
+                for ((key, name) in listOf("add" to L.t("Aggiungi…", "Add…"), "subtract" to L.t("Sottrai…", "Subtract…"), "intersect" to L.t("Interseca…", "Intersect…")))
+                    DropdownMenuItem({ Text(name, color = C.text) }, onClick = { op = key; step = 2 })
+            }
+            DropdownMenu(step == 2, { step = 0 }) {
+                for ((kind, name) in kinds) DropdownMenuItem({ Text(name, color = C.text) }, onClick = { step = 0; onAdd(op, kind) })
+            }
+        }
+        if (parts.size > 1) {
+            Pill(L.t("Inverti forma", "Invert shape"), parts.getOrNull(open)?.optBoolean("invert") == true) { onInvert() }
+            Pill(L.t("Togli forma", "Remove shape"), false) { onRemove() }
+        }
     }
 }
 
