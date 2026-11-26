@@ -205,7 +205,8 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
     val handle = remember { longArrayOf(0L) }
     // un solo filo per il motore (la foto aperta non va usata da due sviluppi insieme); conta solo l'ultima richiesta
     val engine = remember { Executors.newSingleThreadExecutor().asCoroutineDispatcher() }
-    val requests = remember { MutableStateFlow<Pair<String, Boolean>?>(null) } // (impostazioni, per il ritaglio)
+    // (impostazioni da mostrare, per il ritaglio, impostazioni dell'altra vista da preparare in sottofondo)
+    val requests = remember { MutableStateFlow<Triple<String, Boolean, String>?>(null) }
     // zoom sulla foto (due dita, doppio tocco): ingrandita, si sviluppa alla risoluzione piena della smart preview
     var zoom by remember { mutableStateOf(1f) }
     var pan by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -267,14 +268,14 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
         base = entry.sig
         original = JSONObject(entry.settings.toString())
         settings = entry.settings
-        requests.value = entry.settings.toString() to false
+        requests.value = Triple(entry.settings.toString(), false, frameJson(entry.settings))
     }
 
     // sviluppo: ogni nuova richiesta sostituisce quella in attesa
     LaunchedEffect(Unit) {
         kotlinx.coroutines.flow.combine(requests, sharp) { j, s -> j to s }.collectLatest { (req, big) ->
             if (req == null || handle[0] == 0L) return@collectLatest
-            val (json, forCrop) = req
+            val (json, forCrop, other) = req
             // ingrandita: il lato lungo della smart preview (circa 2560 pixel), altrimenti quanto lo schermo
             val full = maxOf(srcSize.first, srcSize.second).toInt()
             val size = if (big && full > edge) full else edge
@@ -285,6 +286,15 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
                 if (before == null) before = bmp
                 image = bmp
             }
+            // poi, se per un attimo non si tocca niente, l'altra vista (ritaglio o foto finita), così passando da una
+            // scheda all'altra è già pronta e aggiornata (una nuova modifica annulla questa attesa)
+            kotlinx.coroutines.delay(400)
+            val b = withContext(engine) { DevelopEngine.render(handle[0], other, edge, true) } ?: return@collectLatest
+            val ob = DevelopEngine.bitmap(b)
+            if (forCrop) {
+                if (before == null) before = ob
+                image = ob
+            } else cropImage = ob
         }
     }
 
@@ -317,15 +327,14 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, onClose: () -> Unit) {
      */
     fun renderJson(): String? {
         val s = settings ?: return null
-        if (section != CROP) return s.toString()
-        val view = JSONObject(s.toString())
-        DevelopStore.setPath(view, "crop.geometry", unitGeometry(0.0))
-        return view.toString()
+        return if (section != CROP) s.toString() else frameJson(s)
     }
 
     fun changed() {
         editTick++
-        requests.value = renderJson()?.let { it to (section == CROP) }
+        val s = settings
+        requests.value = if (s == null) null
+        else if (section == CROP) Triple(frameJson(s), true, s.toString()) else Triple(s.toString(), false, frameJson(s))
     }
 
     fun value(c: DevControl): Float = (settings?.let { DevelopStore.getPath(it, c.path) } as? Number)?.toFloat() ?: c.default
@@ -739,6 +748,13 @@ private fun frameRect(cw: Float, ch: Float, imgW: Int, imgH: Int, angle: Float):
     val w = imgW * s
     val h = imgH * s
     return androidx.compose.ui.geometry.Rect((cw - w) / 2f, (ch - h) / 2f, (cw + w) / 2f, (ch + h) / 2f)
+}
+
+/** La vista del ritaglio: le impostazioni con la foto intera, non raddrizzata (la gira lo schermo). */
+private fun frameJson(s: JSONObject): String {
+    val view = JSONObject(s.toString())
+    DevelopStore.setPath(view, "crop.geometry", unitGeometry(0.0))
+    return view.toString()
 }
 
 /** La geometria di un ritaglio che prende tutta la foto, girata di `angle` gradi. */
