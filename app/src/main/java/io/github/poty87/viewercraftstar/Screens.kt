@@ -986,7 +986,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             Text(L.t("☕ Offrimi un caffè", "☕ Buy me a coffee"), color = C.accent, fontSize = 14.sp,
                 modifier = Modifier.padding(top = 10.dp).clickable { donate = true }.padding(vertical = 6.dp))
             DropdownMenu(donate, { donate = false }) {
-                for ((name, url) in listOf("☕  Buy Me a Coffee" to "https://buymeacoffee.com/poty87", "PayPal" to "https://paypal.me/poty87"))
+                for ((name, url) in listOf("☕  Buy Me a Coffee" to "https://buymeacoffee.com/poty87", "💳  PayPal" to "https://paypal.me/poty87"))
                     DropdownMenuItem({ Text(name, color = C.text) }, onClick = {
                         donate = false
                         runCatching {
