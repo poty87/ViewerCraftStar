@@ -979,6 +979,15 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             }
         }
         Text("ViewerCraftStar ${BuildConfigInfo.version}", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
+        // donazioni: la pagina Buy Me a Coffee del progetto, nel browser
+        val ctx = LocalContext.current
+        Text(L.t("☕ Offrimi un caffè", "☕ Buy me a coffee"), color = C.accent, fontSize = 14.sp,
+            modifier = Modifier.padding(top = 10.dp).clickable {
+                runCatching {
+                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://buymeacoffee.com/poty87")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }.padding(vertical = 6.dp))
         Spacer(Modifier.height(24.dp))
     }
 }
