@@ -172,7 +172,8 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
         else -> androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val selectingNow = lib.selecting && tab == "library"
-            val shown by androidx.compose.animation.core.animateDpAsState(if (barShown && !selectingNow) barH else 0.dp, label = "bar")
+            val shownState = androidx.compose.animation.core.animateDpAsState(if (barShown && !selectingNow) barH else 0.dp, label = "bar")
+            val shown = remember(shownState) { { shownState.value } }
             androidx.compose.runtime.CompositionLocalProvider(LocalBarSpace provides barH, LocalBarShown provides shown) {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().nestedScroll(barScroll)) {
                 if (tab == "settings") SettingsScreen(vm, lib) { go("library") }

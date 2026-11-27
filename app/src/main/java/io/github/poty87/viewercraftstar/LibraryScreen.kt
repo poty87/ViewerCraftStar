@@ -406,18 +406,7 @@ fun TrashDialog(count: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
 /** Intestazione della scheda Libreria: libreria, aggiornamento, filtri, conteggio (scorre via con la griglia). */
 @Composable
 fun LibraryHeader(lib: LibraryViewModel) {
-    // all'apertura, a ogni ritorno nell'app e poi ogni minuto finché la Libreria resta in primo piano: le novità del
-    // PC (indice, anteprime sviluppate, ricerca IA) arrivano senza premere il tasto di aggiornamento
-    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    LaunchedEffect(owner) {
-        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-            lib.refresh()
-            while (true) {
-                kotlinx.coroutines.delay(LibraryViewModel.AUTO_REFRESH_MS)
-                lib.refresh(background = true)
-            }
-        }
-    }
+    // l'aggiornamento automatico sta in LibraryGallery: qui (un elemento della lista) ripartiva a ogni ritorno in cima
     // senza cartella delle librerie la pagina vuota (in LibraryGallery) dice cosa fare
     if (!lib.configured) return
     Column {

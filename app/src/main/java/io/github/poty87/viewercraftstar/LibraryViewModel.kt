@@ -792,7 +792,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** Il NAS e la cartella delle librerie sono impostati. */
     val configured: Boolean get() = settings.nas.complete && settings.libFolder.isNotEmpty()
 
-    private val share: String get() = settings.libShare.ifEmpty { settings.nas.share }
+    private val share: String get() = settings.libShare.ifEmpty { settings.nasShare }
 
     /** La cartella delle librerie sul NAS (trovata all'ultimo aggiornamento; prima, quella delle versioni recenti). */
     private var rootFound: String? = null
@@ -977,7 +977,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val result = runCatching {
                 val (root, names) = LibraryStore.list(cfg, share, settings.libFolder)
                 rootFound = root
-                libraries = names
+                if (names != libraries) libraries = names
                 val name = current.takeIf { it in names } ?: names.firstOrNull() ?: ""
                 if (name.isNotEmpty()) {
                     val fresh = LibraryStore.download(getApplication(), cfg, share, libRoot, name)

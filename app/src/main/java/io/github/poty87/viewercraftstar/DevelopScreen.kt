@@ -797,11 +797,21 @@ fun DevelopEditor(lib: LibraryViewModel, photo: LibPhoto, ui: DevelopUi, positio
                         onEdit = { changed() })
                 }
                 error?.let { Text(it, color = Color(0xFFF87171), fontSize = 14.sp, modifier = Modifier.padding(24.dp)) }
+                // gli avvisi (profilo che si applica, originale che si scarica, motore diverso): una pillola sopra la foto,
+                // in basso, che compare e svanisce; nel pannello cambierebbero l'altezza e la foto salterebbe su e giù
+                val banner = rawStatus ?: note
+                val lastBanner = remember { arrayOf<String?>(null) }
+                if (banner != null) lastBanner[0] = banner
+                androidx.compose.animation.AnimatedVisibility(visible = banner != null,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 12.dp),
+                    enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
+                    Text(lastBanner[0] ?: "", color = Color.White, fontSize = 12.sp,
+                        modifier = Modifier.background(Color(0xD9202020), androidx.compose.foundation.shape.RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 7.dp))
+                }
             }
             if (settings != null) Column(Modifier.fillMaxWidth().background(Color(0xE6141414)).navigationBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                note?.let { Text(it, color = C.muted, fontSize = 12.sp) }
-                rawStatus?.let { Text(it, color = C.muted, fontSize = 12.sp) }
                 fun open(sec: DevSection) {
                     // il ritaglio si fa sulla foto intera; le maschere sulla foto a 1× (le maniglie seguono la foto mostrata)
                     if (sec == CROP || sec == MASKS) { zoom = 1f; pan = androidx.compose.ui.geometry.Offset.Zero }

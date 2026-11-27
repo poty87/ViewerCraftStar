@@ -105,17 +105,22 @@ The editor develops the photo on the phone with the same engine as LightCraft, s
 by the PC (downloaded the first time and kept on the phone). The changes go back to LightCraft unchanged.
 
 - **At the top:** *Close* (asks whether to discard the changes), *Before* (hold to compare with the original), **☰**
-  (*Copy develop settings*, *Paste*, *Reset to how it was*, *Reset to as shot*, the library's presets and profiles),
+  (*Copy develop settings…*, *Paste* once you have copied some, *Create virtual copy…*, *Reset to how it was*,
+  *Reset to as shot*),
   **Done** (saves and sends to LightCraft).
 - **Bottom tabs:**
   - **Light** — *Basic* (exposure, contrast, highlights, shadows, whites, blacks) and *Curve*;
-  - **Color** — *White balance*, colour (vibrance, saturation), *HSL*, *Grading*;
+  - **Color** — *White balance* (*As shot*, temperature, tint), colour (vibrance, saturation), *HSL*, *Grading*;
   - **Effects** — texture, clarity, dehaze, vignette, grain;
   - **Detail** — sharpening, noise reduction, lens corrections;
   - **Masks** — see below;
-  - **Crop** — aspect ratio, straighten, rotate.
-- **Profiles:** the photo's profile (camera DCP profiles too: for those the app downloads the original file; the preview
-  is approximate, the result in LightCraft is exact).
+  - **Crop** — aspect ratio, straighten, rotate;
+  - **Profiles** — the photo's profile, each with a preview, and its *Amount*. Camera DCP profiles are there too: for
+    those the app downloads the original photo and a note over the photo says what it is doing; the preview is
+    approximate, the result in LightCraft is exact;
+  - **Presets** — the LightCraft library's presets, with a preview.
+
+  The bottom tabs scroll sideways: *Profiles* and *Presets* are at the far right.
 
 **Masks.** *+ New* creates a mask: **Linear** (a gradient), **Radial**, **Brush**, **Luminance range** and **Color
 range**, **Object (AI)** — tap the subject and the phone's AI cuts it out (tap again to add missing parts; *Undo tap*,

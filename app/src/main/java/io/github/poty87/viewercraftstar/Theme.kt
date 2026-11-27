@@ -140,6 +140,7 @@ fun RoundChip(selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modif
 /** Altezza della barra in basso: lo spazio da lasciare in fondo alle liste, che le scorrono sotto. */
 val LocalBarSpace = androidx.compose.runtime.compositionLocalOf { 0.dp }
 /** Quanto della barra in basso si vede adesso (0 quando è nascosta): i pulsanti tondi le stanno sopra. */
-val LocalBarShown = androidx.compose.runtime.compositionLocalOf { 0.dp }
+// letta solo mentre si dispone (offset), non mentre si compone: l'animazione della barra non ricompone le pagine
+val LocalBarShown = androidx.compose.runtime.staticCompositionLocalOf<() -> androidx.compose.ui.unit.Dp> { { 0.dp } }
 /** Il fondo delle barre in basso: leggermente traslucido, si intravede quello che c'è sotto. */
 val BarBg = Color(0xD9111111)

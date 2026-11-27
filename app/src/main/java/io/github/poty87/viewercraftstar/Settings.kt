@@ -132,6 +132,9 @@ class Settings(context: Context) {
         get() = prefs.getString("vpn_password", null)?.let(::decrypt) ?: ""
         set(v) = prefs.edit().putString("vpn_password", if (v.isEmpty()) null else encrypt(v)).apply()
 
+    /** La cartella condivisa del NAS, senza leggere (e decifrare) tutta la configurazione: si chiede anche mentre si disegna. */
+    val nasShare: String get() = prefs.getString("nas_share", "")!!
+
     var nas: NasConfig
         get() = NasConfig(
             host = prefs.getString("nas_host", "")!!,
@@ -184,7 +187,19 @@ class Settings(context: Context) {
             return Base64.encodeToString(out, Base64.NO_WRAP)
         }
 
-        private fun decrypt(data: String): String? = runCatching {
+        /**
+         * I testi già decifrati, per cifrato: decifrare passa dal Keystore di Android (millisecondi a ogni
+         * chiamata), e la configurazione del NAS si legge spesso, anche mentre si disegna la galleria. Resta solo in
+         * memoria, come la password quando si usa.
+         */
+        private val decrypted = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+        private fun decrypt(data: String): String? {
+            decrypted[data]?.let { return it }
+            return decryptNow(data)?.also { if (decrypted.size > 8) decrypted.clear(); decrypted[data] = it }
+        }
+
+        private fun decryptNow(data: String): String? = runCatching {
             val raw = Base64.decode(data, Base64.NO_WRAP)
             val c = Cipher.getInstance("AES/GCM/NoPadding")
             c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw, 0, 12))

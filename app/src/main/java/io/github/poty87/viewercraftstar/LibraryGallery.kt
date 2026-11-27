@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -132,7 +133,23 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
     BoxWithConstraints(modifier.fillMaxSize().background(Color.Black)) {
         val width = maxWidth - 6.dp
         // una foto compare una volta sola (le righe hanno per chiave la loro prima foto)
-        val cells = if (lib.configured && lib.index != null) lib.cells().distinctBy { it.photo.id } else emptyList()
+        // all'apertura, a ogni ritorno nell'app e poi ogni minuto finché la Libreria resta in primo piano: le novità del
+        // PC (indice, anteprime sviluppate, ricerca IA) arrivano senza premere il tasto di aggiornamento. Sta qui e non
+        // nell'intestazione: quella è un elemento della lista, esce e rientra scorrendo, e l'aggiornamento ripartiva
+        // (dal NAS, a metà dello scorrimento) a ogni ritorno in cima
+        val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+        LaunchedEffect(owner) {
+            owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                lib.refresh()
+                while (true) {
+                    kotlinx.coroutines.delay(LibraryViewModel.AUTO_REFRESH_MS)
+                    lib.refresh(background = true)
+                }
+            }
+        }
+        // cells() rende sempre la stessa lista finché niente cambia: così anche le righe si ricalcolano solo allora
+        val all = if (lib.configured && lib.index != null) lib.cells() else emptyList()
+        val cells = remember(all) { all.distinctBy { it.photo.id } }
         val photos = remember(cells) { cells.map { it.photo } }
         // la ricerca per soggetto ordina per somiglianza: lì niente periodi, conta l'ordine
         val bySegment = lib.segment && !lib.aiActive

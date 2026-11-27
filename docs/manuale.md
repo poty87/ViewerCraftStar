@@ -108,17 +108,23 @@ L'editor sviluppa la foto sul telefono con lo stesso motore di LightCraft, parte
 PC (si scarica la prima volta e resta sul telefono). Le modifiche tornano a LightCraft identiche.
 
 - **In alto:** *Chiudi* (chiede se scartare le modifiche), *Prima* (tieni premuto per confrontare con l'originale),
-  **☰** (*Copia sviluppo*, *Incolla*, *Ripristina com'era*, *Ripristina come scattata*, preset e profili della libreria),
+  **☰** (*Copia sviluppo…*, *Incolla* quando hai copiato uno sviluppo, *Crea copia virtuale…*, *Ripristina com'era*,
+  *Ripristina come scattata*),
   **Fatto** (salva e invia a LightCraft).
 - **Schede in basso:**
   - **Luce** — *Base* (esposizione, contrasto, alte luci, ombre, bianchi, neri) e *Curva*;
-  - **Colore** — *Bilanciamento del bianco*, *Colore* (vividezza, saturazione), *HSL*, *Grading*;
+  - **Colore** — *Bianco* (*Come scattata*, temperatura, tinta), *Colore* (vividezza, saturazione), *Tinte* (HSL),
+    *Grading*;
   - **Effetti** — texture, chiarezza, foschia, vignettatura, grana;
   - **Dettaglio** — nitidezza, riduzione del rumore, correzioni dell'obiettivo;
   - **Maschere** — vedi sotto;
-  - **Ritaglio** — proporzioni, raddrizzamento, rotazione.
-- **Profili:** il profilo della foto (anche i profili DCP della fotocamera: per quelli l'app scarica il file originale;
-  l'anteprima è approssimata, il risultato in LightCraft è esatto).
+  - **Ritaglio** — proporzioni, raddrizzamento, rotazione;
+  - **Profili** — il profilo della foto, con l'anteprima di ognuno, e la sua *Intensità*. Ci sono anche i profili DCP
+    della fotocamera: per quelli l'app scarica la foto originale e una scritta sopra la foto dice cosa sta facendo;
+    l'anteprima è approssimata, il risultato in LightCraft è esatto;
+  - **Preset** — i preset della libreria LightCraft, con l'anteprima.
+
+  Le schede in basso scorrono di lato: *Profili* e *Preset* sono in fondo a destra.
 
 **Maschere.** *+ Nuova* crea una maschera: **Lineare** (una sfumatura), **Radiale**, **Pennello**, **Luminanza** e
 **Colore** (per intervallo), **Oggetto (IA)** — un tocco sul soggetto e l'IA del telefono lo scontorna (tocca ancora per

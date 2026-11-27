@@ -240,7 +240,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         else if (vm.inLibrary && !lib.showTrash && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
         // Importa: tondo in basso a sinistra, solo in «Da rivedere» (in «Spedite» non serve). Un tocco apre il menu da dove
         // importare: la fotocamera (RICOH GR, al posto di GR World) o un disco esterno collegato al telefono
-        if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom())) {
+        if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).fabBottom()) {
             var open by remember { mutableStateOf(false) }
             Box(Modifier.size(58.dp).clip(CircleShape).background(C.cardHigh).clickable { open = true }, contentAlignment = Alignment.Center) {
                 ImportPlusIcon(Modifier.size(32.dp), C.text)
@@ -259,7 +259,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             val ship = rememberShip(vm)
             val toSend = vm.countIn(Section.REVIEW) - vm.photos.count { it.inWork && vm.meta(it.name).flag == Flag.REJECT }
             val on = vm.countIn(Section.REVIEW) > 0 && !vm.moving
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = fabBottom())) {
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp).fabBottom()) {
                 Box(Modifier.size(58.dp).clip(CircleShape).background(if (on) C.accent else Color(0xFF8A8A8A))
                     .clickable(enabled = on) { ship() }, contentAlignment = Alignment.Center) {
                     if (vm.moving) CircularProgressIndicator(Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
@@ -277,7 +277,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         // «Inviate»: aggiorna (rilegge dal NAS lo stato di ogni foto e invia i metadati in coda) con il tondo verde in basso
         // a sinistra, di fronte al cestino; con il numerino bianco dei metadati ancora da inviare
         if (!vm.inLibrary && vm.section == Section.SENT) {
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom())) {
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp).fabBottom()) {
                 Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFF4ADE80))
                     .clickable(enabled = !vm.syncing) { vm.sync() }, contentAlignment = Alignment.Center) {
                     if (vm.syncing) CircularProgressIndicator(Modifier.size(26.dp), color = Color.Black, strokeWidth = 2.5.dp)
@@ -311,7 +311,7 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
             val trash = rememberTrash(vm)
             val safe = vm.visible.filter { vm.isSafe(it) }
             val on = safe.isNotEmpty()
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = fabBottom())) {
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp).fabBottom()) {
                 Box(Modifier.size(58.dp).clip(CircleShape).background(if (on) Color(0xFFF87171) else Color(0xFF8A8A8A))
                     .clickable(enabled = on) {
                         Confirm.show(L.t("Spostare ${safe.size} foto nel cestino del telefono?", "Move ${safe.size} photos to the phone's bin?"),
@@ -1099,8 +1099,10 @@ fun UploadNasIcon(modifier: Modifier, color: Color) {
 }
 
 /** Dove stanno i pulsanti tondi: sopra la barra in basso quando si vede, sopra i tasti di sistema quando è nascosta. */
+// lo spostamento si calcola mentre si dispone: la barra che si anima non fa ricomporre la pagina (e la galleria) a ogni frame
 @Composable
-private fun fabBottom(): androidx.compose.ui.unit.Dp {
+private fun Modifier.fabBottom(): Modifier {
     val nav = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    return maxOf(LocalBarShown.current, nav) + 16.dp
+    val shown = LocalBarShown.current
+    return this.offset { androidx.compose.ui.unit.IntOffset(0, -(maxOf(shown(), nav) + 16.dp).roundToPx()) }
 }
