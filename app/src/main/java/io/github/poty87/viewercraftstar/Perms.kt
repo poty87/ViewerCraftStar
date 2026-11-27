@@ -39,8 +39,8 @@ object Perms {
     data class Group(val title: String, val why: String, val perms: List<String>)
 
     fun groups(): List<Group> = listOf(
-        Group(L.t("Foto", "Photos"), L.t("Per vedere e spedire i DNG del telefono (con la posizione dove sono state scattate).",
-            "To see and send the phone's DNG files (with the place where they were taken)."),
+        Group(L.t("Foto", "Photos"), L.t("Per vedere e spedire i raw del telefono (con la posizione dove sono state scattate).",
+            "To see and send the phone's raw files (with the place where they were taken)."),
             listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.ACCESS_MEDIA_LOCATION)),
         Group(L.t("Notifiche", "Notifications"), L.t("Per seguire spedizioni e scarichi anche ad app chiusa.",
             "To follow sending and downloads even with the app closed."), listOf(Manifest.permission.POST_NOTIFICATIONS)),

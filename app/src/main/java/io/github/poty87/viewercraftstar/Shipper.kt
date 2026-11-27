@@ -27,7 +27,7 @@ object Shipper {
     /** Esito di un giro di invio: risultato del NAS, foto tolte dalla coda (sparite da telefono e NAS), ancora in attesa. */
     class Outcome(val result: NasSync.Result, val gone: Set<String>, val waiting: Int)
 
-    /** Le foto DNG di una cartella del telefono. */
+    /** Le foto raw (DNG e i raw delle altre marche che LightCraft apre) di una cartella del telefono. */
     fun query(context: Context, folder: String, inWork: Boolean): List<PhotoItem> {
         val out = ArrayList<PhotoItem>()
         val cols = arrayOf(
@@ -41,7 +41,7 @@ object Shipper {
         )?.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
-                if (!name.endsWith(".dng", ignoreCase = true)) continue
+                if (!RawFormats.isRaw(name)) continue
                 val id = c.getLong(0)
                 out += PhotoItem(id, ContentUris.withAppendedId(uri, id), name, c.getLong(2), c.getLong(3), c.getLong(4), inWork)
             }

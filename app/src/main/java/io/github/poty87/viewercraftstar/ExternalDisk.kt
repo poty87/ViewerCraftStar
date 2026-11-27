@@ -24,12 +24,13 @@ import java.io.File
 object ExternalDisk {
     private const val TAG = "VcsDisk"
     private const val AUTHORITY = "com.android.externalstorage.documents"
-    private val EXT = setOf("dng", "jpg", "jpeg")
+    private val EXT = RawFormats.EXTENSIONS + setOf("jpg", "jpeg")
 
-    /** Una foto sul disco. `dir`: la cartella (percorso dentro il disco), per riconoscere il JPEG gemello di un DNG. */
+    /** Una foto sul disco. `dir`: la cartella (percorso dentro il disco), per riconoscere il JPEG gemello di un raw. */
     data class Item(val uri: Uri, val name: String, val dir: String, val size: Long, val modified: Long) {
         val key: String get() = uri.toString()
-        val isDng: Boolean get() = name.endsWith(".dng", true)
+        /** Un raw di qualsiasi marca che LightCraft apre (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2, PEF…). */
+        val isRaw: Boolean get() = RawFormats.isRaw(name)
         val isJpeg: Boolean get() = name.endsWith(".jpg", true) || name.endsWith(".jpeg", true)
     }
 
@@ -68,7 +69,7 @@ object ExternalDisk {
     }
 
     /**
-     * Tutte le foto (DNG e JPEG) nella cartella scelta e nelle sue sottocartelle (le cartelle nascoste no).
+     * Tutte le foto (raw e JPEG) nella cartella scelta e nelle sue sottocartelle (le cartelle nascoste no).
      * `found` riceve il numero trovato finora, per dire a che punto è su un disco grande.
      */
     fun list(context: Context, tree: Uri, found: (Int) -> Unit = {}): List<Item> {
@@ -115,15 +116,15 @@ object ExternalDisk {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
-    /** La miniatura: l'anteprima dentro il DNG, la miniatura EXIF del JPEG (o il JPEG ridotto). Tenuta anche sul disco del telefono. */
+    /** La miniatura: l'anteprima dentro il raw, la miniatura EXIF del JPEG (o il JPEG ridotto). Tenuta anche sul disco del telefono. */
     fun thumbnail(context: Context, item: Item): Bitmap? {
         val key = "${item.key}:${item.modified}"
         memory.get(key)?.let { return it }
         val disk = File(context.cacheDir, "disk-thumbs/" + Integer.toHexString(key.hashCode()) + "_${item.size}.jpg")
         if (disk.exists()) BitmapFactory.decodeFile(disk.path)?.let { memory.put(key, it); return it }
         val bmp = runCatching {
-            if (item.isDng) DngPreview.decode(context.contentResolver, item.uri, DngPreview.THUMB)
-            else jpegThumb(context, item.uri)
+            if (item.isJpeg) jpegThumb(context, item.uri)
+            else LocalPreview.decode(context.contentResolver, item.uri, item.name, DngPreview.THUMB)
         }.getOrNull() ?: return null
         memory.put(key, bmp)
         runCatching { disk.parentFile?.mkdirs(); disk.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
@@ -147,7 +148,9 @@ object ExternalDisk {
      * nome «millisecondi dello scatto_nome» se la data si legge. `onBytes`: byte copiati e totali.
      */
     fun copy(context: Context, item: Item, folder: String, taken: Long, onBytes: (Long, Long) -> Unit): Boolean {
-        val mime = when (item.name.substringAfterLast('.', "").lowercase()) { "dng" -> "image/x-adobe-dng"; else -> "image/jpeg" }
+        // il tipo che Android conosce; quelli che MediaStore rifiuta (CR3 su Android 17) non si copiano
+        if (!RawFormats.phoneAccepts(context, item.name)) return false
+        val mime = RawFormats.phoneMime(item.name)
         val cr = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, if (taken > 0) "${taken}_${item.name}" else item.name)
@@ -155,7 +158,8 @@ object ExternalDisk {
             put(MediaStore.Images.Media.RELATIVE_PATH, folder)
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
-        val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        val uri = runCatching { cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) }
+            .onFailure { Log.w(TAG, "${item.name}: Android non lo accetta tra le foto", it) }.getOrNull() ?: return false
         val ok = runCatching {
             cr.openOutputStream(uri)!!.use { out ->
                 cr.openInputStream(item.uri)!!.use { inp ->

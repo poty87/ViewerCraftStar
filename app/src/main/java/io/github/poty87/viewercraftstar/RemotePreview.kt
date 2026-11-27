@@ -149,8 +149,11 @@ object RemotePreview {
     }
 
     /** Il JPEG (o i tasselli) da mostrare e l'orientamento (1 = dritta). */
-    fun pick(r: Source, photo: LibPhoto, maxSide: Int): Picked? {
-        val ext = photo.name.substringAfterLast('.', "").lowercase()
+    fun pick(r: Source, photo: LibPhoto, maxSide: Int): Picked? = pick(r, photo.name, maxSide)
+
+    /** Come sopra, dal nome del file (anche per i file del telefono, vedi LocalPreview). */
+    fun pick(r: Source, name: String, maxSide: Int): Picked? {
+        val ext = name.substringAfterLast('.', "").lowercase()
         if (ext == "jpg" || ext == "jpeg") {
             // la miniatura EXIF non ha un orientamento suo: vale quello della foto, letto dall'inizio del file
             if (maxSide <= THUMB) exifThumb(r)?.let { return Picked(it, orientationOfJpeg(r.read(0, 64 * 1024))) }
@@ -159,6 +162,8 @@ object RemotePreview {
             return Picked(all, orientationOfJpeg(all))
         }
         if (ext == "png") return if (r.size < 40L * 1024 * 1024) Picked(r.read(0, r.size.toInt()), 1) else null
+        // Fujifilm (RAF) e Canon recenti (CR3) non sono TIFF: l'anteprima si trova nel loro contenitore
+        containerJpeg(r)?.let { j -> return Picked(j, orientationOfJpeg(j)) }
         val (jpegs, orientation) = tiffJpegs(r) ?: return null
         // prima le anteprime già sviluppate (hanno anche le modifiche fatte in Lightroom); i Fast Load Data da
         // sviluppare qui solo se quelle sono troppo piccole; se non c'è niente, i pixel della prima immagine
@@ -394,6 +399,10 @@ object RemotePreview {
         }
         // TIFF salvati da Photoshop: la miniatura JPEG nelle sue risorse (piccola, ma meglio di niente)
         if (out.isEmpty()) ifd0.tags[0x8649]?.let { (at, n) -> photoshopThumb(r, at, n)?.let(out::add) }
+        // Panasonic (RW2): l'anteprima JPEG intera sta nel tag JpgFromRaw (0x2E) della prima IFD
+        if (out.none { maxOf(it.width, it.height) >= THUMB }) ifd0.tags[0x2E]?.let { (at, n) ->
+            if (n in 1..(64L shl 20) && at + n <= r.size) out += Jpeg(at, n.toInt(), 1920, 1440)
+        }
         // Olympus (ORF): l'anteprima sta nelle note del produttore, non nelle IFD normali
         if (out.none { maxOf(it.width, it.height) >= THUMB }) ifd0.tags[0x8769]?.firstOrNull()?.let { exifAt ->
             readIfd(r, exifAt, order)?.tags?.get(0x927C)?.let { (at, n) -> olympusPreview(r, at, n)?.let(out::add) }
@@ -465,7 +474,7 @@ object RemotePreview {
      * Tag di cui readIfd tiene solo la posizione: MakerNote, risorse di Photoshop, OpcodeList2, AsShotNeutral,
      * BaselineExposure, ColorMatrix1/2, ForwardMatrix1/2.
      */
-    private val LOCATED = setOf(0x927C, 0x8649, 0xC741, 0xC628, 0xC62A, 0xC621, 0xC622, 0xC714, 0xC715)
+    private val LOCATED = setOf(0x2E, 0x927C, 0x8649, 0xC741, 0xC628, 0xC62A, 0xC621, 0xC622, 0xC714, 0xC715)
 
     private val XYZ50_TO_SRGB =doubleArrayOf(3.1338561, -1.6168667, -0.4906146, -0.9787684, 1.9161415, 0.0334540,
         0.0719453, -0.2289914, 1.4052427)
@@ -612,6 +621,53 @@ object RemotePreview {
             }
             if (marker == 0xDA) return null
             at += 2 + len
+        }
+        return null
+    }
+
+    /**
+     * L'anteprima JPEG dei raw che non sono TIFF: Fujifilm RAF (posizione e lunghezza a 84 dall'inizio) e Canon CR3
+     * (contenitore ISO come gli MP4: box uuid eaf42b5e-… di primo livello con dentro PRVW, circa 1620×1080). Null se
+     * il file non è di questi tipi.
+     */
+    private fun containerJpeg(r: Source): ByteArray? {
+        val head = r.read(0, 16)
+        if (head.size < 16) return null
+        val iso = Charsets.ISO_8859_1
+        if (String(head, 0, 8, iso) == "FUJIFILM") {
+            val b = ByteBuffer.wrap(r.read(84, 8)).order(ByteOrder.BIG_ENDIAN)
+            val off = b.int.toLong() and 0xFFFFFFFFL
+            val len = b.int.toLong() and 0xFFFFFFFFL
+            return if (len in 1..(64L shl 20) && off + len <= r.size) r.read(off, len.toInt()) else null
+        }
+        if (String(head, 4, 4, iso) != "ftyp" || !String(head, 8, 4, iso).startsWith("crx")) return null
+        var at = 0L
+        var guard = 0
+        while (at + 8 <= r.size && guard++ < 64) {
+            val h = ByteBuffer.wrap(r.read(at, 16)).order(ByteOrder.BIG_ENDIAN)
+            var size = h.int.toLong() and 0xFFFFFFFFL
+            val type = String(r.read(at + 4, 4), iso)
+            var header = 8L
+            if (size == 1L) { size = h.getLong(8); header = 16 }
+            if (size == 0L) size = r.size - at
+            if (size < header) return null
+            if (type == "uuid" && size < (64L shl 20)) {
+                val id = r.read(at + header, 16).joinToString("") { "%02x".format(it) }
+                if (id == "eaf42b5e1c984b88b9fbb7dc406e4d16") {
+                    val box = r.read(at, size.toInt())
+                    var s = -1
+                    for (i in 0 until box.size - 3) {
+                        if (box[i] == 0xFF.toByte() && box[i + 1] == 0xD8.toByte() && box[i + 2] == 0xFF.toByte()) { s = i; break }
+                    }
+                    if (s < 0) return null
+                    var e = box.size
+                    for (i in box.size - 2 downTo s) {
+                        if (box[i] == 0xFF.toByte() && box[i + 1] == 0xD9.toByte()) { e = i + 2; break }
+                    }
+                    return box.copyOfRange(s, e)
+                }
+            }
+            at += size
         }
         return null
     }

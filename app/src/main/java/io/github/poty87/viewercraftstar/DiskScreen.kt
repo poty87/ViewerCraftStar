@@ -134,7 +134,15 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
     var groupBy by remember { mutableStateOf("day") }
     var format by remember { mutableStateOf(vm.settings.cameraFormat) }
     val all = items.orEmpty()
-    val list = all.filter { if (format == "jpg") it.isJpeg else it.isDng }
+    // i formati che Android non sa mettere tra le foto (CR3 su Android 17): non si importano dal telefono, solo dal PC
+    var refused by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(items) {
+        val exts = items.orEmpty().map { it.name }.distinctBy { RawFormats.ext(it) }
+        refused = withContext(Dispatchers.IO) { exts.filterNot { RawFormats.phoneAccepts(context, it) }.map { RawFormats.ext(it) }.toSet() }
+    }
+    val importable = all.filter { RawFormats.ext(it.name) !in refused }
+    val notHere = (all - importable.toSet()).groupBy { RawFormats.ext(it.name).uppercase() }
+    val list = importable.filter { if (format == "jpg") it.isJpeg else it.isRaw }
     fun twinOf(d: ExternalDisk.Item) = all.firstOrNull { it.isJpeg && it.dir == d.dir &&
         it.name.substringBeforeLast('.').equals(d.name.substringBeforeLast('.'), true) }
 
@@ -165,14 +173,14 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
             all.isEmpty() -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 EmptyState(EmptyGlyph.CARD, L.t("Nessuna foto", "No photos"),
-                    L.t("In questa cartella non ci sono DNG o JPEG.", "There are no DNG or JPEG files in this folder."))
+                    L.t("In questa cartella non ci sono raw o JPEG.", "There are no raw or JPEG files in this folder."))
                 Spacer(Modifier.size(12.dp))
                 PillButton(onClick = { choose() }) { Text(L.t("Scegli un'altra cartella", "Choose another folder")) }
             }
             else -> {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val formatLabels = listOf("dng" to L.t("Solo DNG", "DNG only"), "jpg" to L.t("Solo JPEG", "JPEG only"), "both" to "DNG+JPEG")
+                    val formatLabels = listOf("dng" to L.t("Solo RAW", "RAW only"), "jpg" to L.t("Solo JPEG", "JPEG only"), "both" to "RAW+JPEG")
                     Box {
                         var open by remember { mutableStateOf(false) }
                         RoundChip(false, { open = true }, leading = { Icon(Icons.Filled.Menu, null, modifier = Modifier.size(16.dp)) }) {
@@ -210,6 +218,12 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Text(L.t("${list.size} foto sul disco", "${list.size} photos on the disk") +
                     L.t(" · scure = già sul telefono o sul NAS", " · dark = already on the phone or the NAS"),
                     color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                if (notHere.isNotEmpty()) {
+                    val what = notHere.entries.joinToString(", ") { (ext, l) -> "${l.size} $ext" }
+                    Text(L.t("$what: questo telefono non li riconosce come foto, quindi non si importano da qui. Copiali sul NAS dal PC: PresetCraftAppLicator li importa in LightCraft e li vedi nella Libreria.",
+                        "$what: this phone doesn't recognise them as photos, so they can't be imported from here. Copy them to the NAS from the PC: PresetCraftAppLicator imports them into LightCraft and you see them in the Library."),
+                        color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp))
+                }
                 // i gruppi per periodo: dalla data del file (sul disco è quella dello scatto, se copiato così com'era)
                 val groups = remember(list, groupBy) {
                     if (groupBy.isEmpty()) listOf("" to list)
@@ -257,7 +271,7 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
                                         }
                                     }
                                     // scatto RAW+JPEG: «+JPEG» in alto a sinistra, verde quando il JPEG è nella galleria
-                                    if (format == "both" && p.isDng) twinOf(p)?.let { twin ->
+                                    if (format == "both" && p.isRaw) twinOf(p)?.let { twin ->
                                         Text("+JPEG", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                                             modifier = Modifier.align(Alignment.TopStart).padding(5.dp).clip(RoundedCornerShape(50))
                                                 .background(if (twin.key in done) GREEN else C.accent).padding(horizontal = 6.dp, vertical = 1.dp))
@@ -287,7 +301,7 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
                             }
                             PillButton(onClick = {
                                 val chosenNow = list.filter { it.key in selected }
-                                val twins = if (format != "both") emptyList() else chosenNow.filter { it.isDng }.mapNotNull { twinOf(it) }
+                                val twins = if (format != "both") emptyList() else chosenNow.filter { it.isRaw }.mapNotNull { twinOf(it) }
                                 val todo = (chosenNow + twins).distinctBy { it.key }
                                 CameraImport.start(context, disk = true) {
                                     var ok = 0
@@ -324,18 +338,18 @@ fun DiskScreen(vm: AppViewModel, onBack: () -> Unit) {
                                     val got = ok - skipped - skippedDng
                                     val wanted = todo.size - skipped - skippedDng
                                     if (wanted > 0) Notices.post(if (got == wanted) "ok" else "warn",
-                                        L.t("$got di $wanted file copiati dal disco: i DNG in Da rivedere" + (if (todo.any { it.isJpeg }) ", i JPEG nella galleria del telefono." else "."),
-                                            "$got of $wanted files copied from the disk: the DNGs are in To review" + (if (todo.any { it.isJpeg }) ", the JPEGs in the phone's gallery." else ".")))
+                                        L.t("$got di $wanted file copiati dal disco: i raw in Da rivedere" + (if (todo.any { it.isJpeg }) ", i JPEG nella galleria del telefono." else "."),
+                                            "$got of $wanted files copied from the disk: the raws are in To review" + (if (todo.any { it.isJpeg }) ", the JPEGs in the phone's gallery." else ".")))
                                     if (skipped > 0) Notices.post("info",
                                         L.t(if (skipped == 1) "1 JPEG era già nella galleria del telefono e non è stato importato di nuovo."
                                             else "$skipped JPEG erano già nella galleria del telefono e non sono stati importati di nuovo.",
                                             if (skipped == 1) "1 JPEG was already in the phone's gallery and wasn't imported again."
                                             else "$skipped JPEGs were already in the phone's gallery and weren't imported again."))
                                     if (skippedDng > 0) Notices.post("info",
-                                        L.t(if (skippedDng == 1) "1 DNG era già sul telefono o sul NAS e non è stato copiato di nuovo."
-                                            else "$skippedDng DNG erano già sul telefono o sul NAS e non sono stati copiati di nuovo.",
-                                            if (skippedDng == 1) "1 DNG was already on the phone or the NAS and wasn't copied again."
-                                            else "$skippedDng DNGs were already on the phone or the NAS and weren't copied again."))
+                                        L.t(if (skippedDng == 1) "1 raw era già sul telefono o sul NAS e non è stato copiato di nuovo."
+                                            else "$skippedDng raw erano già sul telefono o sul NAS e non sono stati copiati di nuovo.",
+                                            if (skippedDng == 1) "1 raw was already on the phone or the NAS and wasn't copied again."
+                                            else "$skippedDng raws were already on the phone or the NAS and weren't copied again."))
                                 }
                             }, primary = true, enabled = selected.isNotEmpty() && !downloading, modifier = Modifier.weight(1f)) {
                                 Text(L.t("Importa ${selected.size}", "Import ${selected.size}"))

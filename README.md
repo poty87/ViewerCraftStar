@@ -42,7 +42,9 @@ ORF, RAF, JPEG…; PresetCraftAppLicator can also convert proprietary raws to DN
 only two things are specific to **Ricoh GR** cameras:
 - giving each photo the camera profile of its picture style (PresetCraftAppLicator);
 - downloading photos straight from the camera over Wi-Fi (ViewerCraftStar). The same import also works from an external
-  disk or card reader plugged into the phone, with DNGs and JPEGs from any camera.
+  disk or card reader plugged into the phone, with the raw files of any camera LightCraft opens (CR2, NEF, ARW, RAF,
+  ORF, RW2, PEF, DNG…) and JPEGs. Formats the phone itself doesn't recognise as photos (on Android 17, Canon CR3) go
+  through the PC.
 
 **Two ways to bring photos home**
 
@@ -64,7 +66,8 @@ OpenVPN server works (a router, another NAS brand, a PC).
 
 This part is a plus: if your photos already reach the NAS from the PC, skip it and use the [Library](#library-your-home-lightcraft-library-on-the-phone).
 
-1. The raw files (DNG) arrive on the phone (for example from the camera's own app) in the app's **work folder**, which
+1. The raw files (DNG, or the raws of other brands: CR2, NEF, ARW, RAF, ORF, RW2, PEF…) arrive on the phone (for
+   example from the camera's own app, or imported from an external disk) in the app's **work folder**, which
    is *not* synced.
 2. In **To review** you look at them full screen, swipe between them and set **flags** (pick / reject), **stars**,
    **colour labels**, title, caption, keywords, creator and copyright, and optionally a LightCraft **preset**, previewed
@@ -100,7 +103,8 @@ Pairing, then press OK twice while the QR code is shown). Plain http is allowed 
 **External disk** imports from a USB stick, disk or card reader plugged into the phone, through Android's folder picker:
 the first time it opens on the plugged-in disk (tap «Use this folder» and «Allow»), afterwards that disk opens directly.
 The page works like the camera one (format, grouping, already-imported photos dimmed, copy in the background with the
-same file names). Android reads FAT32 and exFAT disks, not NTFS.
+same file names), with the raw files of any brand LightCraft opens and JPEGs; formats Android doesn't accept as photos
+(Canon CR3 on Android 17) are listed apart, to be imported from the PC. Android reads FAT32 and exFAT disks, not NTFS.
 
 ## Library: your home LightCraft library on the phone
 
@@ -262,7 +266,9 @@ tutto il percorso.
 Adobe DNG Converter). Per ora sono specifiche delle **Ricoh GR** solo due cose:
 - dare a ogni foto il profilo della fotocamera del suo stile (PresetCraftAppLicator);
 - scaricare le foto direttamente dalla fotocamera via Wi-Fi (ViewerCraftStar). La stessa importazione funziona anche da un
-  disco esterno o un lettore di schede collegato al telefono, con DNG e JPEG di qualsiasi fotocamera.
+  disco esterno o un lettore di schede collegato al telefono, con i raw di qualsiasi fotocamera che LightCraft apre (CR2,
+  NEF, ARW, RAF, ORF, RW2, PEF, DNG…) e i JPEG. I formati che il telefono non riconosce come foto (su Android 17 i
+  CR3 Canon) passano dal PC.
 
 **Due modi per portare le foto a casa**
 
@@ -285,7 +291,8 @@ Synology, ma va bene qualsiasi server OpenVPN (un router, un NAS di altra marca,
 
 È un plus: se le foto arrivano già sul NAS dal PC, puoi saltarlo e usare la **Libreria** (più sotto).
 
-1. I DNG arrivano sul telefono nella **cartella di lavoro** dell'app, che *non* è sincronizzata.
+1. I raw (DNG, o quelli delle altre marche: CR2, NEF, ARW, RAF, ORF, RW2, PEF…) arrivano sul telefono nella **cartella
+   di lavoro** dell'app, che *non* è sincronizzata.
 2. In **Da rivedere** le guardi a tutto schermo, scorri tra una e l'altra e imposti **bandierine** (scelta / scartata),
    **stelle**, **etichette colore**, titolo, didascalia, parole chiave, autore, copyright e, se vuoi, un **preset** di
    LightCraft, con l'anteprima sul telefono.
@@ -314,7 +321,8 @@ visibile il QR). L'http non cifrato è permesso solo verso la fotocamera (192.16
 chiavetta, un disco o un lettore di schede collegato al telefono, tramite il selettore di cartelle di Android: la prima
 volta si apre sul disco collegato («Usa questa cartella» e «Consenti»), dopo quel disco si apre da solo. La pagina è come
 quella della fotocamera (formato, raggruppamento, foto già importate scure, copia in background con gli stessi nomi).
-Android legge i dischi FAT32 ed exFAT, non NTFS.
+Vale per i raw di qualsiasi marca che LightCraft apre e per i JPEG; i formati che Android non accetta come foto (i CR3
+Canon su Android 17) sono indicati a parte, da importare dal PC. Android legge i dischi FAT32 ed exFAT, non NTFS.
 
 **Libreria: la libreria LightCraft di casa sul telefono.** La scheda **Libreria** mostra le tue librerie LightCraft — tutte,
 non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.15.0 o successivo) scrive in una cartella

@@ -137,7 +137,7 @@ object NasSync {
                     System.currentTimeMillis() - e.lastWriteTime.toEpochMillis() > 60 * 60 * 1000) {
                     // temporaneo di un invio interrotto più di un'ora fa: si toglie (se il NAS lo tiene ancora aperto, al prossimo giro)
                     runCatching { share.rm(if (dir.isEmpty()) name else "$dir\\$name") }
-                } else if (name.endsWith(".dng", ignoreCase = true)) {
+                } else if (RawFormats.isRaw(name)) {
                     found.putIfAbsent(name.lowercase(), dir)
                 }
             }

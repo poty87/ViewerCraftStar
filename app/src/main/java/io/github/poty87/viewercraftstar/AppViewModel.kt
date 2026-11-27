@@ -230,8 +230,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             loading = true
             val (problem, created) = withContext(Dispatchers.IO) { ensureSyncFolder(); ensureWorkFolder() }
             workProblem = problem
-            if (created) setStatus("ok", L.t("Creata la cartella di lavoro ${settings.workFolder}: fai arrivare lì i DNG nuovi.",
-                "Created the work folder ${settings.workFolder}: have new DNG files arrive there."))
+            if (created) setStatus("ok", L.t("Creata la cartella di lavoro ${settings.workFolder}: fai arrivare lì i raw nuovi.",
+                "Created the work folder ${settings.workFolder}: have new raw files arrive there."))
             photos = withContext(Dispatchers.IO) {
                 val app = getApplication<Application>()
                 val sync = Shipper.query(app, settings.phoneFolder, false)
@@ -533,7 +533,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val extra = if (catalog == null) L.t(" Elenco dei preset non ancora pubblicato da PresetCraftAppLicator.",
                     " Preset list not published by PresetCraftAppLicator yet.")
                 else L.t(" Preset: ${presets.size}.", " Presets: ${presets.size}.")
-                done(L.t("Connessione riuscita: $dng DNG nella cartella.", "Connected: $dng DNG files in the folder.") + extra, true)
+                done(L.t("Connessione riuscita: $dng raw nella cartella.", "Connected: $dng raw files in the folder.") + extra, true)
             }
                 .onFailure { done(L.t("Connessione non riuscita: ", "Connection failed: ") + (it.message ?: it.javaClass.simpleName), false) }
         }

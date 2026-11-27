@@ -266,8 +266,8 @@ private fun PermissionScreen(onAsk: () -> Unit) {
     Column(Modifier.fillMaxSize().background(C.bg).padding(32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         TitleText("ViewerCraftStar")
-        Text(L.t("Per mostrare i DNG della cartella serve il permesso di accedere a foto e video. Scegli «Consenti tutto»: con l'accesso solo ad alcune foto le altre non compaiono.",
-            "To show the DNG files of the folder the app needs access to photos and videos. Choose “Allow all”: with access to only some photos, the others won't appear."),
+        Text(L.t("Per mostrare i raw della cartella serve il permesso di accedere a foto e video. Scegli «Consenti tutto»: con l'accesso solo ad alcune foto le altre non compaiono.",
+            "To show the raw files of the folder the app needs access to photos and videos. Choose “Allow all”: with access to only some photos, the others won't appear."),
             color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp))
         Text(L.t("Insieme chiedo anche le notifiche (per seguire le spedizioni) e i dispositivi nelle vicinanze (per la fotocamera): così non te li chiedo più dopo.",
             "Together I also ask for notifications (to follow sending) and nearby devices (for the camera), so I won't ask again later."),

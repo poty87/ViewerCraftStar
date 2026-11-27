@@ -650,8 +650,8 @@ fun ViewerScreen(vm: AppViewModel, list: List<PhotoItem>, start: Int, onBack: ()
                         maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (m.presetId.isEmpty()) C.text else C.accent)
                 }
                 if (m.pending && m.notOnNas) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(L.t("Il DNG non è sul NAS: forse non è ancora stato caricato, o è stato cancellato dal NAS.",
-                        "The DNG isn't on the NAS: maybe not uploaded yet, or deleted from the NAS."),
+                    Text(L.t("Il raw non è sul NAS: forse non è ancora stato caricato, o è stato cancellato dal NAS.",
+                        "The raw file isn't on the NAS: maybe not uploaded yet, or deleted from the NAS."),
                         color = Color(0xFFFB923C), fontSize = 12.sp, modifier = Modifier.weight(1f))
                     PillButton(onClick = { vm.dropPending(item.name) }) {
                         Text(L.t("Togli dalla coda", "Remove from queue"))
@@ -925,7 +925,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
                 modifier = Modifier.padding(top = 6.dp))
         }
         SettingsCard(L.t("Permessi", "Permissions")) { PermissionsCard() }
-        SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
+        SettingsCard(L.t("Cartelle dei raw sul telefono", "Raw folders on the phone")) {
             PathRow(L.t("Cartella delle foto nuove (non sincronizzata)", "New photos folder (not synced)"), fullPath(work),
                 onBrowse = { picking = "work"; treePicker.launch(initialTree(work)) }, onEdit = { editing = "work" })
             PathRow(L.t("Cartella sincronizzata con il NAS", "Folder synced with the NAS"), fullPath(phone),
@@ -939,8 +939,8 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             user == nas.user && password == nas.password)
         val lockMsg = if (unlocked) null else L.t("Prova la connessione per scegliere la cartella.", "Test the connection to choose the folder.")
         SettingsCard("NAS") {
-            if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati dall'app di sincronizzazione (es. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
-                "The .xmp files are written next to the DNG files the sync app has already uploaded (e.g. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). On the NAS the app only writes .xmp files: it never deletes or changes photos."),
+            if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai raw già caricati dall'app di sincronizzazione (es. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
+                "The .xmp files are written next to the raw files the sync app has already uploaded (e.g. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). On the NAS the app only writes .xmp files: it never deletes or changes photos."),
                 color = C.muted, fontSize = 12.sp)
             Field(L.t("Indirizzo IP del NAS (es. 192.168.1.10)", "NAS IP address (e.g. 192.168.1.10)"), host) { host = it }
             Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
@@ -956,7 +956,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
                 onBrowse = { nasPick = "photos" }, onEdit = null, locked = lockMsg)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(sub, { sub = it })
-                Text(L.t("Cerca i DNG anche nelle sottocartelle", "Also look for DNG files in subfolders"), color = C.text)
+                Text(L.t("Cerca i raw anche nelle sottocartelle", "Also look for raw files in subfolders"), color = C.text)
             }
         }
         SettingsCard(L.t("Cartella di servizio", "Service folder")) {
