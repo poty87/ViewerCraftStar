@@ -690,7 +690,8 @@ private fun ActiveFilters(lib: LibraryViewModel) {
         Text(L.t("Azzera", "Clear all"), color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
             modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(C.accent).clickable { lib.clearFilters() }
                 .padding(horizontal = 12.dp, vertical = 6.dp))
-        if (lib.text.isNotBlank()) FilterTag("«${lib.aiText.trim()}»") { lib.text = "" }
+        // il testo del filtro per nome / parole chiave (non quello della ricerca IA, che ha la sua riga)
+        if (lib.text.isNotBlank()) FilterTag("«${lib.text.trim()}»") { lib.text = "" }
         if (lib.stars != StarFilter.ANY) FilterTag(starsText(lib.stars)) { lib.stars = StarFilter.ANY }
         if (lib.dateFrom != null || lib.dateTo != null)
             FilterTag("${lib.dateFrom?.format(f) ?: "…"} – ${lib.dateTo?.format(f) ?: "…"}") { lib.dateFrom = null; lib.dateTo = null }
