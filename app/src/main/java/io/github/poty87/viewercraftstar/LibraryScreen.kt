@@ -445,15 +445,10 @@ fun LibraryTitle(lib: LibraryViewModel, onOptions: () -> Unit) {
                     if (lib.libraries.size > 1) Icon(Icons.Filled.KeyboardArrowDown, L.t("Cambia libreria", "Change library"),
                         tint = C.text, modifier = Modifier.size(26.dp))
                 }
-                // mentre si aggiorna (da solo o col gesto) il posto della data dice che sta lavorando, con un tondo piccolo
-                lib.index?.let { Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(L.t("${it.photos.size} foto · ${it.stacks.size} pile · ", "${it.photos.size} photos · ${it.stacks.size} stacks · ") +
-                        (if (lib.loading) L.t("aggiornamento…", "updating…") else L.t("aggiornata ", "updated ") + dateText(it.updated)),
-                        color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false))
-                    if (lib.loading) CircularProgressIndicator(Modifier.padding(start = 6.dp).size(10.dp), color = C.accent,
-                        strokeWidth = 1.5.dp)
-                } }
+                // mentre si aggiorna il posto della data dice che sta lavorando (l'unico tondo è quello del gesto, in cima)
+                lib.index?.let { Text(L.t("${it.photos.size} foto · ${it.stacks.size} pile · ", "${it.photos.size} photos · ${it.stacks.size} stacks · ") +
+                    (if (lib.loading) L.t("aggiornamento…", "updating…") else L.t("aggiornata ", "updated ") + dateText(it.updated)),
+                    color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
             DropdownMenu(open, { open = false }) {
                 lib.libraries.forEach { name ->
