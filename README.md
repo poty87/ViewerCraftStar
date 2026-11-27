@@ -24,6 +24,8 @@ photos on the phone, review them and send them home to your NAS with all your ch
 
 <sub>Screenshots taken on a demo library: free photos from [Unsplash](https://unsplash.com/license) (via Lorem Picsum) and Ricoh GR sample raws from [raw.pixls.us](https://raw.pixls.us/) (CC0).</sub>
 
+> 📖 **Documentation:** [user manual](docs/manual.md) · [suite setup guide](https://github.com/poty87/PresetCraftAppLicator/blob/main/docs/suite-guide.md) — from the NAS to the phone, step by step · [VPN guide](docs/remote-access.md).
+
 ## Part of a suite
 
 This app is one of three independent tools that, together, build a **workflow for [LightCraft](https://github.com/storytold/lightcraft)
@@ -234,6 +236,8 @@ run with [LiteRT](https://github.com/google-ai-edge/LiteRT) (Apache 2.0).
 ---
 
 ## 🇮🇹 Italiano
+
+> 📖 **Documentazione:** [manuale utente](docs/manuale.md) · [guida della suite](https://github.com/poty87/PresetCraftAppLicator/blob/main/docs/guida-suite.md) — dal NAS al telefono, passo per passo · [guida VPN](docs/remote-access.md#-italiano).
 
 ViewerCraftStar porta sul telefono Android la tua libreria **LightCraft** di casa: la sfogli, ci cerchi dentro e la
 modifichi — e, se vuoi, importi sul telefono le foto nuove, le rivedi e le mandi a casa sul tuo NAS con tutte le tue
