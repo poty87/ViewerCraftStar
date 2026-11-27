@@ -13,6 +13,15 @@ Review the raw photos on your Android phone, rate and flag them, and send them h
 > **At the moment it works only with Ricoh GR DNG files** (tested with the GR IV), on Android 13 or later. It is the
 > phone side of [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator), which runs on the home PC.
 
+## Screenshots
+
+<table>
+<tr><td align="center"><img src="docs/screenshots/library.png" width="250" alt="Library with periods, stacks, stars and flags"><br><sub>Library with periods, stacks, stars and flags</sub></td><td align="center"><img src="docs/screenshots/ai-search.png" width="250" alt="Search by subject (AI)"><br><sub>Search by subject (AI)</sub></td><td align="center"><img src="docs/screenshots/viewer.png" width="250" alt="Flags, stars and labels"><br><sub>Flags, stars and labels</sub></td></tr>
+<tr><td align="center"><img src="docs/screenshots/editor.png" width="250" alt="Develop with LightCraft's engine"><br><sub>Develop with LightCraft's engine</sub></td><td align="center"><img src="docs/screenshots/masks.png" width="250" alt="AI object mask with one tap"><br><sub>AI object mask with one tap</sub></td><td align="center"><img src="docs/screenshots/filters.png" width="250" alt="Filters"><br><sub>Filters</sub></td></tr>
+</table>
+
+<sub>Screenshots taken on a demo library: free photos from [Unsplash](https://unsplash.com/license) (via Lorem Picsum) and Ricoh GR sample raws from [raw.pixls.us](https://raw.pixls.us/) (CC0).</sub>
+
 ## Part of a suite
 
 This app is one of three independent tools that, together, build a **workflow for [LightCraft](https://github.com/storytold/lightcraft)
@@ -203,6 +212,8 @@ sul NAS Synology e dentro **LightCraft** — con tutte le tue scelte. È la part
 
 > [!IMPORTANT]
 > **Per ora funziona solo con i DNG delle Ricoh GR** (provata con la GR IV), su Android 13 o successivo.
+
+Le schermate sono [in cima alla pagina](#screenshots).
 
 ### Fa parte di una suite
 
