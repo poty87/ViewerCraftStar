@@ -159,7 +159,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val t2 = System.currentTimeMillis()
                     // un nome di persona (dato in LightCraft) nella frase: solo le sue foto, ordinate per il resto
                     val (person, phrase) = splitPerson(idx, q)
-                    val sc = if (phrase.isEmpty()) FloatArray(vi.ids.size) { 1f } else vi.scores(enc.encode(aiPhrase(phrase)))
+                    val desc = AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))
+                    // la lingua della ricerca: le descrizioni del PC sono in italiano, quindi se qualche parola c'è è
+                    // italiano; altrimenti la lingua dell'app
+                    val italian = desc?.let { d -> Descriptions.stems(phrase).any { d.knows(it) } }?.takeIf { it }
+                        ?: (L.locale.language != "en")
+                    val sc = if (phrase.isEmpty()) FloatArray(vi.ids.size) { 1f } else vi.scores(enc.encode(aiPhrase(phrase, italian)))
                     val t3 = System.currentTimeMillis()
                     if (person != null) {
                         val mine = idx.photos.filter { p -> p.people.any { it.equals(person, ignoreCase = true) } }
@@ -170,8 +175,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     // salire o scendere le foto, non spostare la soglia (altrimenti ne escludono di giuste)
                     val visual = sc.copyOf() // per la soglia: senza le descrizioni (vedi cells)
                     // descrizioni (se ci sono): sale chi ha le parole cercate, scende un po' chi è descritta ma non le ha
-                    val desc = AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))
-                    val qw = Descriptions.stems(phrase)
+                    // solo le parole che compaiono in qualche descrizione: le altre (una ricerca in inglese con le
+                    // descrizioni in italiano, o una parola che il PC non usa mai) abbassavano tutte le foto sotto la soglia
+                    val qw = desc?.let { d -> Descriptions.stems(phrase).filter { d.knows(it) } }.orEmpty()
                     if (desc != null && qw.isNotEmpty()) for (i in sc.indices) {
                         if (sc[i] <= -1f) continue
                         val m = desc.match(vi.ids[i], qw) ?: continue
@@ -204,15 +210,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      * La frase data al modello: questi modelli rendono meglio con "una foto di …" che con la parola nuda (provato sulle
      * foto vere: «insetti» da 6 a 8 insetti veri nei primi 10). Se la frase parla già di foto si lascia com'è.
      */
-    private fun aiPhrase(q: String): String {
+    private fun aiPhrase(q: String, italian: Boolean): String {
         val l = q.lowercase()
         val already = listOf("foto", "una foto", "fotografia", "immagine", "photo", "a photo", "picture").any { l.startsWith(it) }
         // dopo un nome tolto la frase può cominciare con una preposizione («al mare»): «una foto al mare»
         val first = l.substringBefore(' ')
+        // nella lingua della ricerca: «una foto di a cup of coffee» abbassava il punteggio delle foto giuste
+        val en = !italian
         return when {
             already -> q
-            first in PREPOSITIONS -> "una foto $q"
-            else -> "una foto di $q"
+            first in PREPOSITIONS -> if (en) "a photo $q" else "una foto $q"
+            else -> if (en) "a photo of $q" else "una foto di $q"
         }
     }
 

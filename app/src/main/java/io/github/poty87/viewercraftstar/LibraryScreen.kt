@@ -446,7 +446,9 @@ fun LibraryTitle(lib: LibraryViewModel, onOptions: () -> Unit) {
                         tint = C.text, modifier = Modifier.size(26.dp))
                 }
                 // mentre si aggiorna il posto della data dice che sta lavorando (l'unico tondo è quello del gesto, in cima)
-                lib.index?.let { Text(L.t("${it.photos.size} foto · ${it.stacks.size} pile · ", "${it.photos.size} photos · ${it.stacks.size} stacks · ") +
+                lib.index?.let { val n = it.stacks.size
+                    Text(L.t("${it.photos.size} foto · $n " + (if (n == 1) "pila" else "pile") + " · ",
+                    "${it.photos.size} " + (if (it.photos.size == 1) "photo" else "photos") + " · $n " + (if (n == 1) "stack" else "stacks") + " · ") +
                     (if (lib.loading) L.t("aggiornamento…", "updating…") else L.t("aggiornata ", "updated ") + dateText(it.updated)),
                     color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }

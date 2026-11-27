@@ -328,6 +328,12 @@ class Descriptions(file: File) {
 
     private fun wordsOf(id: Int): Set<String> = words.getOrPut(id) { stems(text[id] ?: "").toSet() }
 
+    /** Tutte le parole delle descrizioni della libreria. */
+    private val vocabulary: Set<String> by lazy { text.keys.flatMapTo(HashSet()) { wordsOf(it) } }
+
+    /** La parola (o un suo sinonimo) compare in almeno una descrizione. */
+    fun knows(word: String): Boolean = word in vocabulary || SINONIMI[word]?.any { it in vocabulary } == true
+
     /**
      * Quota delle parole della ricerca presenti nella descrizione (0..1), o null se la foto non ha descrizione.
      * Una parola conta anche se nella descrizione c'è un suo sinonimo (vedi SINONIMI).
