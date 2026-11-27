@@ -1,17 +1,19 @@
 <h1 align="center">ViewerCraftStar</h1>
 
 <p align="center">
-Review the raw photos on your Android phone, rate and flag them, and send them home — to a Synology NAS and into
-<b>LightCraft</b> — with all your choices.<br>
+Your home <b>LightCraft</b> library on your Android phone: browse, search and edit it — and, if you like, import new
+photos on the phone, review them and send them home to your NAS with all your choices.<br>
 <a href="#-italiano">🇮🇹 Italiano</a> · <a href="https://github.com/poty87/ViewerCraftStar/releases/latest">⬇ Download</a> · <a href="https://buymeacoffee.com/poty87">☕ Buy me a coffee</a> · <a href="https://paypal.me/poty87">PayPal</a>
 </p>
 
 > ViewerCraftStar is an independent app. It is not made by, affiliated with or endorsed by the authors of
-> [LightCraft](https://github.com/storytold/lightcraft), Ricoh or Synology.
+> [LightCraft](https://github.com/storytold/lightcraft), Ricoh, Synology or any other NAS maker.
 
-> [!IMPORTANT]
-> **At the moment it works only with Ricoh GR DNG files** (tested with the GR IV), on Android 13 or later. It is the
-> phone side of [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator), which runs on the home PC.
+> [!NOTE]
+> Android 13 or later. It is the phone side of [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator),
+> which runs on the home PC, and works with any NAS with an SMB shared folder and with the photos of most cameras. Only
+> the direct Wi-Fi import from the camera is for **Ricoh GR** cameras (tested with the GR IV); importing from an external
+> disk works with any camera. See [Which cameras](#part-of-a-suite).
 
 ## Screenshots
 
@@ -25,36 +27,50 @@ Review the raw photos on your Android phone, rate and flag them, and send them h
 ## Part of a suite
 
 This app is one of three independent tools that, together, build a **workflow for [LightCraft](https://github.com/storytold/lightcraft)
-with your photos on a NAS**: shoot, review on the phone, send home, import with the right colours, and keep the NAS clean.
-Each one works on its own; together they cover the whole path.
+with your photos on a NAS** — any NAS or server with an SMB shared folder (Synology, QNAP, TrueNAS, Unraid, a Windows
+share…): bring the photos home, import them with the right colours, browse and edit your library from the phone, and keep
+the NAS clean. Each one works on its own; together they cover the whole path.
 
 | App | Runs on | What it does |
 |---|---|---|
-| [**PresetCraftAppLicator**](https://github.com/poty87/PresetCraftAppLicator) | Windows PC | Gives LightCraft photos the camera profile of the style they were shot with. Watches a NAS folder and imports new photos automatically; applies the ratings, flags, metadata and presets chosen on the phone and tells the phone which photos are safe at home. |
-| [**ViewerCraftStar**](https://github.com/poty87/ViewerCraftStar) | Android | Review the raw files on the phone (flags, stars, labels, metadata, LightCraft presets with preview), send them to the NAS through Synology Drive, follow them until they are safe on the NAS and in LightCraft, then free the phone. |
+| [**PresetCraftAppLicator**](https://github.com/poty87/PresetCraftAppLicator) | Windows PC | Watches a NAS folder and imports new photos into LightCraft automatically; applies the ratings, flags, metadata and presets chosen on the phone; puts your libraries on the phone, with optional search by subject (AI). For Ricoh GR cameras it also gives each photo the camera profile of the style it was shot with. |
+| [**ViewerCraftStar**](https://github.com/poty87/ViewerCraftStar) | Android | Browse, search and edit your whole LightCraft libraries on the phone. Optionally import new photos on the phone too (from a Ricoh GR camera or from an external disk), review them (flags, stars, labels, metadata, presets with preview) and send them to the NAS, following them until they are safe at home. |
 | [**CleanCraftNas**](https://github.com/poty87/CleanCraftNas) | Windows PC | Deletes from disk — even on the NAS — the photos you put in LightCraft's trash, so the NAS stays in step with the library. |
 
-**The workflow**
+**Which cameras.** The suite works with the photos of most cameras: whatever LightCraft opens (DNG, CR2/CR3, NEF, ARW,
+ORF, RAF, JPEG…; PresetCraftAppLicator can also convert proprietary raws to DNG with the free Adobe DNG Converter). For now
+only two things are specific to **Ricoh GR** cameras:
+- giving each photo the camera profile of its picture style (PresetCraftAppLicator);
+- downloading photos straight from the camera over Wi-Fi (ViewerCraftStar). The same import also works from an external
+  disk or card reader plugged into the phone, with DNGs and JPEGs from any camera.
 
-1. Shoot, and let the raw files reach the phone (for example with the camera's own app).
-2. **ViewerCraftStar**: review them, then *Send to the NAS* — Synology Drive uploads the photos and the app writes your
-   choices next to them (`.xmp`).
-3. **PresetCraftAppLicator** (home PC): imports them into LightCraft with the right camera profile and applies your choices.
-4. Edit in LightCraft; the photos you don't want go to LightCraft's trash.
-5. **CleanCraftNas**: deletes those photos from the NAS too.
+**Two ways to bring photos home**
 
-**Away from home** the phone reaches the NAS through a VPN to your home network: see the
-[remote access guide](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md) (Synology *VPN Server* with OpenVPN on the NAS, the VPN built into the app on the phone, port
-forwarding through one or two routers).
+- **The classic way, from the PC.** Copy the photos to the NAS as you always do (card reader, the camera's software, any
+  sync tool): PresetCraftAppLicator imports them from the watched folder. You can still browse, search, rate and edit them
+  from the phone, because the phone shows the whole library, not only what it sent.
+- **From the phone — a plus, not a requirement.** Import from the camera or an external disk, review on the phone and
+  *Send to the NAS*: the app moves the photos to a phone folder that your NAS's sync or backup app uploads (for example
+  Synology Drive, QNAP Qfile, Nextcloud, Syncthing) and writes your choices next to them (`.xmp`).
 
-## How it works
+Then edit in LightCraft; the photos you don't want go to LightCraft's trash, and **CleanCraftNas** deletes them from the
+NAS too.
+
+**Away from home** the phone reaches the NAS through a VPN to your home network (OpenVPN, built into ViewerCraftStar): see
+the [remote access guide](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md). The guide uses Synology's *VPN Server* as an example, but any
+OpenVPN server works (a router, another NAS brand, a PC).
+
+## Review and send from the phone (optional)
+
+This part is a plus: if your photos already reach the NAS from the PC, skip it and use the [Library](#library-your-home-lightcraft-library-on-the-phone).
 
 1. The raw files (DNG) arrive on the phone (for example from the camera's own app) in the app's **work folder**, which
    is *not* synced.
 2. In **To review** you look at them full screen, swipe between them and set **flags** (pick / reject), **stars**,
    **colour labels**, title, caption, keywords, creator and copyright, and optionally a LightCraft **preset**, previewed
    on the phone.
-3. **Send to the NAS** moves every photo to the folder that **Synology Drive** backs up to the NAS. **Rejected** photos
+3. **Send to the NAS** moves every photo to the phone folder that your NAS's sync app uploads (for example **Synology
+   Drive**, QNAP Qfile, Nextcloud, Syncthing). **Rejected** photos
    are not sent: they go to the phone's bin (recoverable for 30 days).
 4. As soon as each DNG is on the NAS, the app writes a small `.xmp` file next to it with your choices. On the home PC,
    PresetCraftAppLicator imports the photos into LightCraft with the right camera profile and applies ratings, flags,
@@ -126,30 +142,33 @@ reached.
 
 ## Away from home
 
-The app talks to the NAS over SMB on your home network. Away from home it needs a VPN to your home network — for example
-the free **VPN Server** package of Synology DSM with OpenVPN. The VPN is built into the app: the **shield in the bottom
+The app talks to the NAS over SMB on your home network. Away from home it needs a VPN to your home network: any OpenVPN
+server — your router, the NAS itself (for example the free **VPN Server** package of a Synology NAS) or a PC. The VPN is
+built into the app: the **shield in the bottom
 bar** turns it on and off (red dot off, yellow connecting, green on), and while it's on an Android notification offers
 "Turn off". The engine is the free **OpenVPN for Android** app (installed from the Play Store, never opened): the app
 passes it the whole configuration at each start through its public API, so the password stays only in ViewerCraftStar,
-encrypted. In **Settings › VPN** you import the zip exported by Synology VPN Server (also kept in the service folder and
+encrypted. In **Settings › VPN** you import the OpenVPN profile — an `.ovpn` file, or the zip exported by Synology VPN
+Server — (also kept in the service folder and
 in the settings backup), set the external server and port, user and password, and choose how it turns on: **manual**
 (default), **when the app opens** away from home, or **fully automatic** (experimental: also turns off on the home
 Wi-Fi, recognised by your NAS's identity, and pauses AdGuard). Android keeps one VPN at a time: if another one (such as
 AdGuard) is on, the shield explains it and opens that app. The top of the screen always shows whether the NAS can be
 reached (home network, via VPN, another VPN in the way, or not reachable).
 
-Synology Drive uploads the photos on its own, with its own settings (for example only on Wi-Fi), wherever you are.
+The NAS's sync app uploads the photos on its own, with its own settings (for example only on Wi-Fi), wherever you are.
 
-Step-by-step setup — DDNS, port forwarding through one or two routers, VPN Server, the `.ovpn` profile (including the fix
+Step-by-step setup, with a Synology NAS as the example — DDNS, port forwarding through one or two routers, VPN Server, the `.ovpn` profile (including the fix
 for file writes timing out on mobile data) and the phone: **[docs/remote-access.md](docs/remote-access.md)**.
 
 ## What you need
 
 - An Android phone with Android 13 or later.
-- A Synology NAS with **Synology Drive** backing up the phone's "sent" folder (Photo Backup), and an SMB share the app can
-  write to.
-- [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) with *automatic import* watching the same NAS
-  folder, on the PC where your LightCraft library is.
+- A NAS (or any server) with an SMB shared folder the app can reach and write to.
+- [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator) on the PC where your LightCraft library is: it
+  puts the libraries on the phone and, with *automatic import*, imports the photos arriving in the NAS folder.
+- Only to send photos from the phone: an app that uploads a phone folder to the NAS (for example Synology Drive, QNAP
+  Qfile, Nextcloud, Syncthing).
 
 ## Install and set up
 
@@ -160,7 +179,7 @@ for file writes timing out on mobile data) and the phone: **[docs/remote-access.
    no longer ask for confirmation every time. **Settings › Permissions** shows them all and grants the missing ones.
 3. In **Settings**:
    - **Work folder** (default `Pictures/VCS_Import_Photo/`, created if missing) and **folder synced with the NAS**
-     (default `Pictures/VCS_Dng_Sync/`, the one Synology Drive backs up);
+     (default `Pictures/VCS_Dng_Sync/`, the one your NAS's sync app uploads);
    - **NAS**: IP address, shared folder, folder inside the share, user and password — then *Test connection*;
    - default creator and copyright, and the sending notifications;
    - **Settings backup**: a zip in the service folder on the NAS (`backups/ViewerCraftStar`) with settings, photo
@@ -212,47 +231,66 @@ run with [LiteRT](https://github.com/google-ai-edge/LiteRT) (Apache 2.0).
 
 ## 🇮🇹 Italiano
 
-ViewerCraftStar serve a rivedere sul telefono Android i raw appena scattati, dare stelle e bandierine e mandarli a casa —
-sul NAS Synology e dentro **LightCraft** — con tutte le tue scelte. È la parte "telefono" di
-[PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator), che gira sul PC di casa.
+ViewerCraftStar porta sul telefono Android la tua libreria **LightCraft** di casa: la sfogli, ci cerchi dentro e la
+modifichi — e, se vuoi, importi sul telefono le foto nuove, le rivedi e le mandi a casa sul tuo NAS con tutte le tue
+scelte. È la parte "telefono" di [PresetCraftAppLicator](https://github.com/poty87/PresetCraftAppLicator), che gira sul
+PC di casa.
 
-> [!IMPORTANT]
-> **Per ora funziona solo con i DNG delle Ricoh GR** (provata con la GR IV), su Android 13 o successivo.
+> [!NOTE]
+> Android 13 o successivo. Funziona con qualsiasi NAS con una cartella condivisa SMB e con le foto della maggior parte
+> delle fotocamere. Solo l'importazione diretta via Wi-Fi dalla fotocamera è per le **Ricoh GR** (provata con la GR IV);
+> l'importazione da un disco esterno funziona con qualsiasi fotocamera.
 
 Le schermate sono [in cima alla pagina](#screenshots).
 
 ### Fa parte di una suite
 
 Questa app è uno di tre programmi indipendenti che, insieme, creano un **flusso di lavoro per
-[LightCraft](https://github.com/storytold/lightcraft) con le foto su un NAS**: scatti, rivedi sul telefono, spedisci a casa,
-importi con i colori giusti e tieni pulito il NAS. Ognuno funziona anche da solo; insieme coprono tutto il percorso.
+[LightCraft](https://github.com/storytold/lightcraft) con le foto su un NAS** — qualsiasi NAS o server con una cartella
+condivisa SMB (Synology, QNAP, TrueNAS, Unraid, una condivisione di Windows…): porti a casa le foto, le importi con i colori
+giusti, sfogli e modifichi la libreria dal telefono e tieni pulito il NAS. Ognuno funziona anche da solo; insieme coprono
+tutto il percorso.
 
 | App | Dove gira | A cosa serve |
 |---|---|---|
-| [**PresetCraftAppLicator**](https://github.com/poty87/PresetCraftAppLicator) | PC Windows | Dà alle foto di LightCraft il profilo della fotocamera dello stile con cui le hai scattate. Osserva una cartella del NAS e importa da solo le foto nuove; applica stelle, bandierine, metadati e preset scelti sul telefono e dice al telefono quali foto sono al sicuro a casa. |
-| [**ViewerCraftStar**](https://github.com/poty87/ViewerCraftStar) | Android | Rivedi i raw sul telefono (bandierine, stelle, etichette, metadati, preset di LightCraft con anteprima), spediscili sul NAS tramite Synology Drive, seguili finché sono al sicuro sul NAS e in LightCraft, poi libera il telefono. |
+| [**PresetCraftAppLicator**](https://github.com/poty87/PresetCraftAppLicator) | PC Windows | Osserva una cartella del NAS e importa da solo in LightCraft le foto nuove; applica stelle, bandierine, metadati e preset scelti sul telefono; porta le tue librerie sul telefono, con la ricerca per soggetto (IA) facoltativa. Con le Ricoh GR dà anche a ogni foto il profilo della fotocamera dello stile con cui l'hai scattata. |
+| [**ViewerCraftStar**](https://github.com/poty87/ViewerCraftStar) | Android | Sfogli, cerchi e modifichi sul telefono le tue librerie LightCraft complete. Se vuoi, importi anche le foto nuove dal telefono (da una Ricoh GR o da un disco esterno), le rivedi (bandierine, stelle, etichette, metadati, preset con anteprima) e le spedisci sul NAS, seguendole finché sono al sicuro a casa. |
 | [**CleanCraftNas**](https://github.com/poty87/CleanCraftNas) | PC Windows | Cancella dal disco — anche dal NAS — le foto che hai messo nel cestino di LightCraft, così il NAS resta allineato alla libreria. |
 
-**Il flusso di lavoro**
+**Quali fotocamere.** La suite funziona con le foto della maggior parte delle fotocamere: tutto quello che LightCraft apre
+(DNG, CR2/CR3, NEF, ARW, ORF, RAF, JPEG…; PresetCraftAppLicator sa anche convertire i raw proprietari in DNG con il gratuito
+Adobe DNG Converter). Per ora sono specifiche delle **Ricoh GR** solo due cose:
+- dare a ogni foto il profilo della fotocamera del suo stile (PresetCraftAppLicator);
+- scaricare le foto direttamente dalla fotocamera via Wi-Fi (ViewerCraftStar). La stessa importazione funziona anche da un
+  disco esterno o un lettore di schede collegato al telefono, con DNG e JPEG di qualsiasi fotocamera.
 
-1. Scatti e fai arrivare i raw sul telefono (per esempio con l'app della fotocamera).
-2. **ViewerCraftStar**: li rivedi e premi *Spedisci al NAS* — Synology Drive carica le foto e l'app scrive accanto a ognuna
-   le tue scelte (`.xmp`).
-3. **PresetCraftAppLicator** (PC di casa): le importa in LightCraft con il profilo giusto e applica le tue scelte.
-4. Lavori in LightCraft; le foto che non vuoi finiscono nel cestino di LightCraft.
-5. **CleanCraftNas**: cancella quelle foto anche dal NAS.
+**Due modi per portare le foto a casa**
 
-**Fuori casa** il telefono raggiunge il NAS con una VPN verso la rete di casa: vedi la
-[guida all'accesso da fuori casa](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md#-italiano) (*VPN Server* di Synology con OpenVPN sul NAS, la VPN dentro l'app sul
-telefono, inoltro della porta attraverso uno o due router).
+- **Quello classico, dal PC.** Copi le foto sul NAS come hai sempre fatto (lettore di schede, programma della fotocamera,
+  qualsiasi strumento di sincronizzazione): PresetCraftAppLicator le importa dalla cartella osservata. Dal telefono puoi
+  comunque sfogliarle, cercarle, dare stelle e modificarle, perché il telefono mostra tutta la libreria, non solo quello
+  che ha spedito lui.
+- **Dal telefono — un plus, non un obbligo.** Importi dalla fotocamera o da un disco esterno, rivedi sul telefono e premi
+  *Spedisci al NAS*: l'app sposta le foto in una cartella del telefono che l'app di sincronizzazione o backup del tuo NAS
+  carica (per esempio Synology Drive, QNAP Qfile, Nextcloud, Syncthing) e scrive accanto a ognuna le tue scelte (`.xmp`).
 
-**Come funziona**
+Poi lavori in LightCraft; le foto che non vuoi finiscono nel cestino di LightCraft e **CleanCraftNas** le cancella anche
+dal NAS.
+
+**Fuori casa** il telefono raggiunge il NAS con una VPN verso la rete di casa (OpenVPN, dentro ViewerCraftStar): vedi la
+[guida all'accesso da fuori casa](https://github.com/poty87/ViewerCraftStar/blob/main/docs/remote-access.md#-italiano). La guida usa come esempio il *VPN Server* di
+Synology, ma va bene qualsiasi server OpenVPN (un router, un NAS di altra marca, un PC).
+
+**Rivedere e spedire dal telefono (facoltativo)**
+
+È un plus: se le foto arrivano già sul NAS dal PC, puoi saltarlo e usare la **Libreria** (più sotto).
 
 1. I DNG arrivano sul telefono nella **cartella di lavoro** dell'app, che *non* è sincronizzata.
 2. In **Da rivedere** le guardi a tutto schermo, scorri tra una e l'altra e imposti **bandierine** (scelta / scartata),
    **stelle**, **etichette colore**, titolo, didascalia, parole chiave, autore, copyright e, se vuoi, un **preset** di
    LightCraft, con l'anteprima sul telefono.
-3. **Spedisci al NAS** sposta tutte le foto nella cartella che **Synology Drive** carica sul NAS. Le **scartate** non
+3. **Spedisci al NAS** sposta tutte le foto nella cartella del telefono che l'app di sincronizzazione del tuo NAS carica
+   (per esempio **Synology Drive**, QNAP Qfile, Nextcloud, Syncthing). Le **scartate** non
    partono: vanno nel cestino del telefono (recuperabili per 30 giorni).
 4. Appena ogni DNG è sul NAS l'app gli scrive accanto un piccolo `.xmp` con le tue scelte; sul PC di casa
    PresetCraftAppLicator importa le foto in LightCraft con il profilo giusto e applica stelle, bandierine, etichette,
@@ -315,24 +353,27 @@ di servizio sul NAS (*Importazione automatica › Librerie da consultare sul tel
 
 L'indice resta sul telefono: la libreria si sfoglia (e si modifica — le modifiche aspettano) anche senza NAS.
 
-**Fuori casa** serve una VPN verso la rete di casa, per esempio il pacchetto gratuito **VPN Server** di Synology con
-OpenVPN. La VPN è dentro l'app: lo **scudo nella barra in basso** la accende e la spegne (pallino rosso spenta, giallo
+**Fuori casa** serve una VPN verso la rete di casa: qualsiasi server OpenVPN — il router, il NAS stesso (per esempio il
+pacchetto gratuito **VPN Server** di un NAS Synology) o un PC. La VPN è dentro l'app: lo **scudo nella barra in basso** la accende e la spegne (pallino rosso spenta, giallo
 in collegamento, verde accesa) e, mentre è accesa, una notifica di Android offre «Spegni». Il motore è l'app gratuita
 **OpenVPN for Android** (dal Play Store, mai da aprire): a ogni accensione l'app le passa la configurazione completa con
-la sua API pubblica, quindi la password resta solo in ViewerCraftStar, cifrata. In **Impostazioni › VPN** importi lo
-zip esportato da Synology VPN Server (tenuto anche nella cartella di servizio e nel backup), imposti server e porta
+la sua API pubblica, quindi la password resta solo in ViewerCraftStar, cifrata. In **Impostazioni › VPN** importi il
+profilo OpenVPN — un file `.ovpn`, o lo zip esportato da Synology VPN Server — (tenuto anche nella cartella di servizio e
+nel backup), imposti server e porta
 esterni, utente e password, e scegli come si accende: **manuale** (di partenza), **all'avvio dell'app** fuori casa, o
 **completamente automatica** (sperimentale: si spegne anche sul Wi-Fi di casa, riconosciuto dall'identità del NAS, e
 mette in pausa AdGuard). Android tiene una VPN alla volta: se ce n'è un'altra accesa (come AdGuard) lo scudo lo spiega e
 apre quell'app. In alto l'app mostra sempre se il NAS è raggiungibile (rete di casa, via VPN, un'altra VPN in mezzo, non
-raggiungibile). Synology Drive carica le foto per conto suo, con le sue impostazioni, ovunque tu sia.
-La configurazione passo per passo — DDNS, inoltro della porta attraverso uno o due router, VPN Server, il profilo `.ovpn`
+raggiungibile). L'app di sincronizzazione del NAS carica le foto per conto suo, con le sue impostazioni, ovunque tu sia.
+La configurazione passo per passo, con un NAS Synology come esempio — DDNS, inoltro della porta attraverso uno o due router, VPN Server, il profilo `.ovpn`
 (compresa la correzione per le scritture che vanno in timeout sui dati mobili) e il telefono — è nella
 **[guida all'accesso da fuori casa](docs/remote-access.md#-italiano)**.
 
-**Cosa serve**: un telefono Android 13 o successivo; un NAS Synology con **Synology Drive** che fa il backup della cartella
-"spedite" del telefono e una cartella condivisa SMB in cui l'app può scrivere; PresetCraftAppLicator con l'*importazione
-automatica* sulla stessa cartella del NAS, sul PC con la libreria LightCraft.
+**Cosa serve**: un telefono Android 13 o successivo; un NAS (o qualsiasi server) con una cartella condivisa SMB che l'app
+raggiunge e in cui può scrivere; PresetCraftAppLicator sul PC con la libreria LightCraft, che porta le librerie sul
+telefono e, con l'*importazione automatica*, importa le foto che arrivano nella cartella del NAS. Solo per spedire le foto
+dal telefono: un'app che carica una cartella del telefono sul NAS (per esempio Synology Drive, QNAP Qfile, Nextcloud,
+Syncthing).
 
 **Installazione e impostazioni**
 
@@ -343,7 +384,8 @@ automatica* sulla stessa cartella del NAS, sul PC con la libreria LightCraft.
    spostare nel cestino non chiedono più conferma ogni volta. **Impostazioni › Permessi** li mostra tutti e concede
    quelli che mancano.
 3. Nelle **Impostazioni**: cartella di lavoro (predefinita `Pictures/VCS_Import_Photo/`, creata se manca) e cartella
-   sincronizzata con il NAS (predefinita `Pictures/VCS_Dng_Sync/`); dati del NAS (IP, cartella condivisa, cartella
+   sincronizzata con il NAS (predefinita `Pictures/VCS_Dng_Sync/`, quella che carica l'app di sincronizzazione del NAS);
+   dati del NAS (IP, cartella condivisa, cartella
    interna, utente e password) e *Prova connessione*; autore e copyright predefiniti; notifiche della spedizione;
    **backup delle impostazioni**: uno zip nella cartella di servizio sul NAS (`backups/ViewerCraftStar`) con
    impostazioni, metadati delle foto e modifiche alle librerie in attesa — mai la password del NAS — e *Ripristina…*

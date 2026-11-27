@@ -6,10 +6,16 @@ At home, ViewerCraftStar talks to the NAS directly on your local network (SMB). 
 from the internet — and it should not be: opening SMB to the internet is unsafe. Instead the phone joins your home network
 through a **VPN**. This is the setup used while building the suite; it needs no paid service and no third-party account.
 
+> [!NOTE]
+> This guide uses a **Synology** NAS as the example, because it is the one the suite was built with. ViewerCraftStar works
+> with **any OpenVPN server**: your router (many have one built in), a NAS of another brand (QNAP, TrueNAS, Unraid…) or a
+> PC. The router steps (DDNS, port forwarding) are the same; the server part follows your device's own guide, and in the
+> app you import its `.ovpn` profile.
+
 - **On the NAS**: Synology **VPN Server** package (free, in Package Center), protocol **OpenVPN**.
 - **On the phone**: the VPN built into ViewerCraftStar, with the free **OpenVPN for Android** app (Google Play) as its
   engine, never opened.
-- **Synology Drive** does not need the VPN: it reaches the NAS on its own. The VPN is only for ViewerCraftStar (sending the
+- The NAS's sync app (here **Synology Drive**) does not need the VPN: it reaches the NAS on its own. The VPN is only for ViewerCraftStar (sending the
   metadata, knowing which photos are safe, importing presets).
 
 The examples below use placeholders — replace them with your own values:
@@ -119,10 +125,16 @@ A casa ViewerCraftStar parla con il NAS direttamente sulla rete locale (SMB). Fu
 internet — ed è giusto così: aprire SMB su internet non è sicuro. Il telefono entra invece nella rete di casa con una
 **VPN**. Questa è la configurazione usata mentre la suite veniva costruita: niente servizi a pagamento né account di terzi.
 
+> [!NOTE]
+> Questa guida usa come esempio un NAS **Synology**, perché è quello con cui è stata costruita la suite. ViewerCraftStar
+> funziona con **qualsiasi server OpenVPN**: il router (molti ce l'hanno già), un NAS di un'altra marca (QNAP, TrueNAS,
+> Unraid…) o un PC. I passaggi sul router (DDNS, inoltro della porta) sono gli stessi; la parte del server segue la guida
+> del tuo dispositivo, e nell'app importi il suo profilo `.ovpn`.
+
 - **Sul NAS**: il pacchetto **VPN Server** di Synology (gratuito, nel Centro pacchetti), protocollo **OpenVPN**.
 - **Sul telefono**: la VPN dentro ViewerCraftStar, con l'app gratuita **OpenVPN for Android** (Google Play) come
   motore, mai da aprire.
-- **Synology Drive** non ha bisogno della VPN: raggiunge il NAS per conto suo. La VPN serve solo a ViewerCraftStar (invio dei
+- L'app di sincronizzazione del NAS (qui **Synology Drive**) non ha bisogno della VPN: raggiunge il NAS per conto suo. La VPN serve solo a ViewerCraftStar (invio dei
   metadati, sapere quali foto sono al sicuro, importare preset).
 
 Gli esempi usano dei segnaposto da sostituire con i tuoi valori:
