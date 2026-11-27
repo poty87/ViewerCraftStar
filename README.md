@@ -72,13 +72,19 @@ LightCraft when it is on.
 
 ## Straight from a RICOH GR camera
 
-The round camera button at the bottom left of **To review** downloads the photos straight from a RICOH GR (tested with
+The round import button at the bottom left of **To review** opens a menu: **Camera** or **External disk**. Camera
+downloads the photos straight from a RICOH GR (tested with
 the GR IV), without the camera maker's app: the phone wakes the camera over Bluetooth, turns on its Wi-Fi, joins it and
 shows the photos with thumbnails, grouped by day, month or year. Downloaded DNGs land in the work folder, ready in To
 review; JPEGs go to the phone's gallery (`DCIM/Camera`). Files get the same names as with the camera maker's app
 (capture time in milliseconds + the camera's file name), and photos already on the phone or the NAS are not downloaded
 again. To pair a new camera, the app shows the steps (on the camera: Wireless Communication › Pairing › Execute
 Pairing, then press OK twice while the QR code is shown). Plain http is allowed only towards the camera (192.168.0.1).
+
+**External disk** imports from a USB stick, disk or card reader plugged into the phone, through Android's folder picker:
+the first time it opens on the plugged-in disk (tap «Use this folder» and «Allow»), afterwards that disk opens directly.
+The page works like the camera one (format, grouping, already-imported photos dimmed, copy in the background with the
+same file names). Android reads FAT32 and exFAT disks, not NTFS.
 
 ## Library: your home LightCraft library on the phone
 
@@ -259,14 +265,18 @@ Dopo *Spedisci al NAS* il lavoro continua in background, con una notifica e una 
 chiusa, e si ferma da solo quando tutte le foto sono al sicuro sul NAS con i metadati: in LightCraft le porta il PC di
 casa quando è acceso.
 
-**Direttamente dalla fotocamera RICOH GR.** Il pulsante tondo con la fotocamera in basso a sinistra in **Da rivedere**
-scarica le foto direttamente da una RICOH GR (provata con la GR IV), senza l'app del produttore: il telefono sveglia la
+**Direttamente dalla fotocamera RICOH GR o da un disco esterno.** Il pulsante tondo di importazione in basso a sinistra in
+**Da rivedere** apre un menu: **Fotocamera** o **Disco esterno**. Fotocamera scarica le foto direttamente da una RICOH GR (provata con la GR IV), senza l'app del produttore: il telefono sveglia la
 fotocamera via Bluetooth, ne accende il Wi-Fi, ci si collega e mostra le foto con le miniature, per giorno, mese o anno.
 I DNG scaricati vanno nella cartella di lavoro, pronti in Da rivedere; i JPEG nella galleria del telefono
 (`DCIM/Camera`). I file hanno gli stessi nomi dell'app del produttore (ora di scatto in millisecondi + il nome del file
 della fotocamera) e le foto già sul telefono o sul NAS non si riscaricano. Per associare una fotocamera nuova l'app
 mostra i passaggi (sulla fotocamera: Wireless Communication › Pairing › Execute Pairing, poi OK due volte mentre è
-visibile il QR). L'http non cifrato è permesso solo verso la fotocamera (192.168.0.1).
+visibile il QR). L'http non cifrato è permesso solo verso la fotocamera (192.168.0.1). **Disco esterno** importa da una
+chiavetta, un disco o un lettore di schede collegato al telefono, tramite il selettore di cartelle di Android: la prima
+volta si apre sul disco collegato («Usa questa cartella» e «Consenti»), dopo quel disco si apre da solo. La pagina è come
+quella della fotocamera (formato, raggruppamento, foto già importate scure, copia in background con gli stessi nomi).
+Android legge i dischi FAT32 ed exFAT, non NTFS.
 
 **Libreria: la libreria LightCraft di casa sul telefono.** La scheda **Libreria** mostra le tue librerie LightCraft — tutte,
 non solo le foto spedite dal telefono — dall'indice che PresetCraftAppLicator (1.15.0 o successivo) scrive in una cartella

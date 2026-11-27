@@ -160,10 +160,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     // un nome di persona (dato in LightCraft) nella frase: solo le sue foto, ordinate per il resto
                     val (person, phrase) = splitPerson(idx, q)
                     val desc = AiEngine.descriptions(AiStore.descriptionsFile(getApplication(), idx.library))
-                    // la lingua della ricerca: le descrizioni del PC sono in italiano, quindi se qualche parola c'è è
-                    // italiano; altrimenti la lingua dell'app
-                    val italian = desc?.let { d -> Descriptions.stems(phrase).any { d.knows(it) } }?.takeIf { it }
-                        ?: (L.locale.language != "en")
+                    // la lingua della ricerca: se qualche parola compare nelle descrizioni, è quella delle descrizioni
+                    // (scelta in PresetCraftAppLicator 1.34, nel manifest; prima erano sempre in italiano); altrimenti
+                    // la lingua dell'app
+                    val descLang = aiManifest?.optJSONObject("descriptions")?.optString("lang").orEmpty().ifEmpty { "it" }
+                    val italian = if (desc != null && Descriptions.stems(phrase).any { desc.knows(it) }) descLang == "it"
+                        else L.locale.language != "en"
                     val sc = if (phrase.isEmpty()) FloatArray(vi.ids.size) { 1f } else vi.scores(enc.encode(aiPhrase(phrase, italian)))
                     val t3 = System.currentTimeMillis()
                     if (person != null) {

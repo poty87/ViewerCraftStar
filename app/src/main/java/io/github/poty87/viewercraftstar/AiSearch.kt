@@ -348,7 +348,10 @@ class Descriptions(file: File) {
     companion object {
         private val STOP = ("di a da in con su per tra fra il lo la i gli le un uno una e o al allo alla ai agli alle del " +
             "dello della dei degli delle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle col coi che " +
-            "foto immagine").split(' ').toSet()
+            "foto immagine " +
+            // in inglese (descrizioni scritte in inglese, PresetCraftAppLicator 1.34)
+            "the and with for from into onto over under near are this that these those its his her their some photo " +
+            "picture image").split(' ').toSet()
 
         /**
          * Sinonimi (già normalizzati come da stems): il modello delle descrizioni scrive spesso «auto classica» o
