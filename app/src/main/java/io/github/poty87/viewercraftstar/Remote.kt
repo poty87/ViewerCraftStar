@@ -73,16 +73,24 @@ object Remote {
             return withContext(Dispatchers.IO) {
                 try {
                     work(slot.share(cfg, share))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     slot.reset()
                     work(slot.share(cfg, share))
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // annullata (una miniatura uscita dallo schermo, una pagina chiusa): la connessione è buona, si tiene
+            throw e
         } catch (e: Exception) {
             slot.reset()
             throw e
         } finally {
-            slots.send(slot)
+            // trySend e non send: in una coroutine annullata send si interrompe SENZA restituire la connessione, e dopo
+            // quattro annullamenti (scorrendo veloce la galleria) tutte le letture aspettavano per sempre (editor fermo
+            // sul tondo, miniature grigie fino al riavvio dell'app). Il posto nel canale c'è sempre: trySend riesce
+            slots.trySend(slot)
         }
     }
 
