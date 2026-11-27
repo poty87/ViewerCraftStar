@@ -578,7 +578,7 @@ private fun CameraThumb(network: Network, p: GrCamera.Photo, names: Set<String>)
 
 /** L'icona «associa una fotocamera»: una fotocamera con un + nel tondo in alto a destra. */
 @Composable
-fun CameraPlusIcon(modifier: Modifier, color: Color) {
+fun CameraPlusIcon(modifier: Modifier, color: Color, plus: Boolean = true) {
     androidx.compose.foundation.Canvas(modifier) {
         val w = size.width
         val h = size.height
@@ -592,6 +592,7 @@ fun CameraPlusIcon(modifier: Modifier, color: Color) {
         // obiettivo, al centro del corpo
         drawCircle(color, radius = w * 0.14f, center = androidx.compose.ui.geometry.Offset(w * 0.50f, h * 0.56f), style = stroke)
         // il + in un tondo, in alto a destra
+        if (!plus) return@Canvas
         val c = androidx.compose.ui.geometry.Offset(w * 0.86f, h * 0.22f)
         drawCircle(C.accent, radius = w * 0.20f, center = c)
         val a = w * 0.11f
@@ -602,4 +603,4 @@ fun CameraPlusIcon(modifier: Modifier, color: Color) {
 }
 
 /** Il verde di «fatto» (lo stesso delle casette verdi di Importa). */
-private val GREEN = Color(0xFF4ADE80)
+internal val GREEN = Color(0xFF4ADE80)

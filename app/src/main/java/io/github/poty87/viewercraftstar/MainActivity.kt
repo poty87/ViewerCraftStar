@@ -167,6 +167,7 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
         "viewer" -> ViewerScreen(vm, list, start) { screen = "grid" }
         "libviewer" -> LibraryViewer(lib, libList, start) { screen = "grid" }
         "camera" -> CameraScreen(vm) { screen = "grid"; vm.reload() }
+        "disk" -> DiskScreen(vm) { screen = "grid"; vm.reload() }
         // la barra in basso sta sopra le pagine (traslucida): le liste le scorrono sotto, con lo spazio in fondo per l'ultima riga
         else -> androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
             val density = androidx.compose.ui.platform.LocalDensity.current
@@ -178,7 +179,7 @@ private fun App(vm: AppViewModel, lib: LibraryViewModel) {
                 else if (tab == "notices") NoticesScreen()
                 else GridScreen(vm, lib, gridState, libState, onOpen = { i -> list = vm.visible; start = i; screen = "viewer" },
                     onOpenLib = { photos, i -> libList = photos; start = i; screen = "libviewer" },
-                    onCamera = { screen = "camera" })
+                    onCamera = { screen = "camera" }, onDisk = { screen = "disk" })
             }
             }
             androidx.compose.animation.AnimatedVisibility(barShown, Modifier.align(Alignment.BottomCenter),

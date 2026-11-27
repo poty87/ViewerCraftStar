@@ -158,7 +158,8 @@ private fun FlagBadge(flag: Flag, size: Dp) {
 @Composable
 fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
                libState: androidx.compose.foundation.lazy.LazyListState,
-               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit, onCamera: () -> Unit = {}) {
+               onOpen: (Int) -> Unit, onOpenLib: (List<LibPhoto>, Int) -> Unit, onCamera: () -> Unit = {},
+               onDisk: () -> Unit = {}) {
     var options by remember { mutableStateOf(false) }
     if (options) GalleryOptionsSheet(lib) { options = false }
     vm.vpnAsk?.let { names ->
@@ -209,8 +210,8 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
                     vm.countIn(vm.section) > 0 -> EmptyStateFill(EmptyGlyph.SEARCH, L.t("Nessuna foto con questi filtri", "No photos match these filters"),
                         L.t("Prova a toglierne qualcuno.", "Try removing some."))
                     vm.section == Section.REVIEW -> EmptyStateFill(EmptyGlyph.DONE, L.t("Tutto fatto", "All done"),
-                        L.t("Nessuna foto da rivedere. Scarica le nuove dalla fotocamera con il tondo in basso a sinistra.",
-                            "No photos to review. Download new ones from the camera with the round button at the bottom left."))
+                        L.t("Nessuna foto da rivedere. Importa le nuove dalla fotocamera o da un disco esterno con il tondo in basso a sinistra.",
+                            "No photos to review. Import new ones from the camera or an external disk with the round button at the bottom left."))
                     else -> EmptyStateFill(EmptyGlyph.SENT, L.t("Niente in viaggio", "Nothing on its way"),
                         L.t("Le foto spedite al NAS restano qui finché non le togli dal telefono.",
                             "Photos sent to the NAS stay here until you remove them from the phone."))
@@ -237,11 +238,21 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
         }
         if (vm.inLibrary && lib.showTrash && lib.selected.isNotEmpty()) TrashSelectionBar(lib, Modifier.align(Alignment.BottomCenter))
         else if (vm.inLibrary && !lib.showTrash && lib.selecting) LibrarySelectionBar(lib, Modifier.align(Alignment.BottomCenter))
-        // Importa: associare la fotocamera e scaricarne le foto (RICOH GR, al posto di GR World), tondo in basso a sinistra
-        // solo in «Da rivedere»: dalla fotocamera arrivano foto nuove, in «Spedite» non serve
-        if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom()).size(58.dp)
-            .clip(CircleShape).background(C.cardHigh).clickable { onCamera() }, contentAlignment = Alignment.Center) {
-            CameraPlusIcon(Modifier.size(32.dp), C.text)
+        // Importa: tondo in basso a sinistra, solo in «Da rivedere» (in «Spedite» non serve). Un tocco apre il menu da dove
+        // importare: la fotocamera (RICOH GR, al posto di GR World) o un disco esterno collegato al telefono
+        if (!vm.inLibrary && vm.section == Section.REVIEW) Box(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = fabBottom())) {
+            var open by remember { mutableStateOf(false) }
+            Box(Modifier.size(58.dp).clip(CircleShape).background(C.cardHigh).clickable { open = true }, contentAlignment = Alignment.Center) {
+                ImportPlusIcon(Modifier.size(32.dp), C.text)
+            }
+            androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                androidx.compose.material3.DropdownMenuItem({ Text(L.t("Fotocamera", "Camera"), color = C.text) },
+                    onClick = { open = false; onCamera() },
+                    leadingIcon = { CameraPlusIcon(Modifier.size(22.dp), C.text, plus = false) })
+                androidx.compose.material3.DropdownMenuItem({ Text(L.t("Disco esterno", "External disk"), color = C.text) },
+                    onClick = { open = false; onDisk() },
+                    leadingIcon = { UsbDiskIcon(Modifier.size(22.dp), C.text) })
+            }
         }
         // «Spedisci al NAS»: tondo blu in basso a destra, allo stesso livello della fotocamera, con il numero di foto
         if (!vm.inLibrary && vm.section == Section.REVIEW) {

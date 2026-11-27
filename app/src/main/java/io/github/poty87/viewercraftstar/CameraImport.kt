@@ -32,15 +32,18 @@ object CameraImport {
     /** Byte della foto in corso: (arrivati, totali). */
     var bytesNow by mutableStateOf<Pair<Long, Long>?>(null)
     var running by mutableStateOf(false); private set
+    /** Lo scarico in corso viene da un disco esterno (non dalla fotocamera): cambia solo il testo della notifica. */
+    var fromDisk = false; private set
     /** Foto scaricate (percorso sulla fotocamera) in questo collegamento: la spunta verde. */
     var done by mutableStateOf(setOf<String>())
 
     /** Cosa fare a lavoro finito se la pagina è stata chiusa nel frattempo (staccarsi dalla fotocamera). */
     private val afterwards = ArrayList<() -> Unit>()
 
-    fun start(context: Context, work: suspend () -> Unit) {
+    fun start(context: Context, disk: Boolean = false, work: suspend () -> Unit) {
         if (running) return
         running = true
+        fromDisk = disk
         val app = context.applicationContext
         runCatching { app.startForegroundService(Intent(app, CameraImportService::class.java)) }
         scope.launch {
@@ -96,7 +99,10 @@ class CameraImportService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
         val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(if (p == null) L.t("Scarico dalla fotocamera", "Downloading from the camera")
+            .setContentTitle(if (CameraImport.fromDisk) {
+                if (p == null) L.t("Copio dal disco esterno", "Copying from the external disk")
+                else L.t("Copio dal disco esterno: foto ${p.first} di ${p.second}", "Copying from the external disk: photo ${p.first} of ${p.second}")
+            } else if (p == null) L.t("Scarico dalla fotocamera", "Downloading from the camera")
                 else L.t("Scarico dalla fotocamera: foto ${p.first} di ${p.second}", "Downloading from the camera: photo ${p.first} of ${p.second}"))
             .setContentText(L.t("Continua anche se passi a un'altra app.", "It goes on even if you switch to another app."))
             .setContentIntent(open)
