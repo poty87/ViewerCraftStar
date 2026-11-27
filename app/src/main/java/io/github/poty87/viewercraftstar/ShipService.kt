@@ -117,8 +117,8 @@ class ShipService : Service() {
                 val missing = outcome.getOrNull()?.let { there -> mine.count { it.name.lowercase() !in there } } ?: 0
                 val detail = when {
                     outcome.isFailure -> L.t("Il NAS non ha risposto, riprovo tra poco.", "The NAS didn't answer, retrying shortly.")
-                    missing > 0 -> L.t("In attesa che Synology Drive carichi le foto ($missing di ${mine.size} non ancora sul NAS).",
-                        "Waiting for Synology Drive to upload the photos ($missing of ${mine.size} not on the NAS yet).")
+                    missing > 0 -> L.t("In attesa che l'app di sincronizzazione carichi le foto ($missing di ${mine.size} non ancora sul NAS).",
+                        "Waiting for the sync app to upload the photos ($missing of ${mine.size} not on the NAS yet).")
                     onNas < mine.size -> L.t("Invio dei metadati al NAS…", "Sending the metadata to the NAS…")
                     nas.pcPhase == "waiting" -> L.t("LightCraft è aperto sul PC di casa: le foto entrano in libreria quando lo chiudi.",
                         "LightCraft is open on the home PC: photos enter the library when you close it.")

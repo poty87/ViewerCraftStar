@@ -29,8 +29,9 @@ object NasSync {
     /** Quello che c'è sul NAS: preset, resoconto, battito del PC di casa, DNG presenti (nomi in minuscolo). */
     class Look(val catalog: String?, val status: String?, val heartbeat: String?, val names: Set<String>)
 
-    /** Cartelle di servizio di Synology e Windows: non si guardano. */
-    private val SKIP = setOf("@eadir", "#recycle", "#snapshot", ".synologyworkingdirectory", "\$recycle.bin")
+    /** Cartelle di servizio dei NAS (Synology, QNAP) e di Windows: non si guardano. */
+    private val SKIP = setOf("@eadir", "#recycle", "#snapshot", ".synologyworkingdirectory", "\$recycle.bin",
+        "@recycle", ".@__thumb", "@recently-snapshot", ".streams")
 
     private fun client() = SMBClient(
         SmbConfig.builder().withTimeout(15, TimeUnit.SECONDS).withSoTimeout(30, TimeUnit.SECONDS).build()

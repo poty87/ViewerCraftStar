@@ -15,8 +15,9 @@ import java.util.concurrent.TimeUnit
  * delle sottocartelle di una cartella. Solo lettura.
  */
 object NasBrowse {
-    /** Cartelle di servizio di Synology e Windows: non si mostrano. */
-    private val SKIP = setOf("@eadir", "#recycle", "#snapshot", ".synologyworkingdirectory", "\$recycle.bin", "system volume information")
+    /** Cartelle di servizio dei NAS (Synology, QNAP) e di Windows: non si mostrano. */
+    private val SKIP = setOf("@eadir", "#recycle", "#snapshot", ".synologyworkingdirectory", "\$recycle.bin", "system volume information",
+        "@recycle", ".@__thumb", "@recently-snapshot", ".streams")
 
     private fun <T> session(host: String, user: String, password: String, work: (Session) -> T): T {
         SMBClient(SmbConfig.builder().withTimeout(15, TimeUnit.SECONDS).withSoTimeout(30, TimeUnit.SECONDS).build()).use { client ->

@@ -404,8 +404,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (withContext(Dispatchers.IO) { Shipper.reachable(cfg.host) }) Shipper.startBackground(getApplication(), names)
                 else vpnAsk = names
             }
-            val parts = mutableListOf(L.t("$moved foto spostate in $target: Synology Drive le caricherà sul NAS, poi l'app invierà i metadati.",
-                "$moved photos moved to $target: Synology Drive will upload them to the NAS, then the app sends the metadata."))
+            val parts = mutableListOf(L.t("$moved foto spostate in $target: l'app di sincronizzazione le caricherà sul NAS, poi l'app invierà i metadati.",
+                "$moved photos moved to $target: the sync app will upload them to the NAS, then the app sends the metadata."))
             if (binned > 0) parts += L.t("$binned scartate nel cestino del telefono (recuperabili per 30 giorni).",
                 "$binned rejected photos moved to the phone's bin (recoverable for 30 days).")
             if (s.clash.isNotEmpty()) parts += L.t("${s.clash.size} non spostate: in $target c'è già un file con lo stesso nome.",
@@ -467,8 +467,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (gone.isNotEmpty()) parts += L.t("${gone.size} tolte dalla coda (non più né sul telefono né sul NAS)",
                     "${gone.size} removed from the queue (no longer on the phone or the NAS)")
                 if (waiting > 0) parts += L.t(
-                    "$waiting non ancora sul NAS (Synology Drive non le ha ancora caricate)",
-                    "$waiting not on the NAS yet (Synology Drive hasn't uploaded them yet)")
+                    "$waiting non ancora sul NAS (l'app di sincronizzazione non le ha ancora caricate)",
+                    "$waiting not on the NAS yet (the sync app hasn't uploaded them yet)")
                 if (r.failed.isNotEmpty()) parts += L.t("${r.failed.size} con errori", "${r.failed.size} with errors")
                 // invio automatico senza niente di fatto: non copre i messaggi delle azioni dell'utente
                 if (!(quiet && r.sent.isEmpty() && r.failed.isEmpty() && gone.isEmpty()))

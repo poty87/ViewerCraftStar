@@ -137,12 +137,12 @@ fun VpnCard(vm: AppViewModel, nasReachable: Boolean) {
         } else Text(L.t("«OpenVPN for Android» è installata.", "“OpenVPN for Android” is installed."), color = C.text, fontSize = 14.sp)
         // 2) il profilo
         Text(if (hasProfile) L.t("Profilo: ", "Profile: ") + profileInfo
-            else L.t("Nessun profilo: importa lo zip esportato da Synology VPN Server (OpenVPN › Esporta configurazione).",
-                "No profile: import the zip exported from Synology VPN Server (OpenVPN › Export configuration)."),
+            else L.t("Nessun profilo: importa il profilo OpenVPN del tuo server (un file .ovpn, o lo zip esportato per esempio da Synology VPN Server).",
+                "No profile: import your server's OpenVPN profile (an .ovpn file, or the zip exported for example by Synology VPN Server)."),
             color = if (hasProfile) C.text else C.muted, fontSize = 13.sp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PillButton(onClick = { picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/x-openvpn-profile", "application/octet-stream", "*/*")) },
-                primary = !hasProfile) { Text(L.t("Importa zip…", "Import zip…")) }
+                primary = !hasProfile) { Text(L.t("Importa profilo…", "Import profile…")) }
             PillButton(onClick = {
                 busy = true
                 scope.launch {
@@ -158,7 +158,7 @@ fun VpnCard(vm: AppViewModel, nasReachable: Boolean) {
         // 3) server e porta visti da fuori casa (il router può inoltrare una porta esterna diversa)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(host, { host = it }, Modifier.weight(1f), singleLine = true,
-                label = { Text(L.t("Server (es. nome.synology.me)", "Server (e.g. name.synology.me)")) })
+                label = { Text(L.t("Server (es. casa.esempio.net)", "Server (e.g. home.example.net)")) })
             OutlinedTextField(port, { v -> port = v.filter { it.isDigit() }.take(5) }, Modifier.size(width = 110.dp, height = 64.dp), singleLine = true,
                 label = { Text(L.t("Porta", "Port")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }

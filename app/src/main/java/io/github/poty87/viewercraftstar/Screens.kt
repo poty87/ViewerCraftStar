@@ -165,8 +165,8 @@ fun GridScreen(vm: AppViewModel, lib: LibraryViewModel, gridState: androidx.comp
     vm.vpnAsk?.let { names ->
         BlurDialog({ vm.answerVpn(false) }) {
             DialogTitle(L.t("NAS non raggiungibile", "NAS not reachable"))
-            DialogText(tip(L.t("${names.size} foto spedite: Synology Drive le caricherà appena può. Per inviare i metadati e sapere quando sono al sicuro a casa serve il NAS: se sei fuori casa, accendi la VPN. L'invio continua in background, anche con l'app chiusa.",
-                "${names.size} photos sent: Synology Drive will upload them when it can. Sending the metadata and confirming they're safe at home needs the NAS: if you're away, turn on the VPN. Sending continues in the background, even with the app closed."),
+            DialogText(tip(L.t("${names.size} foto spedite: l'app di sincronizzazione le caricherà appena può. Per inviare i metadati e sapere quando sono al sicuro a casa serve il NAS: se sei fuori casa, accendi la VPN. L'invio continua in background, anche con l'app chiusa.",
+                "${names.size} photos sent: the sync app will upload them when it can. Sending the metadata and confirming they're safe at home needs the NAS: if you're away, turn on the VPN. Sending continues in the background, even with the app closed."),
                 L.t("Per inviare i metadati serve il NAS: fuori casa accendi la VPN.", "Sending the metadata needs the NAS: away from home, turn on the VPN.")) ?: "")
             DialogButtons(L.t("Più tardi", "Later") to { vm.answerVpn(false) }, main = L.t("Accendi VPN", "Turn on VPN") to { vm.answerVpn(true) })
         }
@@ -460,8 +460,8 @@ private fun sectionFolder(vm: AppViewModel) =
 private fun ReviewHeader(vm: AppViewModel) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         vm.workProblem?.let { Banner("error", it) }
-        if (!Tips.compact) Text(L.t("Qui arrivano le foto nuove (cartella non sincronizzata). Quando hai finito, spediscile con il tondo blu in basso a destra: passano in ${vm.settings.phoneFolder} e Synology Drive le carica sul NAS.",
-            "New photos land here (not synced). When you're done, send them with the blue round button at the bottom right: they move to ${vm.settings.phoneFolder} and Synology Drive uploads them to the NAS."),
+        if (!Tips.compact) Text(L.t("Qui arrivano le foto nuove (cartella non sincronizzata). Quando hai finito, spediscile con il tondo blu in basso a destra: passano in ${vm.settings.phoneFolder} e l'app di sincronizzazione del NAS le carica.",
+            "New photos land here (not synced). When you're done, send them with the blue round button at the bottom right: they move to ${vm.settings.phoneFolder} and the NAS's sync app uploads them."),
             color = C.muted, fontSize = 12.sp)
         val rejected = vm.photos.count { it.inWork && vm.meta(it.name).flag == Flag.REJECT }
         if (rejected > 0) Text(if (Tips.compact) L.t("$rejected scartate → cestino del telefono", "$rejected rejected → phone's bin") else L.t("Le $rejected scartate non vengono spedite: finiscono nel cestino del telefono (recuperabili per 30 giorni).",
@@ -928,7 +928,7 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
         SettingsCard(L.t("Cartelle dei DNG sul telefono", "DNG folders on the phone")) {
             PathRow(L.t("Cartella delle foto nuove (non sincronizzata)", "New photos folder (not synced)"), fullPath(work),
                 onBrowse = { picking = "work"; treePicker.launch(initialTree(work)) }, onEdit = { editing = "work" })
-            PathRow(L.t("Cartella sincronizzata con Synology Drive", "Folder synced by Synology Drive"), fullPath(phone),
+            PathRow(L.t("Cartella sincronizzata con il NAS", "Folder synced with the NAS"), fullPath(phone),
                 onBrowse = { picking = "sync"; treePicker.launch(initialTree(phone)) }, onEdit = { editing = "sync" })
             if (!Tips.compact) Text(L.t("Nella memoria interna, dentro Pictures o DCIM. Se una cartella manca, l'app la crea.",
                 "In internal storage, inside Pictures or DCIM. If a folder is missing the app creates it."),
@@ -939,8 +939,8 @@ fun SettingsScreen(vm: AppViewModel, libVm: LibraryViewModel, onBack: () -> Unit
             user == nas.user && password == nas.password)
         val lockMsg = if (unlocked) null else L.t("Prova la connessione per scegliere la cartella.", "Test the connection to choose the folder.")
         SettingsCard("NAS") {
-            if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati da Synology Drive. Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
-                "The .xmp files are written next to the DNG files Synology Drive has already uploaded. On the NAS the app only writes .xmp files: it never deletes or changes photos."),
+            if (!Tips.compact) Text(L.t("Gli .xmp vengono scritti accanto ai DNG già caricati dall'app di sincronizzazione (es. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). Sul NAS l'app scrive solo file .xmp: non cancella e non modifica mai le foto.",
+                "The .xmp files are written next to the DNG files the sync app has already uploaded (e.g. Synology Drive, QNAP Qfile, Nextcloud, Syncthing). On the NAS the app only writes .xmp files: it never deletes or changes photos."),
                 color = C.muted, fontSize = 12.sp)
             Field(L.t("Indirizzo IP del NAS (es. 192.168.1.10)", "NAS IP address (e.g. 192.168.1.10)"), host) { host = it }
             Field(L.t("Utente del NAS", "NAS user"), user) { user = it }
