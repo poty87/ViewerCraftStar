@@ -35,6 +35,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     var current by mutableStateOf(settings.library); private set
     var index by mutableStateOf<LibIndex?>(null); private set
     var loading by mutableStateOf(false); private set
+    /** Aggiornamento chiesto a mano (trascinando la galleria verso il basso): lì gira il tondo in cima. */
+    var pulling by mutableStateOf(false); private set
     var message by mutableStateOf(""); private set
     var messageLevel by mutableStateOf("info"); private set
 
@@ -955,10 +957,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      * automatico mentre la Libreria è aperta (si scarica solo ciò che è cambiato; nessun avviso se il NAS non risponde).
      */
     fun refresh(quiet: Boolean = true, background: Boolean = false) {
-        if (!configured || loading) return
+        if (!configured) return
+        // già in corso (l'aggiornamento automatico): il tondo del gesto resta finché non finisce
+        if (loading) { if (!quiet) pulling = true; return }
         val cfg = settings.nas
         viewModelScope.launch {
             loading = true
+            pulling = !quiet
             val result = runCatching {
                 val (root, names) = LibraryStore.list(cfg, share, settings.libFolder)
                 rootFound = root
@@ -975,6 +980,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 names
             }
             loading = false
+            pulling = false
             result.onSuccess { names ->
                 if (names.isEmpty() && !background) say("warn", L.t("Nessuna libreria nella cartella del NAS: in PresetCraftAppLicator, Importazione automatica › Librerie da consultare sul telefono.",
                     "No library in the NAS folder: in PresetCraftAppLicator, Automatic import › Libraries to browse on the phone."))

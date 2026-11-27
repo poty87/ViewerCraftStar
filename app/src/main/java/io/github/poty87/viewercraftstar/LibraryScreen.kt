@@ -445,8 +445,15 @@ fun LibraryTitle(lib: LibraryViewModel, onOptions: () -> Unit) {
                     if (lib.libraries.size > 1) Icon(Icons.Filled.KeyboardArrowDown, L.t("Cambia libreria", "Change library"),
                         tint = C.text, modifier = Modifier.size(26.dp))
                 }
-                lib.index?.let { Text(L.t("${it.photos.size} foto · ${it.stacks.size} pile · aggiornata ", "${it.photos.size} photos · ${it.stacks.size} stacks · updated ") +
-                    dateText(it.updated), color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // mentre si aggiorna (da solo o col gesto) il posto della data dice che sta lavorando, con un tondo piccolo
+                lib.index?.let { Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(L.t("${it.photos.size} foto · ${it.stacks.size} pile · ", "${it.photos.size} photos · ${it.stacks.size} stacks · ") +
+                        (if (lib.loading) L.t("aggiornamento…", "updating…") else L.t("aggiornata ", "updated ") + dateText(it.updated)),
+                        color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (lib.loading) CircularProgressIndicator(Modifier.padding(start = 6.dp).size(10.dp), color = C.accent,
+                        strokeWidth = 1.5.dp)
+                } }
             }
             DropdownMenu(open, { open = false }) {
                 lib.libraries.forEach { name ->
@@ -455,10 +462,7 @@ fun LibraryTitle(lib: LibraryViewModel, onOptions: () -> Unit) {
                 }
             }
         }
-        if (lib.configured) IconButton(onClick = { lib.refresh(quiet = false) }, enabled = !lib.loading) {
-            if (lib.loading) CircularProgressIndicator(Modifier.size(18.dp), color = C.accent, strokeWidth = 2.dp)
-            else Icon(Icons.Filled.Refresh, L.t("Aggiorna", "Refresh"), tint = C.text)
-        }
+        // niente più tasto ↻: si aggiorna trascinando la galleria verso il basso (vedi LibraryGallery)
         Box {
             IconButton(onClick = onOptions) { Icon(Icons.Filled.MoreVert, L.t("Opzioni di visualizzazione", "View options"), tint = C.text) }
             // ci sono foto nel cestino: si trovano nel menu ⋮

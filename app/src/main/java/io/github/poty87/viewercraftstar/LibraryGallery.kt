@@ -29,6 +29,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -122,7 +125,7 @@ private fun segmentTitle(key: String, by: String): String = runCatching {
  * La galleria della Libreria: intestazione (che scorre via con le foto), poi le foto in righe giustificate o quadrate,
  * divise per anno, mese o giorno con il titolo del periodo che resta in alto, in trasparenza, mentre si scorre.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composable () -> Unit,
                    onOpen: (List<LibPhoto>, Int) -> Unit, modifier: Modifier = Modifier) {
@@ -165,6 +168,14 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
                 }
             }
         }
+        // trascinando verso il basso dalla cima: aggiorna la libreria (il tondo blu resta finché non ha finito)
+        val pull = rememberPullToRefreshState()
+        PullToRefreshBox(isRefreshing = lib.pulling, onRefresh = { lib.refresh(quiet = false) },
+            modifier = Modifier.fillMaxSize(), state = pull,
+            indicator = {
+                if (lib.configured) PullToRefreshDefaults.Indicator(state = pull, isRefreshing = lib.pulling,
+                    modifier = Modifier.align(Alignment.TopCenter), containerColor = Color(0xFF1C1C1C), color = C.accent)
+            }) {
         // pressione lunga e trascinamento: seleziona le foto toccate (vedi DragSelect)
         LazyColumn(Modifier.fillMaxSize().dragSelect(lib, state), state = state,
             contentPadding = PaddingValues(start = 3.dp, end = 3.dp, bottom = if (lib.selecting) 120.dp else 16.dp + LocalBarSpace.current),
@@ -214,6 +225,7 @@ fun LibraryGallery(lib: LibraryViewModel, state: LazyListState, header: @Composa
                     }
                 }
             }
+        }
         }
     }
 }
